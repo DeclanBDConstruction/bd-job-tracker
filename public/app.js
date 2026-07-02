@@ -7,6 +7,8 @@ const state = {
   currentUser: null,
 };
 
+const isAdmin = () => !!(state.currentUser && state.currentUser.role === 'admin');
+
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const slug = (s) => String(s || '').toLowerCase().replace(/\s+/g, '-');
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : (s || ''));
@@ -241,7 +243,7 @@ function renderJobs() {
           <button type="button" class="icon-btn" data-view="${j.id}" title="View">👁</button>
           <button type="button" class="icon-btn" data-edit="${j.id}" title="Edit">✎</button>
           <button type="button" class="icon-btn icon-btn-green" data-complete="${j.id}" title="Mark Complete">✓</button>
-          <button type="button" class="icon-btn icon-btn-danger" data-delete="${j.id}" title="Delete">🗑</button>
+          ${isAdmin() ? `<button type="button" class="icon-btn icon-btn-danger" data-delete="${j.id}" title="Delete">🗑</button>` : ''}
         </div>
       </td>`;
     tbody.appendChild(tr);
@@ -612,13 +614,14 @@ document.querySelectorAll('.job-detail-tab').forEach((btn) => {
 // ---------- Employees ----------
 
 function renderEmployees() {
+  document.getElementById('employeeAddRow').hidden = !isAdmin();
   const tbody = document.querySelector('#employeesTable tbody');
   tbody.innerHTML = '';
   state.employees.forEach((e) => {
     const jobCount = state.jobs.filter((j) => j.employeeId === e.id).length;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${escapeHtml(e.name)} <span style="color:var(--muted)">(${jobCount} job${jobCount === 1 ? '' : 's'})</span></td>
-      <td class="row-actions"><button data-del-emp="${e.id}" class="danger">Delete</button></td>`;
+      <td class="row-actions">${isAdmin() ? `<button data-del-emp="${e.id}" class="danger">Delete</button>` : ''}</td>`;
     tbody.appendChild(tr);
   });
 }

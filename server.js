@@ -109,21 +109,26 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+function requireAdmin(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+  next();
+}
+
 // ---------- Employees ----------
 
 app.get('/api/employees', handle((req, res) => {
   res.json(db.listEmployees());
 }));
 
-app.post('/api/employees', handle((req, res) => {
+app.post('/api/employees', requireAdmin, handle((req, res) => {
   res.status(201).json(db.addEmployee(req.body.name));
 }));
 
-app.put('/api/employees/:id', handle((req, res) => {
+app.put('/api/employees/:id', requireAdmin, handle((req, res) => {
   res.json(db.renameEmployee(req.params.id, req.body.name));
 }));
 
-app.delete('/api/employees/:id', handle((req, res) => {
+app.delete('/api/employees/:id', requireAdmin, handle((req, res) => {
   db.deleteEmployee(req.params.id);
   res.status(204).end();
 }));
@@ -148,7 +153,7 @@ app.put('/api/jobs/:id', handle((req, res) => {
   res.json(db.updateJob(req.params.id, req.body));
 }));
 
-app.delete('/api/jobs/:id', handle((req, res) => {
+app.delete('/api/jobs/:id', requireAdmin, handle((req, res) => {
   db.deleteJob(req.params.id);
   fs.rm(path.join(UPLOADS_ROOT, req.params.id), { recursive: true, force: true }, () => {});
   res.status(204).end();
