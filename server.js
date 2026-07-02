@@ -244,6 +244,9 @@ app.get('/api/reports/yearly', handle((req, res) => {
 app.get('/api/reports/clients', handle((req, res) => {
   res.json(db.clientReport());
 }));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`BD Construction Job Tracker running at http://localhost:${PORT}`);
