@@ -136,6 +136,7 @@ function goToTab(tab) {
   document.getElementById('tab-' + tab).classList.add('active');
   if (tab === 'reports') loadReports();
   if (tab === 'clients') loadClients();
+  if (tab === 'home') renderHomeDashboard();
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -166,6 +167,7 @@ async function bootstrap() {
   renderEmployees();
   renderRiskAssessments();
   renderCalendar();
+  renderHomeDashboard();
 }
 
 function renderStatusOptions() {
@@ -486,10 +488,11 @@ const DOCUMENT_SECTIONS = ['rams', 'drawings', 'signoff', 'photos'];
 const jobDetailModal = document.getElementById('jobDetailModal');
 let currentDetailJobId = null;
 
-async function openJobDetail(id) {
+async function openJobDetail(id, section) {
   currentDetailJobId = id;
-  document.querySelectorAll('.job-detail-tab').forEach((b, i) => b.classList.toggle('active', i === 0));
-  document.querySelectorAll('.job-detail-section').forEach((s, i) => s.classList.toggle('active', i === 0));
+  const target = section || 'info';
+  document.querySelectorAll('.job-detail-tab').forEach((b) => b.classList.toggle('active', b.dataset.section === target));
+  document.querySelectorAll('.job-detail-section').forEach((s) => s.classList.toggle('active', s.id === `jobDetailSection-${target}`));
   jobDetailModal.hidden = false;
   try {
     await refreshJobDetail();
@@ -583,9 +586,16 @@ function renderDocumentSection(category, docs) {
   });
 }
 
-function closeJobDetail() {
+async function closeJobDetail() {
   jobDetailModal.hidden = true;
   currentDetailJobId = null;
+  // Document uploads/deletes only refresh this one job in the modal, not the shared jobs
+  // list — refresh it here so views like the Home dashboard's "missing RAMS" list don't
+  // show stale state after the modal closes.
+  state.jobs = await api('/api/jobs');
+  renderJobs();
+  renderCompletedJobs();
+  renderHomeDashboard();
 }
 
 document.getElementById('jobDetailCloseBtn').addEventListener('click', closeJobDetail);
@@ -804,6 +814,79 @@ calDayAddForm.addEventListener('submit', async (e) => {
     alert(err.message);
   }
 });
+
+// ---------- Home Dashboard ----------
+
+function todayDateStr() {
+  const d = new Date();
+  return calDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+// Jobs due to be (or already) on site within the next two weeks that don't have a RAMS
+// document uploaded yet — the thing most worth catching before someone turns up on site.
+function jobsMissingRams() {
+  const todayStr = todayDateStr();
+  const horizon = new Date();
+  horizon.setDate(horizon.getDate() + 14);
+  const horizonStr = calDateStr(horizon.getFullYear(), horizon.getMonth(), horizon.getDate());
+  return state.jobs
+    .filter((j) => !j.completedAt && j.startDate && j.startDate <= horizonStr)
+    .filter((j) => !(j.documents && j.documents.rams && j.documents.rams.length))
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+}
+
+function renderHomeDashboard() {
+  const container = document.getElementById('homeDashboard');
+  if (!container) return;
+  const todayStr = todayDateStr();
+  const todaysEvents = eventsOnDate(todayStr).sort((a, b) => a.userName.localeCompare(b.userName));
+  const missingRams = jobsMissingRams();
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const todayHtml = todaysEvents.length
+    ? `<ul class="home-today-list">${todaysEvents.map((e) => `
+        <li>
+          <span class="cal-swatch" style="background:${userColor(e.userName)}"></span>
+          <span class="home-today-name">${escapeHtml(e.userName)}</span>
+          <span class="home-today-desc">${escapeHtml(e.title)}</span>
+          <span class="home-today-duration">${formatDuration(e.durationValue, e.durationUnit)}</span>
+        </li>
+      `).join('')}</ul>`
+    : `<p class="empty-state">Nothing on the calendar for today.</p>`;
+
+  const ramsHtml = missingRams.length
+    ? `<ul class="home-rams-list">${missingRams.map((j) => `
+        <li>
+          <div class="home-rams-info">
+            <strong>${escapeHtml(j.client)}${j.location ? ' — ' + escapeHtml(j.location) : ''}</strong>
+            <span class="home-rams-date">${j.startDate < todayStr ? 'Started ' : 'Starts '}${j.startDate}</span>
+          </div>
+          <button type="button" class="home-rams-btn" data-job="${j.id}">Add RAMS</button>
+        </li>
+      `).join('')}</ul>`
+    : `<p class="empty-state">All jobs starting soon have RAMS in place. Nice one.</p>`;
+
+  container.innerHTML = `
+    <div class="dashboard-card">
+      <h3>Today — ${todayLabel}</h3>
+      ${todayHtml}
+      <button type="button" class="link-btn" id="homeGoCalendarBtn">Open Calendar</button>
+    </div>
+    <div class="dashboard-card">
+      <h3>Jobs Missing RAMS</h3>
+      ${ramsHtml}
+    </div>
+  `;
+
+  document.getElementById('homeGoCalendarBtn').addEventListener('click', () => {
+    goToTab('calendar');
+    openCalDayModal(todayStr);
+  });
+
+  container.querySelectorAll('.home-rams-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
+  });
+}
 
 // ---------- Risk Assessments ----------
 
