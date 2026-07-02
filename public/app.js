@@ -42,6 +42,7 @@ function showApp(user) {
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
   document.getElementById('currentUserName').textContent = user.name;
+  document.getElementById('adminTabBtn').hidden = !isAdmin();
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
@@ -139,6 +140,7 @@ function goToTab(tab) {
   if (tab === 'reports') loadReports();
   if (tab === 'clients') loadClients();
   if (tab === 'home') renderHomeDashboard();
+  if (tab === 'admin') loadAdminUsers();
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -1079,6 +1081,33 @@ async function loadClients() {
       </div>
     </div>
   `;
+}
+
+// ---------- Admin ----------
+
+async function loadAdminUsers() {
+  const users = await api('/api/users');
+  const tbody = document.querySelector('#adminUsersTable tbody');
+  tbody.innerHTML = users.map((u) => `
+    <tr>
+      <td>${escapeHtml(u.name)}</td>
+      <td>${escapeHtml(u.email)}</td>
+      <td><span class="role-badge ${u.role}">${escapeHtml(u.role)}</span></td>
+      <td class="row-actions">${u.role !== 'admin' ? `<button type="button" class="primary" data-promote="${u.id}" data-name="${escapeHtml(u.name)}">Make Admin</button>` : ''}</td>
+    </tr>
+  `).join('');
+
+  tbody.querySelectorAll('[data-promote]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Make ${btn.dataset.name} an admin? They'll be able to delete jobs and manage the employee list.`)) return;
+      try {
+        await api(`/api/users/${btn.dataset.promote}/promote`, { method: 'POST' });
+        loadAdminUsers();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 }
 
 checkAuth();

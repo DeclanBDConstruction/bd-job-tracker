@@ -499,6 +499,21 @@ button.danger:hover { background: #fdecea; }
 .status-pill.in-progress { background: var(--blue-light); color: var(--blue-dark); }
 .status-pill.lost, .status-pill.cancelled { background: #fbe1e0; color: #a8271f; }
 
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #e3e9ef;
+  color: var(--muted);
+}
+.role-badge.admin { background: var(--green-light); color: #4c7a1f; }
+.role-badge.staff { background: var(--blue-light); color: var(--blue-dark); }
+
 .progress-pill {
   display: inline-flex;
   align-items: center;

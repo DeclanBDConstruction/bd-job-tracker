@@ -463,6 +463,19 @@ function deleteSession(token) {
   save(state);
 }
 
+function listUsers() {
+  return load().users.map(sanitizeUser).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function promoteToAdmin(id) {
+  const state = load();
+  const user = state.users.find((u) => u.id === id);
+  if (!user) throw new Error('User not found');
+  user.role = 'admin';
+  save(state);
+  return sanitizeUser(user);
+}
+
 module.exports = {
   DEFAULT_STATUSES,
   DOCUMENT_CATEGORIES,
@@ -471,6 +484,8 @@ module.exports = {
   createSession,
   getUserBySession,
   deleteSession,
+  listUsers,
+  promoteToAdmin,
   listEmployees,
   addEmployee,
   renameEmployee,

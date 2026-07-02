@@ -114,6 +114,16 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ---------- Users (admin) ----------
+
+app.get('/api/users', requireAdmin, handle((req, res) => {
+  res.json(db.listUsers());
+}));
+
+app.post('/api/users/:id/promote', requireAdmin, handle((req, res) => {
+  res.json(db.promoteToAdmin(req.params.id));
+}));
+
 // ---------- Employees ----------
 
 app.get('/api/employees', handle((req, res) => {
