@@ -1,0 +1,254 @@
+{
+  "employees": [
+    {
+      "id": "37e107fc-c920-430e-8544-ded7145866eb",
+      "name": "Neil Gaskell"
+    },
+    {
+      "id": "735e6586-0fbb-453c-8d57-ecfdd35af23b",
+      "name": "Paul Bushell"
+    },
+    {
+      "id": "bddf6c1d-7ece-4834-a393-9e637e1a98dd",
+      "name": "Craig Davies"
+    },
+    {
+      "id": "1a605d1d-d6aa-41e0-89ff-87c349cce542",
+      "name": "Gary Markland"
+    },
+    {
+      "id": "af0b2789-63b9-4149-9a94-198c508d7916",
+      "name": "Phil Bullough"
+    },
+    {
+      "id": "834cf86e-a09d-4ad9-962f-993688e14c6e",
+      "name": "Declan Bullough"
+    },
+    {
+      "id": "1e022850-f825-4558-8ecc-fcb8f4547ca3",
+      "name": "Declan"
+    },
+    {
+      "id": "a810da54-c02c-46be-99e1-8e6cde50d4f6",
+      "name": "Surveyor: go and do"
+    },
+    {
+      "id": "fd6c4193-e2b2-42e5-8d4f-f00b23edc1d9",
+      "name": "Test Employee"
+    },
+    {
+      "id": "5588f75d-bae9-434a-81e7-a5a6ab9821fb",
+      "name": "Test Emp"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "70214be6-6d70-4f05-9d2c-6966d4bed868",
+      "jobReference": "J5606",
+      "client": "Greene King",
+      "location": "Beehive Carlisle",
+      "employeeId": "1e022850-f825-4558-8ecc-fcb8f4547ca3",
+      "value": 2991.6,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-07-01",
+      "description": "Clean Kitchen",
+      "createdAt": "2026-07-01T12:11:08.566Z",
+      "updatedAt": "2026-07-01T13:42:11.490Z",
+      "startDate": "2026-07-01",
+      "completedAt": "2026-07-01"
+    },
+    {
+      "id": "bc0d29af-dc35-4000-8378-91cbea33035d",
+      "jobReference": "J5659",
+      "client": "Greene King",
+      "location": "Robin Hood Clifton",
+      "employeeId": "735e6586-0fbb-453c-8d57-ecfdd35af23b",
+      "value": 20000,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-02-18",
+      "description": "Replace timber threshold",
+      "createdAt": "2026-07-01T12:27:10.924Z",
+      "updatedAt": "2026-07-01T13:40:23.992Z",
+      "completedAt": "",
+      "startDate": ""
+    },
+    {
+      "id": "839c2661-e0b5-4400-8d94-506aea9abe9c",
+      "jobReference": "J5273",
+      "client": "Greene King",
+      "location": "Hinderton Arms Neston",
+      "employeeId": "735e6586-0fbb-453c-8d57-ecfdd35af23b",
+      "value": 1058,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-07-01",
+      "description": "New fly screen door",
+      "createdAt": "2026-07-01T12:33:28.202Z",
+      "updatedAt": "2026-07-02T07:37:29.104Z",
+      "completedAt": "2026-07-02"
+    },
+    {
+      "id": "72ad59d8-9179-44e1-a53a-be4045d56cab",
+      "jobReference": "J2746",
+      "client": "NWAS",
+      "location": "Rochdale",
+      "employeeId": "37e107fc-c920-430e-8544-ded7145866eb",
+      "value": 773.42,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-05-21",
+      "description": "Epoxy repair to section of garage floor",
+      "createdAt": "2026-07-01T12:34:19.211Z",
+      "updatedAt": "2026-07-02T07:37:00.395Z",
+      "completedAt": "2026-07-02"
+    },
+    {
+      "id": "556ad69b-52be-455d-ae13-2d5ef74e9f73",
+      "jobReference": "J2626",
+      "client": "GMMH",
+      "location": "Prestwich Riverside",
+      "employeeId": "af0b2789-63b9-4149-9a94-198c508d7916",
+      "value": 2252,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-01-06",
+      "description": "New male toilet door",
+      "createdAt": "2026-07-01T12:35:46.330Z",
+      "updatedAt": "2026-07-01T12:35:46.330Z",
+      "documents": {
+        "rams": [
+          {
+            "id": "a234e4c3-849d-45af-8e96-d4174a6f4fa0",
+            "originalName": "Dust, Cutting & Silica - Risk Assessment.html",
+            "storedName": "1782996866887-6wu9u5-Dust_ Cutting _ Silica - Risk Assessment.html",
+            "size": 3308,
+            "uploadedAt": "2026-07-02T12:54:26.890Z"
+          }
+        ],
+        "drawings": [],
+        "signoff": [],
+        "photos": []
+      }
+    },
+    {
+      "id": "80dba9ba-65dd-4307-8f79-3b5a364ca3a2",
+      "jobReference": "J2796",
+      "client": "NCA NHS",
+      "location": "Oldam Hospital Old Maternity",
+      "employeeId": "bddf6c1d-7ece-4834-a393-9e637e1a98dd",
+      "value": 10000,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-06-29",
+      "startDate": "2026-07-01",
+      "description": "Works for 2 weeks as advised by Spencer",
+      "completedAt": "2026-07-01",
+      "createdAt": "2026-07-01T13:52:48.793Z",
+      "updatedAt": "2026-07-01T13:53:13.029Z"
+    },
+    {
+      "id": "d189f8b2-dd1d-42f0-8dcb-186a4c0b5fcc",
+      "jobReference": "J2754",
+      "client": "GMMH",
+      "location": "Prestwich",
+      "employeeId": "1a605d1d-d6aa-41e0-89ff-87c349cce542",
+      "value": 12500,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-05-29",
+      "startDate": "2026-07-01",
+      "description": "Micad 364263",
+      "completedAt": "2026-07-01",
+      "documents": {
+        "rams": [],
+        "drawings": [],
+        "signoff": [],
+        "photos": []
+      },
+      "createdAt": "2026-07-01T18:21:32.756Z",
+      "updatedAt": "2026-07-01T18:22:17.964Z"
+    },
+    {
+      "id": "238cd3ef-8c20-4eb5-9ba6-87eead4a0db8",
+      "jobReference": "J2798",
+      "client": "GMMH",
+      "location": "Salford Eagleton Ward",
+      "employeeId": "834cf86e-a09d-4ad9-962f-993688e14c6e",
+      "value": 650,
+      "profit": 0,
+      "status": "Won",
+      "dateWon": "2026-07-01",
+      "startDate": "2026-07-02",
+      "description": "Kitchen doorway flooring repair",
+      "completedAt": "",
+      "documents": {
+        "rams": [],
+        "drawings": [],
+        "signoff": [],
+        "photos": []
+      },
+      "createdAt": "2026-07-02T12:53:35.040Z",
+      "updatedAt": "2026-07-02T12:53:35.040Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "44855fec-f505-4ab1-93b9-c166e66d72d0",
+      "name": "Declan Bullough",
+      "email": "declan@bdconstruction.co.uk",
+      "passwordHash": "$2b$10$c/JmhbXAUHmaSH5A8NANH.nTnCcNwvmE2/k2JaG5ujrI2ZI0njtuO",
+      "role": "admin",
+      "createdAt": "2026-07-01T13:07:43.399Z"
+    },
+    {
+      "id": "d2329d5b-ec9b-4eb4-aae9-840550fd2f26",
+      "name": "Test User",
+      "email": "test@example.com",
+      "passwordHash": "$2b$10$.ixrv2jxd8UDUdrt6wWX4edcn7Mt0VAq9dSyDsBFtLIB2LnZ1WDa.",
+      "role": "staff",
+      "createdAt": "2026-07-01T15:07:18.349Z"
+    },
+    {
+      "id": "6c5fc4a8-cf8e-4c0d-bed4-8024b19e61c5",
+      "name": "Craig Davies",
+      "email": "craig@bdconstruction.co.uk",
+      "passwordHash": "$2b$10$BuKk80vHi0oVpWVUqy.P7uFn5H4IWJDgAlxJc0Pe2IkdgUrdl0dr2",
+      "role": "staff",
+      "createdAt": "2026-07-02T14:01:07.908Z"
+    }
+  ],
+  "sessions": [
+    {
+      "token": "3f6f9b7f14812f2183c80905e934002c6f0184b534d9296f33d80fbe8dcfc1c7",
+      "userId": "d2329d5b-ec9b-4eb4-aae9-840550fd2f26",
+      "createdAt": "2026-07-01T15:07:18.351Z",
+      "expiresAt": "2026-07-31T15:07:18.351Z"
+    },
+    {
+      "token": "1bfa6110bda1866816abf561bd95f00637892b6ac48fc1f5f6a2a3429af2babf",
+      "userId": "d2329d5b-ec9b-4eb4-aae9-840550fd2f26",
+      "createdAt": "2026-07-01T15:07:39.750Z",
+      "expiresAt": "2026-07-31T15:07:39.750Z"
+    },
+    {
+      "token": "f893ddc20cdd2638be8d898a581cd4b6669ac22af397614d2aec39f3a9146ac1",
+      "userId": "44855fec-f505-4ab1-93b9-c166e66d72d0",
+      "createdAt": "2026-07-01T18:23:19.099Z",
+      "expiresAt": "2026-07-31T18:23:19.099Z"
+    },
+    {
+      "token": "dd57f563c78f706195a4beec3e202248b0c6bc7a1a315deadf05bd1f5c46218c",
+      "userId": "44855fec-f505-4ab1-93b9-c166e66d72d0",
+      "createdAt": "2026-07-02T13:58:08.114Z",
+      "expiresAt": "2026-08-01T13:58:08.114Z"
+    },
+    {
+      "token": "876c5d63abf7fbf2037d3da2d69cd3d62b91767fd1e29cb1f6f458848fed9146",
+      "userId": "6c5fc4a8-cf8e-4c0d-bed4-8024b19e61c5",
+      "createdAt": "2026-07-02T14:01:07.910Z",
+      "expiresAt": "2026-08-01T14:01:07.910Z"
+    }
+  ]
+}

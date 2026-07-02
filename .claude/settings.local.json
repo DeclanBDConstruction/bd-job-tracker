@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p public data)",
+      "Bash(npm -v)",
+      "Bash(curl -s localhost:3000/api/jobs)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s localhost:3000/api/reports/yearly)"
+    ]
+  }
+}

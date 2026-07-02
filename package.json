@@ -1,0 +1,15 @@
+{
+  "name": "bd-construction-job-tracker",
+  "version": "1.0.0",
+  "description": "Simple job tracker for BD Construction: Excel import, job/employee tracking, yearly reports.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^4.19.2",
+    "multer": "^2.0.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
+  }
+}

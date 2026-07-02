@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BD Construction — Job Tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="splash" class="splash" aria-hidden="true">
+  <div class="splash-card">
+    <div class="splash-logo-frame">
+      <img src="assets/logo-full.jpg" alt="" class="splash-logo">
+    </div>
+    <div class="splash-bar"><div class="splash-bar-fill"></div></div>
+  </div>
+</div>
+<!-- SIGN IN / CREATE ACCOUNT -->
+<div id="authScreen" class="auth-screen" hidden>
+  <div class="auth-card">
+    <img src="assets/logo-mark.png" alt="BD Construction Ltd" class="auth-logo">
+
+    <div id="loginView">
+      <h2>Sign In</h2>
+      <form id="loginForm">
+        <label>Email<input type="email" id="loginEmail" required autocomplete="username"></label>
+        <label>Password<input type="password" id="loginPassword" required autocomplete="current-password"></label>
+        <p class="auth-error" id="loginError" hidden></p>
+        <button type="submit" class="primary">Sign In</button>
+      </form>
+      <p class="auth-switch">New here? <button type="button" id="showRegisterBtn" class="link-btn">Create an account</button></p>
+    </div>
+
+    <div id="registerView" hidden>
+      <h2>Create Account</h2>
+      <form id="registerForm">
+        <label>Name<input type="text" id="registerName" required autocomplete="name"></label>
+        <label>Email<input type="email" id="registerEmail" required autocomplete="username"></label>
+        <label>Password (min. 6 characters)<input type="password" id="registerPassword" required minlength="6" autocomplete="new-password"></label>
+        <p class="auth-error" id="registerError" hidden></p>
+        <button type="submit" class="primary">Create Account</button>
+      </form>
+      <p class="auth-switch">Already have an account? <button type="button" id="showLoginBtn" class="link-btn">Sign in</button></p>
+    </div>
+  </div>
+</div>
+
+<div id="appShell" hidden>
+<header class="topbar">
+  <div class="topbar-row">
+    <h1>
+      <button type="button" id="logoHomeBtn" class="logo-mark" aria-label="Go to Home">
+        <img src="assets/logo-mark.png" alt="BD Construction Ltd">
+      </button>
+      <span class="brand-sub">Job Tracker</span>
+    </h1>
+    <div class="topbar-user">
+      <span id="currentUserName"></span>
+      <button id="logoutBtn">Sign Out</button>
+    </div>
+  </div>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="home">Home</button>
+    <button class="tab-btn" data-tab="jobs">Jobs</button>
+    <button class="tab-btn" data-tab="completed">Completed Jobs</button>
+    <button class="tab-btn" data-tab="employees">Employees</button>
+    <button class="tab-btn" data-tab="risk">Risk Assessments</button>
+    <button class="tab-btn" data-tab="reports">Yearly Reports</button>
+    <button class="tab-btn" data-tab="clients">Client Report</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- HOME TAB -->
+  <section id="tab-home" class="tab-panel active">
+    <div class="home-hero">
+      <img src="assets/logo-mark.png" alt="BD Construction Ltd" class="home-hero-logo">
+      <h2>Welcome to the BD Construction Job Tracker</h2>
+      <p>A look at some of the jobs we've delivered.</p>
+    </div>
+    <div class="gallery">
+      <figure class="gallery-item">
+        <img src="assets/gallery/retail-fitout.jpg" alt="Retail store fit-out">
+        <figcaption>Retail Fit-Out</figcaption>
+      </figure>
+      <figure class="gallery-item">
+        <img src="assets/gallery/cafe-fitout.jpg" alt="Café fit-out with seating booths">
+        <figcaption>Café Fit-Out</figcaption>
+      </figure>
+      <figure class="gallery-item">
+        <img src="assets/gallery/hotel-lounge.jpg" alt="Hotel lounge with planting and feature lighting">
+        <figcaption>Hotel Lounge</figcaption>
+      </figure>
+      <figure class="gallery-item">
+        <img src="assets/gallery/games-room.jpg" alt="Games room with dartboard bays">
+        <figcaption>Leisure &amp; Games Room</figcaption>
+      </figure>
+      <figure class="gallery-item">
+        <img src="assets/gallery/restaurant-fitout.jpg" alt="Restaurant fit-out in progress">
+        <figcaption>Restaurant Fit-Out</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- JOBS TAB -->
+  <section id="tab-jobs" class="tab-panel">
+    <div class="panel-header">
+      <h2>Jobs</h2>
+      <div class="filters">
+        <input type="text" id="jobSearch" placeholder="Search client, location, job number, notes…">
+        <select id="jobStatusFilter"><option value="">All statuses</option></select>
+        <select id="jobProgressFilter">
+          <option value="">All progress</option>
+          <option value="not-started">Not Started</option>
+          <option value="active">Active</option>
+        </select>
+        <select id="jobEmployeeFilter"><option value="">All employees</option></select>
+        <button id="importJobSheetBtn" title="Upload a BD Construction job costing sheet to pre-fill a new job">Import Job Sheet</button>
+        <input type="file" id="importJobSheetFile" accept=".xlsx,.xls" hidden>
+        <button id="newJobBtn" class="primary">+ New Job</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table fixed-cols" id="jobsTable">
+        <colgroup>
+          <col style="width:110px"><col style="width:65px"><col style="width:110px"><col style="width:120px">
+          <col style="width:190px"><col style="width:100px"><col style="width:80px"><col style="width:80px">
+          <col style="width:100px"><col style="width:115px"><col style="width:170px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Date Won</th><th>Job No.</th><th>Client</th><th>Location</th><th>Description</th><th>Employee</th>
+            <th>Value</th><th>Profit</th><th>Status</th><th>Progress</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="empty-state" id="jobsEmptyState" hidden>No jobs yet. Add one, or import a job sheet.</p>
+  </section>
+
+  <!-- COMPLETED JOBS TAB -->
+  <section id="tab-completed" class="tab-panel">
+    <div class="panel-header">
+      <h2>Completed Jobs</h2>
+      <div class="filters">
+        <input type="text" id="completedSearch" placeholder="Search client, location, job number, notes…">
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table fixed-cols" id="completedJobsTable">
+        <colgroup>
+          <col style="width:105px"><col style="width:110px"><col style="width:70px"><col style="width:100px">
+          <col style="width:120px"><col style="width:170px"><col style="width:90px"><col style="width:82px">
+          <col style="width:82px"><col style="width:95px"><col style="width:140px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Completed</th><th>Date Won</th><th>Job No.</th><th>Client</th><th>Location</th><th>Description</th><th>Employee</th>
+            <th>Value</th><th>Profit</th><th>Status</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="empty-state" id="completedEmptyState" hidden>No jobs marked as completed yet.</p>
+  </section>
+
+  <!-- EMPLOYEES TAB -->
+  <section id="tab-employees" class="tab-panel">
+    <h2>Employees</h2>
+    <div class="import-upload">
+      <input type="text" id="newEmployeeName" placeholder="Employee name">
+      <button id="addEmployeeBtn" class="primary">+ Add Employee</button>
+    </div>
+    <table class="data-table" id="employeesTable">
+      <thead><tr><th>Name</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- RISK ASSESSMENTS TAB -->
+  <section id="tab-risk" class="tab-panel">
+    <div class="panel-header">
+      <h2>Risk Assessments</h2>
+    </div>
+    <p class="hint">Generic risk assessment templates you can attach straight to a job's RAMS documents. Always review and adjust for the actual site conditions before anyone works to one.</p>
+    <div class="ra-grid" id="raGrid"></div>
+  </section>
+
+  <!-- REPORTS TAB -->
+  <section id="tab-reports" class="tab-panel">
+    <h2>Yearly Reports</h2>
+    <div id="reportsContainer"></div>
+  </section>
+
+  <!-- CLIENT REPORT TAB -->
+  <section id="tab-clients" class="tab-panel">
+    <h2>Client Report</h2>
+    <p class="hint">All-time ranking of clients by how much money they've brought in, across all jobs.</p>
+    <div id="clientsContainer"></div>
+  </section>
+
+</main>
+
+</div>
+
+<!-- Job Edit Modal -->
+<div id="jobModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="jobModalTitle">New Job</h2>
+    <p id="jobModalNote" class="modal-note" hidden></p>
+    <form id="jobForm">
+      <input type="hidden" id="jobId">
+      <label>Job Number (optional)<input type="text" id="fJobReference"></label>
+      <label>Client *<input type="text" id="fClient" required></label>
+      <label>Location (site / town, optional)<input type="text" id="fLocation"></label>
+      <label>Won By (employee) *
+        <input type="text" id="fEmployeeName" list="employeeList" required>
+        <datalist id="employeeList"></datalist>
+      </label>
+      <label>Date Won *<input type="date" id="fDateWon" required></label>
+      <label>Start Date (site work, optional)<input type="date" id="fStartDate"></label>
+      <label>Value (£) *<input type="number" step="0.01" id="fValue" required></label>
+      <label id="fProfitField">Profit (£)<input type="number" step="0.01" id="fProfit"></label>
+      <label id="fStatusField">Status
+        <select id="fStatus"></select>
+      </label>
+      <label>Notes / Description<textarea id="fDescription" rows="3"></textarea></label>
+      <div class="modal-actions">
+        <button type="button" id="jobCancelBtn">Cancel</button>
+        <button type="submit" class="primary">Save Job</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Job Detail Modal -->
+<div id="jobDetailModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2 id="jobDetailTitle">Job</h2>
+      <button type="button" id="jobDetailCloseBtn" class="link-btn">Close</button>
+    </div>
+    <nav class="job-detail-tabs">
+      <button type="button" class="job-detail-tab active" data-section="info">Job Information</button>
+      <button type="button" class="job-detail-tab" data-section="rams">RAMS</button>
+      <button type="button" class="job-detail-tab" data-section="drawings">Drawings</button>
+      <button type="button" class="job-detail-tab" data-section="signoff">Sign Off Sheets</button>
+      <button type="button" class="job-detail-tab" data-section="photos">Photos</button>
+    </nav>
+    <div class="job-detail-body">
+      <div id="jobDetailSection-info" class="job-detail-section active"></div>
+      <div id="jobDetailSection-rams" class="job-detail-section"></div>
+      <div id="jobDetailSection-drawings" class="job-detail-section"></div>
+      <div id="jobDetailSection-signoff" class="job-detail-section"></div>
+      <div id="jobDetailSection-photos" class="job-detail-section"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Risk Assessment Detail Modal -->
+<div id="raModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2 id="raModalTitle">Risk Assessment</h2>
+      <button type="button" id="raModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <div id="raModalBody"></div>
+    <div class="modal-actions ra-attach-row">
+      <a id="raDownloadLink" class="ra-download-btn" href="#">Download</a>
+      <select id="raAttachJobSelect"><option value="">Attach to job…</option></select>
+      <button type="button" id="raAttachBtn" class="primary">Attach to Job</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
