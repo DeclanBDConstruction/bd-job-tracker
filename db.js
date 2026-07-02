@@ -10,7 +10,7 @@ const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function emptyState() {
-  return { employees: [], jobs: [], users: [], sessions: [] };
+  return { employees: [], jobs: [], users: [], sessions: [], calendarEvents: [] };
 }
 
 function ensureFile() {
@@ -29,6 +29,7 @@ function load() {
     if (!parsed.jobs) parsed.jobs = [];
     if (!parsed.users) parsed.users = [];
     if (!parsed.sessions) parsed.sessions = [];
+    if (!parsed.calendarEvents) parsed.calendarEvents = [];
     return parsed;
   } catch (e) {
     throw new Error('Data file is corrupted: ' + e.message);
@@ -324,6 +325,65 @@ function clientReport() {
   return Object.values(byClient).sort((a, b) => b.totalValue - a.totalValue);
 }
 
+// ---------- Calendar ----------
+// A shared team calendar — anyone signed in can see and add to it. Entries have a start date
+// and a duration; a multi-day duration makes the entry span forward across that many calendar
+// days, so a "2 days" entry added on the 5th also shows on the 6th.
+
+const DURATION_UNITS = ['hours', 'days'];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function addDaysToDateString(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+function listCalendarEvents() {
+  return load().calendarEvents.slice().sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+}
+
+function createCalendarEvent(input, user) {
+  const errors = [];
+  if (!input.date || !DATE_RE.test(input.date)) errors.push('A valid date is required');
+  const title = (input.title || '').trim();
+  if (!title) errors.push('A description of what you\'re doing is required');
+  const durationValue = Number(input.durationValue);
+  if (!durationValue || isNaN(durationValue) || durationValue <= 0) errors.push('Duration must be a positive number');
+  const durationUnit = DURATION_UNITS.includes(input.durationUnit) ? input.durationUnit : null;
+  if (!durationUnit) errors.push('Duration unit must be hours or days');
+  if (errors.length) throw new Error(errors.join('; '));
+
+  const spanDays = durationUnit === 'days' ? Math.max(1, Math.ceil(durationValue)) : 1;
+  const state = load();
+  const event = {
+    id: genId(),
+    userId: user.id,
+    userName: user.name,
+    date: input.date,
+    endDate: addDaysToDateString(input.date, spanDays - 1),
+    title,
+    durationValue,
+    durationUnit,
+    createdAt: new Date().toISOString(),
+  };
+  state.calendarEvents.push(event);
+  save(state);
+  return event;
+}
+
+function deleteCalendarEvent(id, user) {
+  const state = load();
+  const event = state.calendarEvents.find((e) => e.id === id);
+  if (!event) throw new Error('Calendar entry not found');
+  if (event.userId !== user.id && user.role !== 'admin') {
+    throw new Error('You can only delete your own calendar entries');
+  }
+  state.calendarEvents = state.calendarEvents.filter((e) => e.id !== id);
+  save(state);
+}
+
 // ---------- Auth ----------
 
 function sanitizeUser(user) {
@@ -427,4 +487,7 @@ module.exports = {
   deleteJobDocument,
   yearlyReport,
   clientReport,
+  listCalendarEvents,
+  createCalendarEvent,
+  deleteCalendarEvent,
 };

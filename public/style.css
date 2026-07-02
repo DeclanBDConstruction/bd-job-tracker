@@ -852,6 +852,183 @@ button:disabled {
   border-top: 3px solid var(--green);
 }
 
+/* ---------- Calendar ---------- */
+
+.calendar-nav {
+  align-items: center;
+}
+
+.cal-month-label {
+  font-weight: 700;
+  color: var(--blue-dark);
+  min-width: 150px;
+  text-align: center;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-align: center;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.cal-cell {
+  background: white;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  min-height: 92px;
+  padding: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cal-cell:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+
+.cal-cell-empty {
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+}
+
+.cal-cell-empty:hover {
+  box-shadow: none;
+  transform: none;
+}
+
+.cal-cell-date {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cal-cell-today {
+  border: 2px solid var(--blue);
+}
+
+.cal-cell-today .cal-cell-date {
+  color: var(--blue-dark);
+}
+
+.cal-cell-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.cal-chip {
+  font-size: 11px;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-chip-more {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.cal-day-events {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cal-day-event-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.cal-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.cal-day-event-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cal-day-event-title {
+  font-weight: 600;
+}
+
+.cal-day-event-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cal-day-event-delete {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+#calDayAddForm {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+#calDayAddForm label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+#calDayAddForm input, #calDayAddForm select {
+  font-weight: normal;
+  color: var(--text);
+}
+
+.duration-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.duration-row input {
+  width: 90px;
+}
+
+.duration-row select {
+  flex: 1 1 auto;
+}
+
 /* ---------- Risk Assessments ---------- */
 
 .ra-grid {

@@ -64,6 +64,7 @@
     <button class="tab-btn" data-tab="jobs">Jobs</button>
     <button class="tab-btn" data-tab="completed">Completed Jobs</button>
     <button class="tab-btn" data-tab="employees">Employees</button>
+    <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="risk">Risk Assessments</button>
     <button class="tab-btn" data-tab="reports">Yearly Reports</button>
     <button class="tab-btn" data-tab="clients">Client Report</button>
@@ -180,6 +181,24 @@
     </table>
   </section>
 
+  <!-- CALENDAR TAB -->
+  <section id="tab-calendar" class="tab-panel">
+    <div class="panel-header">
+      <h2>Calendar</h2>
+      <div class="filters calendar-nav">
+        <button type="button" id="calPrevBtn" title="Previous month">‹</button>
+        <span id="calMonthLabel" class="cal-month-label"></span>
+        <button type="button" id="calNextBtn" title="Next month">›</button>
+        <button type="button" id="calTodayBtn">Today</button>
+      </div>
+    </div>
+    <p class="hint">Click a date to see what's on and add what you're doing.</p>
+    <div class="calendar-weekdays">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+    <div class="calendar-grid" id="calendarGrid"></div>
+  </section>
+
   <!-- RISK ASSESSMENTS TAB -->
   <section id="tab-risk" class="tab-panel">
     <div class="panel-header">
@@ -257,6 +276,35 @@
       <div id="jobDetailSection-signoff" class="job-detail-section"></div>
       <div id="jobDetailSection-photos" class="job-detail-section"></div>
     </div>
+  </div>
+</div>
+
+<!-- Calendar Day Modal -->
+<div id="calDayModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2 id="calDayModalTitle">Calendar</h2>
+      <button type="button" id="calDayCloseBtn" class="link-btn">Close</button>
+    </div>
+    <ul class="cal-day-events" id="calDayEventsList"></ul>
+    <p class="empty-state" id="calDayEmptyState" hidden>Nothing scheduled for this day yet.</p>
+    <button type="button" id="calDayAddBtn">+ Add</button>
+    <form id="calDayAddForm" hidden>
+      <label>What are you doing? *<input type="text" id="calDayAddTitle" required placeholder="e.g. Site visit – Beehive Carlisle"></label>
+      <label>Duration *
+        <div class="duration-row">
+          <input type="number" id="calDayAddDurationValue" min="0.5" step="0.5" value="1" required>
+          <select id="calDayAddDurationUnit">
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+          </select>
+        </div>
+      </label>
+      <div class="modal-actions">
+        <button type="button" id="calDayAddCancelBtn">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
   </div>
 </div>
 

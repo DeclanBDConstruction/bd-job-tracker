@@ -222,6 +222,21 @@ app.post('/api/jobs/:id/risk-assessments/:raId/attach', handle((req, res) => {
   res.status(201).json(doc);
 }));
 
+// ---------- Calendar ----------
+
+app.get('/api/calendar', handle((req, res) => {
+  res.json(db.listCalendarEvents());
+}));
+
+app.post('/api/calendar', handle((req, res) => {
+  res.status(201).json(db.createCalendarEvent(req.body, req.user));
+}));
+
+app.delete('/api/calendar/:id', handle((req, res) => {
+  db.deleteCalendarEvent(req.params.id, req.user);
+  res.status(204).end();
+}));
+
 // ---------- Status list ----------
 
 app.get('/api/statuses', handle((req, res) => {

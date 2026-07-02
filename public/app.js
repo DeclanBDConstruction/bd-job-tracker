@@ -3,6 +3,8 @@ const state = {
   employees: [],
   statuses: [],
   riskAssessments: [],
+  calendarEvents: [],
+  currentUser: null,
 };
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,6 +36,7 @@ function showAuthScreen() {
 }
 
 function showApp(user) {
+  state.currentUser = user;
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
   document.getElementById('currentUserName').textContent = user.name;
@@ -144,22 +147,25 @@ document.getElementById('logoHomeBtn').addEventListener('click', () => goToTab('
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, calendarEvents] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
     api('/api/risk-assessments'),
+    api('/api/calendar'),
   ]);
   state.jobs = jobs;
   state.employees = employees;
   state.statuses = statuses;
   state.riskAssessments = riskAssessmentsList;
+  state.calendarEvents = calendarEvents;
   renderStatusOptions();
   renderEmployeeOptions();
   renderJobs();
   renderCompletedJobs();
   renderEmployees();
   renderRiskAssessments();
+  renderCalendar();
 }
 
 function renderStatusOptions() {
@@ -630,6 +636,170 @@ document.querySelector('#employeesTable tbody').addEventListener('click', async 
     state.employees = await api('/api/employees');
     renderEmployeeOptions();
     renderEmployees();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ---------- Calendar ----------
+
+function userColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return PIE_COLORS[hash % PIE_COLORS.length];
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function calDateStr(year, month, day) {
+  return `${year}-${pad2(month + 1)}-${pad2(day)}`;
+}
+
+function formatDuration(value, unit) {
+  const v = Number(value);
+  const label = unit === 'days' ? (v === 1 ? 'day' : 'days') : (v === 1 ? 'hour' : 'hours');
+  return `${v} ${label}`;
+}
+
+function eventsOnDate(ds) {
+  return state.calendarEvents.filter((e) => ds >= e.date && ds <= e.endDate);
+}
+
+const calToday = new Date();
+let calViewYear = calToday.getFullYear();
+let calViewMonth = calToday.getMonth();
+
+function renderCalendar() {
+  const grid = document.getElementById('calendarGrid');
+  const label = new Date(calViewYear, calViewMonth, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  document.getElementById('calMonthLabel').textContent = label;
+
+  const firstOfMonth = new Date(calViewYear, calViewMonth, 1);
+  const startWeekday = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
+  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+  const todayStr = calDateStr(calToday.getFullYear(), calToday.getMonth(), calToday.getDate());
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const MAX_CHIPS = 3;
+  grid.innerHTML = cells.map((d) => {
+    if (!d) return '<div class="cal-cell cal-cell-empty"></div>';
+    const ds = calDateStr(calViewYear, calViewMonth, d);
+    const dayEvents = eventsOnDate(ds);
+    const isToday = ds === todayStr;
+    const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => `
+      <div class="cal-chip" style="background:${userColor(e.userName)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatDuration(e.durationValue, e.durationUnit)})">${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}</div>
+    `).join('');
+    const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
+    return `
+      <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}">
+        <div class="cal-cell-date">${d}</div>
+        <div class="cal-cell-events">${chips}${more}</div>
+      </div>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
+    cell.addEventListener('click', () => openCalDayModal(cell.dataset.date));
+  });
+}
+
+document.getElementById('calPrevBtn').addEventListener('click', () => {
+  calViewMonth -= 1;
+  if (calViewMonth < 0) { calViewMonth = 11; calViewYear -= 1; }
+  renderCalendar();
+});
+
+document.getElementById('calNextBtn').addEventListener('click', () => {
+  calViewMonth += 1;
+  if (calViewMonth > 11) { calViewMonth = 0; calViewYear += 1; }
+  renderCalendar();
+});
+
+document.getElementById('calTodayBtn').addEventListener('click', () => {
+  calViewYear = calToday.getFullYear();
+  calViewMonth = calToday.getMonth();
+  renderCalendar();
+});
+
+const calDayModal = document.getElementById('calDayModal');
+const calDayAddForm = document.getElementById('calDayAddForm');
+let calSelectedDate = null;
+
+function openCalDayModal(ds) {
+  calSelectedDate = ds;
+  const [y, m, d] = ds.split('-').map(Number);
+  document.getElementById('calDayModalTitle').textContent = new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  renderCalDayEvents();
+  calDayAddForm.reset();
+  calDayAddForm.hidden = true;
+  document.getElementById('calDayAddBtn').hidden = false;
+  calDayModal.hidden = false;
+}
+
+function renderCalDayEvents() {
+  const events = eventsOnDate(calSelectedDate);
+  const list = document.getElementById('calDayEventsList');
+  list.innerHTML = events.map((e) => `
+    <li class="cal-day-event-item">
+      <span class="cal-swatch" style="background:${userColor(e.userName)}"></span>
+      <div class="cal-day-event-body">
+        <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
+        <div class="cal-day-event-meta">${escapeHtml(e.userName)} · ${formatDuration(e.durationValue, e.durationUnit)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
+      </div>
+      ${(state.currentUser && (state.currentUser.id === e.userId || state.currentUser.role === 'admin')) ? `<button type="button" class="danger cal-day-event-delete" data-id="${e.id}">Delete</button>` : ''}
+    </li>
+  `).join('');
+  document.getElementById('calDayEmptyState').hidden = events.length !== 0;
+
+  list.querySelectorAll('.cal-day-event-delete').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this calendar entry?')) return;
+      try {
+        await api(`/api/calendar/${btn.dataset.id}`, { method: 'DELETE' });
+        state.calendarEvents = await api('/api/calendar');
+        renderCalDayEvents();
+        renderCalendar();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('calDayCloseBtn').addEventListener('click', () => { calDayModal.hidden = true; });
+
+document.getElementById('calDayAddBtn').addEventListener('click', () => {
+  calDayAddForm.hidden = false;
+  document.getElementById('calDayAddBtn').hidden = true;
+  document.getElementById('calDayAddTitle').focus();
+});
+
+document.getElementById('calDayAddCancelBtn').addEventListener('click', () => {
+  calDayAddForm.reset();
+  calDayAddForm.hidden = true;
+  document.getElementById('calDayAddBtn').hidden = false;
+});
+
+calDayAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    date: calSelectedDate,
+    title: document.getElementById('calDayAddTitle').value,
+    durationValue: document.getElementById('calDayAddDurationValue').value,
+    durationUnit: document.getElementById('calDayAddDurationUnit').value,
+  };
+  try {
+    await api('/api/calendar', { method: 'POST', body: JSON.stringify(payload) });
+    state.calendarEvents = await api('/api/calendar');
+    calDayAddForm.reset();
+    calDayAddForm.hidden = true;
+    document.getElementById('calDayAddBtn').hidden = false;
+    renderCalDayEvents();
+    renderCalendar();
   } catch (err) {
     alert(err.message);
   }
