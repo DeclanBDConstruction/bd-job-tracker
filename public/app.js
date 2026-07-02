@@ -706,7 +706,7 @@ function renderCalendar() {
     const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
     return `
       <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}">
-        <div class="cal-cell-date">${d}</div>
+        <div class="cal-cell-date">${d}${isToday ? '<span class="cal-today-badge">Today</span>' : ''}</div>
         <div class="cal-cell-events">${chips}${more}</div>
       </div>
     `;
