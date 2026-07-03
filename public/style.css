@@ -363,7 +363,7 @@ input, select, textarea, button {
   font: inherit;
 }
 
-input[type="text"], input[type="number"], input[type="date"], select, textarea {
+input[type="text"], input[type="number"], input[type="date"], input[type="time"], select, textarea {
   padding: 9px 11px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -372,7 +372,7 @@ input[type="text"], input[type="number"], input[type="date"], select, textarea {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus,
+input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, input[type="time"]:focus,
 select:focus, textarea:focus {
   outline: none;
   border-color: var(--blue);
@@ -1187,13 +1187,13 @@ button:disabled {
   font-size: 12px;
 }
 
-#calDayAddForm {
+#calDayAddForm, #myCalDayAddForm {
   margin-top: 14px;
   border-top: 1px solid var(--border);
   padding-top: 14px;
 }
 
-#calDayAddForm label {
+#calDayAddForm label, #myCalDayAddForm label {
   display: block;
   margin-bottom: 14px;
   font-size: 13px;
@@ -1201,27 +1201,52 @@ button:disabled {
   color: var(--muted);
 }
 
-#calDayAddForm input, #calDayAddForm select {
+#calDayAddForm input, #calDayAddForm select, #myCalDayAddForm input, #myCalDayAddForm select {
   font-weight: normal;
   color: var(--text);
 }
 
-.duration-row {
+.time-range-row {
   display: flex;
-  gap: 8px;
-  margin-top: 5px;
+  align-items: flex-end;
+  gap: 14px;
+  margin: 5px 0 14px;
+  padding: 14px 16px;
+  background: var(--blue-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.duration-row input {
+.time-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-range-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.time-range-field input[type="time"] {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 8px 10px;
+}
+
+.time-range-field input[type="number"] {
   width: 90px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
-.duration-row input[type="time"] {
-  width: 110px;
-}
-
-.duration-row select {
-  flex: 1 1 auto;
+.time-range-sep {
+  color: var(--muted);
+  font-weight: 600;
+  padding-bottom: 10px;
 }
 
 /* ---------- Risk Assessments ---------- */
@@ -1668,6 +1693,9 @@ button:disabled {
   .modal { padding: 18px; }
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions button { width: 100%; }
+
+  .time-range-row { flex-wrap: wrap; }
+  .time-range-sep { display: none; }
 
   .job-detail-tabs { gap: 2px; }
   .job-detail-tab { padding: 8px 10px; font-size: 12px; }
