@@ -11,6 +11,24 @@ const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const uploadDocument = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
+// ---------- Live updates (Server-Sent Events) ----------
+// Every write in this file goes through this same server, so rather than watching Postgres
+// for changes, we just tell already-connected browsers "go re-fetch X" right after we save it.
+// Keeps the client dumb (still reads through the normal authenticated /api routes) and needs
+// no Supabase keys or realtime config exposed to the browser.
+
+const sseClients = new Set();
+
+function broadcast(type) {
+  const payload = `data: ${JSON.stringify({ type })}\n\n`;
+  for (const res of sseClients) res.write(payload);
+}
+
+// Proxies/browsers can silently drop an idle connection, so ping periodically to keep it open.
+setInterval(() => {
+  for (const res of sseClients) res.write(': ping\n\n');
+}, 20000);
+
 // ---------- Job documents (RAMS, drawings, sign-off sheets, photos) ----------
 // Files live in Supabase Storage under `${jobId}/${category}/${storedName}`; only
 // job_documents rows (metadata) live in Postgres.
@@ -120,6 +138,21 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ---------- Live updates (SSE) ----------
+
+app.get('/api/events', (req, res) => {
+  req.setTimeout(0);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('\n');
+  sseClients.add(res);
+  req.on('close', () => sseClients.delete(res));
+});
+
 // ---------- Users (admin) ----------
 
 app.get('/api/users', requireAdmin, handle(async (req, res) => {
@@ -127,7 +160,9 @@ app.get('/api/users', requireAdmin, handle(async (req, res) => {
 }));
 
 app.post('/api/users/:id/promote', requireAdmin, handle(async (req, res) => {
-  res.json(await db.promoteToAdmin(req.params.id));
+  const user = await db.promoteToAdmin(req.params.id);
+  broadcast('users');
+  res.json(user);
 }));
 
 // ---------- Employees ----------
@@ -137,15 +172,20 @@ app.get('/api/employees', handle(async (req, res) => {
 }));
 
 app.post('/api/employees', requireAdmin, handle(async (req, res) => {
-  res.status(201).json(await db.addEmployee(req.body.name));
+  const employee = await db.addEmployee(req.body.name);
+  broadcast('employees');
+  res.status(201).json(employee);
 }));
 
 app.put('/api/employees/:id', requireAdmin, handle(async (req, res) => {
-  res.json(await db.renameEmployee(req.params.id, req.body.name));
+  const employee = await db.renameEmployee(req.params.id, req.body.name);
+  broadcast('employees');
+  res.json(employee);
 }));
 
 app.delete('/api/employees/:id', requireAdmin, handle(async (req, res) => {
   await db.deleteEmployee(req.params.id);
+  broadcast('employees');
   res.status(204).end();
 }));
 
@@ -162,11 +202,15 @@ app.get('/api/jobs/:id', handle(async (req, res) => {
 }));
 
 app.post('/api/jobs', handle(async (req, res) => {
-  res.status(201).json(await db.createJob(req.body));
+  const job = await db.createJob(req.body);
+  broadcast('jobs');
+  res.status(201).json(job);
 }));
 
 app.put('/api/jobs/:id', handle(async (req, res) => {
-  res.json(await db.updateJob(req.params.id, req.body));
+  const job = await db.updateJob(req.params.id, req.body);
+  broadcast('jobs');
+  res.json(job);
 }));
 
 app.delete('/api/jobs/:id', requireAdmin, handle(async (req, res) => {
@@ -177,15 +221,20 @@ app.delete('/api/jobs/:id', requireAdmin, handle(async (req, res) => {
       job.documents[category].map((doc) => storagePath(req.params.id, category, doc.storedName)));
     if (paths.length) await supabase.storage.from(DOCUMENTS_BUCKET).remove(paths);
   }
+  broadcast('jobs');
   res.status(204).end();
 }));
 
 app.post('/api/jobs/:id/complete', handle(async (req, res) => {
-  res.json(await db.completeJob(req.params.id));
+  const job = await db.completeJob(req.params.id);
+  broadcast('jobs');
+  res.json(job);
 }));
 
 app.post('/api/jobs/:id/reopen', handle(async (req, res) => {
-  res.json(await db.reopenJob(req.params.id));
+  const job = await db.reopenJob(req.params.id);
+  broadcast('jobs');
+  res.json(job);
 }));
 
 app.post('/api/jobs/:id/documents/:category', validateDocumentParams, uploadDocument.single('file'), handle(async (req, res) => {
@@ -202,6 +251,7 @@ app.post('/api/jobs/:id/documents/:category', validateDocumentParams, uploadDocu
     storedName,
     size: req.file.size,
   });
+  broadcast('jobs');
   res.status(201).json(doc);
 }));
 
@@ -221,6 +271,7 @@ app.delete('/api/jobs/:id/documents/:category/:docId', validateDocumentParams, h
   const doc = await db.deleteJobDocument(req.params.id, req.params.category, req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath(req.params.id, req.params.category, doc.storedName)]);
+  broadcast('jobs');
   res.status(204).end();
 }));
 
@@ -258,6 +309,7 @@ app.post('/api/jobs/:id/risk-assessments/:raId/attach', handle(async (req, res) 
     storedName,
     size: Buffer.byteLength(html),
   });
+  broadcast('jobs');
   res.status(201).json(doc);
 }));
 
@@ -268,11 +320,14 @@ app.get('/api/calendar', handle(async (req, res) => {
 }));
 
 app.post('/api/calendar', handle(async (req, res) => {
-  res.status(201).json(await db.createCalendarEvent(req.body, req.user));
+  const event = await db.createCalendarEvent(req.body, req.user);
+  broadcast('calendar');
+  res.status(201).json(event);
 }));
 
 app.delete('/api/calendar/:id', handle(async (req, res) => {
   await db.deleteCalendarEvent(req.params.id, req.user);
+  broadcast('calendar');
   res.status(204).end();
 }));
 

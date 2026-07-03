@@ -33,6 +33,7 @@ async function api(path, options = {}) {
 // ---------- Auth ----------
 
 function showAuthScreen() {
+  disconnectLiveUpdates();
   document.getElementById('appShell').hidden = true;
   document.getElementById('authScreen').hidden = false;
 }
@@ -48,6 +49,64 @@ function showApp(user) {
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
   document.querySelector('.topbar h1 .brand-sub').classList.add('animate-in');
   bootstrap();
+  connectLiveUpdates();
+}
+
+// ---------- Live updates ----------
+// The server pushes a tiny "type X changed" ping over SSE whenever anyone saves something;
+// we just re-fetch that slice of data through the normal API and re-render in place, so
+// everyone's screen stays current without needing to hit refresh.
+
+let liveEvents = null;
+
+function activeTab() {
+  const btn = document.querySelector('.tab-btn.active');
+  return btn ? btn.dataset.tab : null;
+}
+
+function connectLiveUpdates() {
+  if (liveEvents) return;
+  liveEvents = new EventSource('/api/events');
+  liveEvents.onmessage = (e) => {
+    const { type } = JSON.parse(e.data);
+    if (type === 'jobs') handleLiveJobsChange();
+    else if (type === 'employees') handleLiveEmployeesChange();
+    else if (type === 'calendar') handleLiveCalendarChange();
+    else if (type === 'users' && activeTab() === 'admin') loadAdminUsers();
+  };
+}
+
+function disconnectLiveUpdates() {
+  if (liveEvents) {
+    liveEvents.close();
+    liveEvents = null;
+  }
+}
+
+async function handleLiveJobsChange() {
+  state.jobs = await api('/api/jobs');
+  renderJobs();
+  renderCompletedJobs();
+  renderEmployees();
+  renderHomeDashboard();
+  if (currentDetailJobId && !jobDetailModal.hidden) refreshJobDetail();
+  if (activeTab() === 'reports') loadReports();
+  if (activeTab() === 'clients') loadClients();
+}
+
+async function handleLiveEmployeesChange() {
+  state.employees = await api('/api/employees');
+  renderEmployeeOptions();
+  renderEmployees();
+  renderJobs();
+  renderCompletedJobs();
+}
+
+async function handleLiveCalendarChange() {
+  state.calendarEvents = await api('/api/calendar');
+  renderCalendar();
+  renderHomeDashboard();
+  if (calSelectedDate && !calDayModal.hidden) renderCalDayEvents();
 }
 
 async function checkAuth() {
