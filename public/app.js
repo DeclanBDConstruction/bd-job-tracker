@@ -262,6 +262,8 @@ async function bootstrap() {
     renderHomeDashboard();
   } catch (err) {
     console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
+    const container = document.getElementById('calColorPicker');
+    if (container) container.innerHTML = `<span class="color-picker-error">Couldn't load colours: ${escapeHtml(err.message)}</span>`;
   }
 }
 
