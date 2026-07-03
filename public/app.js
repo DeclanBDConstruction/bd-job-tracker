@@ -108,7 +108,8 @@ async function handleLiveCalendarChange() {
   state.calendarEvents = await api('/api/calendar');
   renderCalendar();
   renderHomeDashboard();
-  if (calSelectedDate && !calDayModal.hidden) renderCalDayEvents();
+  teamCalendar.refreshIfOpen();
+  myCalendar.refreshIfOpen();
 }
 
 // Covers both admin promotions and calendar-colour picks - either way, everyone's picker
@@ -119,7 +120,8 @@ async function handleLiveUsersChange() {
     renderCalendar();
     renderColorPicker();
     renderHomeDashboard();
-    if (calSelectedDate && !calDayModal.hidden) renderCalDayEvents();
+    teamCalendar.refreshIfOpen();
+    myCalendar.refreshIfOpen();
   } catch (err) {
     console.warn('Calendar colours unavailable:', err.message);
   }
@@ -775,50 +777,192 @@ function formatDuration(value, unit) {
   return `${v} ${label}`;
 }
 
+// Public/team events, visible to everyone. Excludes private entries - even your own -
+// since those only ever appear on your own "My Calendar" view (see createCalendarView below).
 function eventsOnDate(ds) {
-  return state.calendarEvents.filter((e) => ds >= e.date && ds <= e.endDate);
+  return state.calendarEvents.filter((e) => !e.isPrivate && ds >= e.date && ds <= e.endDate);
 }
 
 const calToday = new Date();
-let calViewYear = calToday.getFullYear();
-let calViewMonth = calToday.getMonth();
+
+// Builds one calendar (month grid + day modal + add form) wired to its own set of DOM ids.
+// Used once for the shared team calendar and once for the private "My Calendar" - same
+// month-grid/day-modal behaviour, just scoped to a different slice of state.calendarEvents.
+function createCalendarView({ scope, ids }) {
+  let viewYear = calToday.getFullYear();
+  let viewMonth = calToday.getMonth();
+  let selectedDate = null;
+
+  function eventsOnDate(ds) {
+    return state.calendarEvents.filter((e) => {
+      if (scope === 'private' ? !e.isPrivate : e.isPrivate) return false;
+      return ds >= e.date && ds <= e.endDate;
+    });
+  }
+
+  function render() {
+    const grid = document.getElementById(ids.grid);
+    const label = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    document.getElementById(ids.monthLabel).textContent = label;
+
+    const firstOfMonth = new Date(viewYear, viewMonth, 1);
+    const startWeekday = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const todayStr = calDateStr(calToday.getFullYear(), calToday.getMonth(), calToday.getDate());
+
+    const cells = [];
+    for (let i = 0; i < startWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const MAX_CHIPS = 3;
+    grid.innerHTML = cells.map((d) => {
+      if (!d) return '<div class="cal-cell cal-cell-empty"></div>';
+      const ds = calDateStr(viewYear, viewMonth, d);
+      const dayEvents = eventsOnDate(ds);
+      const isToday = ds === todayStr;
+      const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => `
+        <div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatDuration(e.durationValue, e.durationUnit)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>
+      `).join('');
+      const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
+      return `
+        <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}">
+          <div class="cal-cell-date">${d}${isToday ? '<span class="cal-today-badge">Today</span>' : ''}</div>
+          <div class="cal-cell-events">${chips}${more}</div>
+        </div>
+      `;
+    }).join('');
+
+    grid.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
+      cell.addEventListener('click', () => openDayModal(cell.dataset.date));
+    });
+  }
+
+  function openDayModal(ds) {
+    selectedDate = ds;
+    const [y, m, d] = ds.split('-').map(Number);
+    document.getElementById(ids.modalTitle).textContent = new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    renderDayEvents();
+    document.getElementById(ids.addForm).reset();
+    document.getElementById(ids.addForm).hidden = true;
+    document.getElementById(ids.addBtn).hidden = false;
+    document.getElementById(ids.modal).hidden = false;
+  }
+
+  function renderDayEvents() {
+    const events = eventsOnDate(selectedDate);
+    const list = document.getElementById(ids.eventsList);
+    list.innerHTML = events.map((e) => `
+      <li class="cal-day-event-item">
+        <span class="cal-swatch" style="background:${userColor(e)}"></span>
+        <div class="cal-day-event-body">
+          <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
+          <div class="cal-day-event-meta">${scope === 'private' ? '' : `${escapeHtml(e.userName)} · `}${formatDuration(e.durationValue, e.durationUnit)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
+        </div>
+        ${(state.currentUser && (state.currentUser.id === e.userId || state.currentUser.role === 'admin')) ? `<button type="button" class="danger cal-day-event-delete" data-id="${e.id}">Delete</button>` : ''}
+      </li>
+    `).join('');
+    document.getElementById(ids.emptyState).hidden = events.length !== 0;
+
+    list.querySelectorAll('.cal-day-event-delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this calendar entry?')) return;
+        try {
+          await api(`/api/calendar/${btn.dataset.id}`, { method: 'DELETE' });
+          state.calendarEvents = await api('/api/calendar');
+          renderDayEvents();
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+  }
+
+  document.getElementById(ids.prevBtn).addEventListener('click', () => {
+    viewMonth -= 1;
+    if (viewMonth < 0) { viewMonth = 11; viewYear -= 1; }
+    render();
+  });
+
+  document.getElementById(ids.nextBtn).addEventListener('click', () => {
+    viewMonth += 1;
+    if (viewMonth > 11) { viewMonth = 0; viewYear += 1; }
+    render();
+  });
+
+  document.getElementById(ids.todayBtn).addEventListener('click', () => {
+    viewYear = calToday.getFullYear();
+    viewMonth = calToday.getMonth();
+    render();
+  });
+
+  document.getElementById(ids.closeBtn).addEventListener('click', () => { document.getElementById(ids.modal).hidden = true; });
+
+  document.getElementById(ids.addBtn).addEventListener('click', () => {
+    document.getElementById(ids.addForm).hidden = false;
+    document.getElementById(ids.addBtn).hidden = true;
+    document.getElementById(ids.addTitle).focus();
+  });
+
+  document.getElementById(ids.addCancelBtn).addEventListener('click', () => {
+    document.getElementById(ids.addForm).reset();
+    document.getElementById(ids.addForm).hidden = true;
+    document.getElementById(ids.addBtn).hidden = false;
+  });
+
+  document.getElementById(ids.addForm).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      date: selectedDate,
+      title: document.getElementById(ids.addTitle).value,
+      durationValue: document.getElementById(ids.addDurationValue).value,
+      durationUnit: document.getElementById(ids.addDurationUnit).value,
+      isPrivate: scope === 'private',
+    };
+    try {
+      await api('/api/calendar', { method: 'POST', body: JSON.stringify(payload) });
+      state.calendarEvents = await api('/api/calendar');
+      document.getElementById(ids.addForm).reset();
+      document.getElementById(ids.addForm).hidden = true;
+      document.getElementById(ids.addBtn).hidden = false;
+      renderDayEvents();
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  function refreshIfOpen() {
+    if (selectedDate && !document.getElementById(ids.modal).hidden) renderDayEvents();
+  }
+
+  return { render, openDayModal, refreshIfOpen };
+}
+
+const teamCalendar = createCalendarView({
+  scope: 'team',
+  ids: {
+    grid: 'calendarGrid', monthLabel: 'calMonthLabel', prevBtn: 'calPrevBtn', nextBtn: 'calNextBtn', todayBtn: 'calTodayBtn',
+    modal: 'calDayModal', modalTitle: 'calDayModalTitle', closeBtn: 'calDayCloseBtn', eventsList: 'calDayEventsList',
+    emptyState: 'calDayEmptyState', addBtn: 'calDayAddBtn', addForm: 'calDayAddForm', addTitle: 'calDayAddTitle',
+    addDurationValue: 'calDayAddDurationValue', addDurationUnit: 'calDayAddDurationUnit', addCancelBtn: 'calDayAddCancelBtn',
+  },
+});
+
+const myCalendar = createCalendarView({
+  scope: 'private',
+  ids: {
+    grid: 'myCalendarGrid', monthLabel: 'myCalMonthLabel', prevBtn: 'myCalPrevBtn', nextBtn: 'myCalNextBtn', todayBtn: 'myCalTodayBtn',
+    modal: 'myCalDayModal', modalTitle: 'myCalDayModalTitle', closeBtn: 'myCalDayCloseBtn', eventsList: 'myCalDayEventsList',
+    emptyState: 'myCalDayEmptyState', addBtn: 'myCalDayAddBtn', addForm: 'myCalDayAddForm', addTitle: 'myCalDayAddTitle',
+    addDurationValue: 'myCalDayAddDurationValue', addDurationUnit: 'myCalDayAddDurationUnit', addCancelBtn: 'myCalDayAddCancelBtn',
+  },
+});
 
 function renderCalendar() {
-  const grid = document.getElementById('calendarGrid');
-  const label = new Date(calViewYear, calViewMonth, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  document.getElementById('calMonthLabel').textContent = label;
-
-  const firstOfMonth = new Date(calViewYear, calViewMonth, 1);
-  const startWeekday = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
-  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
-  const todayStr = calDateStr(calToday.getFullYear(), calToday.getMonth(), calToday.getDate());
-
-  const cells = [];
-  for (let i = 0; i < startWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const MAX_CHIPS = 3;
-  grid.innerHTML = cells.map((d) => {
-    if (!d) return '<div class="cal-cell cal-cell-empty"></div>';
-    const ds = calDateStr(calViewYear, calViewMonth, d);
-    const dayEvents = eventsOnDate(ds);
-    const isToday = ds === todayStr;
-    const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => `
-      <div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatDuration(e.durationValue, e.durationUnit)})">${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}</div>
-    `).join('');
-    const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
-    return `
-      <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}">
-        <div class="cal-cell-date">${d}${isToday ? '<span class="cal-today-badge">Today</span>' : ''}</div>
-        <div class="cal-cell-events">${chips}${more}</div>
-      </div>
-    `;
-  }).join('');
-
-  grid.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
-    cell.addEventListener('click', () => openCalDayModal(cell.dataset.date));
-  });
+  teamCalendar.render();
+  myCalendar.render();
 }
 
 // Ten fixed colours, one person per colour (server enforces this - see
@@ -857,104 +1001,6 @@ function renderColorPicker() {
     });
   });
 }
-
-document.getElementById('calPrevBtn').addEventListener('click', () => {
-  calViewMonth -= 1;
-  if (calViewMonth < 0) { calViewMonth = 11; calViewYear -= 1; }
-  renderCalendar();
-});
-
-document.getElementById('calNextBtn').addEventListener('click', () => {
-  calViewMonth += 1;
-  if (calViewMonth > 11) { calViewMonth = 0; calViewYear += 1; }
-  renderCalendar();
-});
-
-document.getElementById('calTodayBtn').addEventListener('click', () => {
-  calViewYear = calToday.getFullYear();
-  calViewMonth = calToday.getMonth();
-  renderCalendar();
-});
-
-const calDayModal = document.getElementById('calDayModal');
-const calDayAddForm = document.getElementById('calDayAddForm');
-let calSelectedDate = null;
-
-function openCalDayModal(ds) {
-  calSelectedDate = ds;
-  const [y, m, d] = ds.split('-').map(Number);
-  document.getElementById('calDayModalTitle').textContent = new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  renderCalDayEvents();
-  calDayAddForm.reset();
-  calDayAddForm.hidden = true;
-  document.getElementById('calDayAddBtn').hidden = false;
-  calDayModal.hidden = false;
-}
-
-function renderCalDayEvents() {
-  const events = eventsOnDate(calSelectedDate);
-  const list = document.getElementById('calDayEventsList');
-  list.innerHTML = events.map((e) => `
-    <li class="cal-day-event-item">
-      <span class="cal-swatch" style="background:${userColor(e)}"></span>
-      <div class="cal-day-event-body">
-        <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
-        <div class="cal-day-event-meta">${escapeHtml(e.userName)} · ${formatDuration(e.durationValue, e.durationUnit)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
-      </div>
-      ${(state.currentUser && (state.currentUser.id === e.userId || state.currentUser.role === 'admin')) ? `<button type="button" class="danger cal-day-event-delete" data-id="${e.id}">Delete</button>` : ''}
-    </li>
-  `).join('');
-  document.getElementById('calDayEmptyState').hidden = events.length !== 0;
-
-  list.querySelectorAll('.cal-day-event-delete').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this calendar entry?')) return;
-      try {
-        await api(`/api/calendar/${btn.dataset.id}`, { method: 'DELETE' });
-        state.calendarEvents = await api('/api/calendar');
-        renderCalDayEvents();
-        renderCalendar();
-      } catch (err) {
-        alert(err.message);
-      }
-    });
-  });
-}
-
-document.getElementById('calDayCloseBtn').addEventListener('click', () => { calDayModal.hidden = true; });
-
-document.getElementById('calDayAddBtn').addEventListener('click', () => {
-  calDayAddForm.hidden = false;
-  document.getElementById('calDayAddBtn').hidden = true;
-  document.getElementById('calDayAddTitle').focus();
-});
-
-document.getElementById('calDayAddCancelBtn').addEventListener('click', () => {
-  calDayAddForm.reset();
-  calDayAddForm.hidden = true;
-  document.getElementById('calDayAddBtn').hidden = false;
-});
-
-calDayAddForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const payload = {
-    date: calSelectedDate,
-    title: document.getElementById('calDayAddTitle').value,
-    durationValue: document.getElementById('calDayAddDurationValue').value,
-    durationUnit: document.getElementById('calDayAddDurationUnit').value,
-  };
-  try {
-    await api('/api/calendar', { method: 'POST', body: JSON.stringify(payload) });
-    state.calendarEvents = await api('/api/calendar');
-    calDayAddForm.reset();
-    calDayAddForm.hidden = true;
-    document.getElementById('calDayAddBtn').hidden = false;
-    renderCalDayEvents();
-    renderCalendar();
-  } catch (err) {
-    alert(err.message);
-  }
-});
 
 // ---------- Home Dashboard ----------
 
@@ -1021,7 +1067,7 @@ function renderHomeDashboard() {
 
   document.getElementById('homeGoCalendarBtn').addEventListener('click', () => {
     goToTab('calendar');
-    openCalDayModal(todayStr);
+    teamCalendar.openDayModal(todayStr);
   });
 
   container.querySelectorAll('.home-rams-btn').forEach((btn) => {

@@ -378,7 +378,8 @@ async function clientReport() {
 }
 
 // ---------- Calendar ----------
-// A shared team calendar - anyone signed in can see and add to it. Entries have a start date
+// A shared team calendar - anyone signed in can see and add to it - plus private entries
+// that only their owner can ever see (is_private = true). Entries have a start date
 // and a duration; a multi-day duration makes the entry span forward across that many calendar
 // days, so a "2 days" entry added on the 5th also shows on the 6th.
 
@@ -402,12 +403,17 @@ function rowToEvent(row) {
     title: row.title,
     durationValue: Number(row.duration_value),
     durationUnit: row.duration_unit,
+    isPrivate: row.is_private,
     createdAt: row.created_at,
   };
 }
 
-async function listCalendarEvents() {
-  const { data, error } = await supabase.from('calendar_events').select('*').order('date').order('created_at');
+// Returns public entries plus this user's own private ones - never another user's private
+// entries, since those only ever belong on that person's own "My Calendar".
+async function listCalendarEvents(user) {
+  const { data, error } = await supabase.from('calendar_events').select('*')
+    .or(`is_private.eq.false,user_id.eq.${user.id}`)
+    .order('date').order('created_at');
   check(error);
   return data.map(rowToEvent);
 }
@@ -433,6 +439,7 @@ async function createCalendarEvent(input, user) {
     title,
     duration_value: durationValue,
     duration_unit: durationUnit,
+    is_private: !!input.isPrivate,
     created_at: new Date().toISOString(),
   };
   const { data, error } = await supabase.from('calendar_events').insert(row).select().single();

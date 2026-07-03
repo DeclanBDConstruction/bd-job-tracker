@@ -332,7 +332,7 @@ app.post('/api/jobs/:id/risk-assessments/:raId/attach', handle(async (req, res) 
 // ---------- Calendar ----------
 
 app.get('/api/calendar', handle(async (req, res) => {
-  res.json(await db.listCalendarEvents());
+  res.json(await db.listCalendarEvents(req.user));
 }));
 
 app.post('/api/calendar', handle(async (req, res) => {

@@ -68,6 +68,7 @@
     <button class="tab-btn" data-tab="completed">Completed Jobs</button>
     <button class="tab-btn" data-tab="employees">Employees</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
+    <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
     <button class="tab-btn" data-tab="risk">Risk Assessments</button>
     <button class="tab-btn" data-tab="reports">Yearly Reports</button>
     <button class="tab-btn" data-tab="clients">Client Report</button>
@@ -208,6 +209,24 @@
     <div class="calendar-grid" id="calendarGrid"></div>
   </section>
 
+  <!-- MY CALENDAR TAB -->
+  <section id="tab-mycalendar" class="tab-panel">
+    <div class="panel-header">
+      <h2>My Calendar</h2>
+      <div class="filters calendar-nav">
+        <button type="button" id="myCalPrevBtn" title="Previous month">‹</button>
+        <span id="myCalMonthLabel" class="cal-month-label"></span>
+        <button type="button" id="myCalNextBtn" title="Next month">›</button>
+        <button type="button" id="myCalTodayBtn">Today</button>
+      </div>
+    </div>
+    <p class="hint">Private to you — nobody else can see what's on here. Click a date to add or view your own entries.</p>
+    <div class="calendar-weekdays">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+    <div class="calendar-grid" id="myCalendarGrid"></div>
+  </section>
+
   <!-- RISK ASSESSMENTS TAB -->
   <section id="tab-risk" class="tab-panel">
     <div class="panel-header">
@@ -323,6 +342,35 @@
       </label>
       <div class="modal-actions">
         <button type="button" id="calDayAddCancelBtn">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- My Calendar Day Modal -->
+<div id="myCalDayModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2 id="myCalDayModalTitle">My Calendar</h2>
+      <button type="button" id="myCalDayCloseBtn" class="link-btn">Close</button>
+    </div>
+    <ul class="cal-day-events" id="myCalDayEventsList"></ul>
+    <p class="empty-state" id="myCalDayEmptyState" hidden>Nothing on your private calendar for this day yet.</p>
+    <button type="button" id="myCalDayAddBtn">+ Add</button>
+    <form id="myCalDayAddForm" hidden>
+      <label>What are you doing? *<input type="text" id="myCalDayAddTitle" required placeholder="e.g. Dentist appointment"></label>
+      <label>Duration *
+        <div class="duration-row">
+          <input type="number" id="myCalDayAddDurationValue" min="0.5" step="0.5" value="1" required>
+          <select id="myCalDayAddDurationUnit">
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+          </select>
+        </div>
+      </label>
+      <div class="modal-actions">
+        <button type="button" id="myCalDayAddCancelBtn">Cancel</button>
         <button type="submit" class="primary">Save</button>
       </div>
     </form>
