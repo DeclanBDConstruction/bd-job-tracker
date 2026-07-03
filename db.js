@@ -1,140 +1,157 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-
-const DATA_DIR = path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'db.json');
+const { supabase } = require('./supabaseClient');
 
 const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 'Cancelled'];
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-function emptyState() {
-  return { employees: [], jobs: [], users: [], sessions: [], calendarEvents: [] };
-}
-
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(emptyState(), null, 2));
-  }
-}
-
-function load() {
-  ensureFile();
-  const raw = fs.readFileSync(DATA_FILE, 'utf8');
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed.employees) parsed.employees = [];
-    if (!parsed.jobs) parsed.jobs = [];
-    if (!parsed.users) parsed.users = [];
-    if (!parsed.sessions) parsed.sessions = [];
-    if (!parsed.calendarEvents) parsed.calendarEvents = [];
-    return parsed;
-  } catch (e) {
-    throw new Error('Data file is corrupted: ' + e.message);
-  }
-}
-
-function save(state) {
-  // Write to a temp file then rename, so a crash mid-write can't corrupt db.json
-  const tmpFile = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2));
-  fs.renameSync(tmpFile, DATA_FILE);
-}
+const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'signoff', 'photos'];
+const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', signoff: 'Sign-off sheet', photos: 'Photos' };
 
 function genId() {
   return crypto.randomUUID();
 }
 
+function check(error) {
+  if (error) throw new Error(error.message);
+}
+
 // ---------- Employees ----------
 
-function listEmployees() {
-  return load().employees.sort((a, b) => a.name.localeCompare(b.name));
+async function listEmployees() {
+  const { data, error } = await supabase.from('employees').select('*').order('name');
+  check(error);
+  return data;
 }
 
-function findEmployeeByName(state, name) {
+async function findEmployeeByName(name) {
   const norm = name.trim().toLowerCase();
-  return state.employees.find((e) => e.name.trim().toLowerCase() === norm);
+  const { data, error } = await supabase.from('employees').select('*');
+  check(error);
+  return data.find((e) => e.name.trim().toLowerCase() === norm) || null;
 }
 
-function getOrCreateEmployee(state, name) {
+async function getOrCreateEmployee(name) {
   const clean = (name || '').trim();
   if (!clean) return null;
-  let emp = findEmployeeByName(state, clean);
-  if (!emp) {
-    emp = { id: genId(), name: clean };
-    state.employees.push(emp);
-  }
-  return emp;
+  const existing = await findEmployeeByName(clean);
+  if (existing) return existing;
+  const { data, error } = await supabase.from('employees').insert({ id: genId(), name: clean }).select().single();
+  check(error);
+  return data;
 }
 
-function addEmployee(name) {
-  const state = load();
+async function addEmployee(name) {
   const clean = (name || '').trim();
   if (!clean) throw new Error('Employee name is required');
-  if (findEmployeeByName(state, clean)) throw new Error('Employee already exists');
-  const emp = { id: genId(), name: clean };
-  state.employees.push(emp);
-  save(state);
-  return emp;
+  if (await findEmployeeByName(clean)) throw new Error('Employee already exists');
+  const { data, error } = await supabase.from('employees').insert({ id: genId(), name: clean }).select().single();
+  check(error);
+  return data;
 }
 
-function renameEmployee(id, name) {
-  const state = load();
-  const emp = state.employees.find((e) => e.id === id);
-  if (!emp) throw new Error('Employee not found');
+async function renameEmployee(id, name) {
   const clean = (name || '').trim();
   if (!clean) throw new Error('Employee name is required');
-  emp.name = clean;
-  save(state);
-  return emp;
+  const { data, error } = await supabase.from('employees').update({ name: clean }).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Employee not found');
+  return data;
 }
 
-function deleteEmployee(id) {
-  const state = load();
-  const inUse = state.jobs.some((j) => j.employeeId === id);
-  if (inUse) throw new Error('Cannot delete an employee who has jobs assigned. Reassign those jobs first.');
-  state.employees = state.employees.filter((e) => e.id !== id);
-  save(state);
+async function deleteEmployee(id) {
+  const { data: inUse, error: jobsErr } = await supabase.from('jobs').select('id').eq('employee_id', id).limit(1);
+  check(jobsErr);
+  if (inUse.length) throw new Error('Cannot delete an employee who has jobs assigned. Reassign those jobs first.');
+  const { error } = await supabase.from('employees').delete().eq('id', id);
+  check(error);
 }
 
 // ---------- Jobs ----------
 
-const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'signoff', 'photos'];
-
-// Jobs created before documents existed won't have this field yet, so backfill it in memory
-// on every read rather than requiring a one-off migration.
-function ensureDocuments(job) {
-  if (!job.documents) job.documents = {};
-  DOCUMENT_CATEGORIES.forEach((c) => { if (!job.documents[c]) job.documents[c] = []; });
-  return job;
-}
-
 // Status (Won/In Progress/Complete/...) tracks the commercial side and is set by hand.
 // Progress is a separate, derived signal for where the job is on site: not started yet,
-// actively underway once the Start Date arrives, or completed — but completed only happens
+// actively underway once the Start Date arrives, or completed - but completed only happens
 // when someone explicitly closes the job down (completeJob), never automatically just
 // because a date has passed or Status changed.
-function computeProgress(job) {
-  if (job.completedAt) return 'completed';
+function computeProgress(row) {
+  if (row.completed_at) return 'completed';
   const today = new Date().toISOString().slice(0, 10);
-  if (job.startDate && job.startDate <= today) return 'active';
+  if (row.start_date && row.start_date <= today) return 'active';
   return 'not-started';
 }
 
-function listJobs() {
-  const state = load();
-  const empById = Object.fromEntries(state.employees.map((e) => [e.id, e.name]));
-  return state.jobs
-    .map((j) => ({ ...ensureDocuments(j), employeeName: empById[j.employeeId] || '(unassigned)', progress: computeProgress(j) }))
-    .sort((a, b) => (b.dateWon || '').localeCompare(a.dateWon || ''));
+function rowToJob(row, empNameById) {
+  return {
+    id: row.id,
+    jobReference: row.job_reference,
+    client: row.client,
+    location: row.location || '',
+    employeeId: row.employee_id,
+    employeeName: (empNameById && empNameById[row.employee_id]) || '(unassigned)',
+    value: Number(row.value) || 0,
+    profit: Number(row.profit) || 0,
+    status: row.status,
+    dateWon: row.date_won,
+    startDate: row.start_date || '',
+    description: row.description || '',
+    completedAt: row.completed_at || '',
+    documents: { rams: [], drawings: [], signoff: [], photos: [] },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    progress: computeProgress(row),
+  };
 }
 
-function getJob(id) {
-  const state = load();
-  const job = state.jobs.find((j) => j.id === id);
-  return job ? ensureDocuments(job) : job;
+function rowToDocument(row) {
+  return {
+    id: row.id,
+    originalName: row.original_name,
+    storedName: row.stored_name,
+    size: row.size,
+    uploadedAt: row.uploaded_at,
+  };
+}
+
+async function attachDocuments(jobs) {
+  if (!jobs.length) return jobs;
+  const { data: docs, error } = await supabase.from('job_documents').select('*').in('job_id', jobs.map((j) => j.id));
+  check(error);
+  const byJob = {};
+  for (const d of docs) {
+    if (!byJob[d.job_id]) byJob[d.job_id] = { rams: [], drawings: [], signoff: [], photos: [] };
+    byJob[d.job_id][d.category].push(rowToDocument(d));
+  }
+  jobs.forEach((j) => { j.documents = byJob[j.id] || { rams: [], drawings: [], signoff: [], photos: [] }; });
+  return jobs;
+}
+
+async function employeeNameMap() {
+  const { data, error } = await supabase.from('employees').select('*');
+  check(error);
+  return Object.fromEntries(data.map((e) => [e.id, e.name]));
+}
+
+async function listJobs() {
+  const [{ data: rows, error }, empNameById] = await Promise.all([
+    supabase.from('jobs').select('*'),
+    employeeNameMap(),
+  ]);
+  check(error);
+  const jobs = rows.map((r) => rowToJob(r, empNameById));
+  await attachDocuments(jobs);
+  return jobs.sort((a, b) => (b.dateWon || '').localeCompare(a.dateWon || ''));
+}
+
+async function getJob(id) {
+  const [{ data: row, error }, empNameById] = await Promise.all([
+    supabase.from('jobs').select('*').eq('id', id).maybeSingle(),
+    employeeNameMap(),
+  ]);
+  check(error);
+  if (!row) return null;
+  const job = rowToJob(row, empNameById);
+  await attachDocuments([job]);
+  return job;
 }
 
 function validateJobInput(input) {
@@ -147,153 +164,153 @@ function validateJobInput(input) {
   return errors;
 }
 
-function createJob(input) {
+async function createJob(input) {
   const errors = validateJobInput(input);
   if (errors.length) throw new Error(errors.join('; '));
-  const state = load();
-  const emp = getOrCreateEmployee(state, input.employeeName);
-  const job = {
+  const emp = await getOrCreateEmployee(input.employeeName);
+  const now = new Date().toISOString();
+  const row = {
     id: genId(),
-    jobReference: (input.jobReference || '').trim() || null,
+    job_reference: (input.jobReference || '').trim() || null,
     client: input.client.trim(),
     location: (input.location || '').trim(),
-    employeeId: emp.id,
+    employee_id: emp.id,
     value: Number(input.value) || 0,
     profit: input.profit === undefined || input.profit === null || input.profit === '' ? 0 : Number(input.profit),
     status: input.status && input.status.trim() ? input.status.trim() : 'Won',
-    dateWon: input.dateWon,
-    startDate: (input.startDate || '').trim(),
+    date_won: input.dateWon,
+    start_date: (input.startDate || '').trim(),
     description: (input.description || '').trim(),
-    completedAt: '',
-    documents: { rams: [], drawings: [], signoff: [], photos: [] },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    completed_at: '',
+    created_at: now,
+    updated_at: now,
   };
-  state.jobs.push(job);
-  save(state);
-  return job;
+  const { data, error } = await supabase.from('jobs').insert(row).select().single();
+  check(error);
+  return rowToJob(data, { [emp.id]: emp.name });
 }
 
-function updateJob(id, input) {
+async function updateJob(id, input) {
   const errors = validateJobInput(input);
   if (errors.length) throw new Error(errors.join('; '));
-  const state = load();
-  const job = state.jobs.find((j) => j.id === id);
-  if (!job) throw new Error('Job not found');
-  const emp = getOrCreateEmployee(state, input.employeeName);
-  job.jobReference = (input.jobReference || '').trim() || null;
-  job.client = input.client.trim();
-  job.location = (input.location || '').trim();
-  job.employeeId = emp.id;
-  job.value = Number(input.value) || 0;
-  job.profit = input.profit === undefined || input.profit === null || input.profit === '' ? 0 : Number(input.profit);
-  job.status = input.status && input.status.trim() ? input.status.trim() : 'Won';
-  job.dateWon = input.dateWon;
-  job.startDate = (input.startDate || '').trim();
-  job.description = (input.description || '').trim();
-  job.updatedAt = new Date().toISOString();
-  save(state);
+  const emp = await getOrCreateEmployee(input.employeeName);
+  const row = {
+    job_reference: (input.jobReference || '').trim() || null,
+    client: input.client.trim(),
+    location: (input.location || '').trim(),
+    employee_id: emp.id,
+    value: Number(input.value) || 0,
+    profit: input.profit === undefined || input.profit === null || input.profit === '' ? 0 : Number(input.profit),
+    status: input.status && input.status.trim() ? input.status.trim() : 'Won',
+    date_won: input.dateWon,
+    start_date: (input.startDate || '').trim(),
+    description: (input.description || '').trim(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('jobs').update(row).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Job not found');
+  const job = rowToJob(data, { [emp.id]: emp.name });
+  await attachDocuments([job]);
   return job;
 }
 
-function deleteJob(id) {
-  const state = load();
-  const before = state.jobs.length;
-  state.jobs = state.jobs.filter((j) => j.id !== id);
-  if (state.jobs.length === before) throw new Error('Job not found');
-  save(state);
+async function deleteJob(id) {
+  const { data, error } = await supabase.from('jobs').delete().eq('id', id).select();
+  check(error);
+  if (!data.length) throw new Error('Job not found');
 }
 
-const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', signoff: 'Sign-off sheet', photos: 'Photos' };
-
-function completeJob(id) {
-  const state = load();
-  const job = state.jobs.find((j) => j.id === id);
-  if (!job) throw new Error('Job not found');
-  ensureDocuments(job);
-  const missing = DOCUMENT_CATEGORIES.filter((c) => job.documents[c].length === 0);
+async function completeJob(id) {
+  const { data: docs, error: docErr } = await supabase.from('job_documents').select('category').eq('job_id', id);
+  check(docErr);
+  const counts = { rams: 0, drawings: 0, signoff: 0, photos: 0 };
+  docs.forEach((d) => { counts[d.category] += 1; });
+  const missing = DOCUMENT_CATEGORIES.filter((c) => counts[c] === 0);
   if (missing.length) {
     throw new Error(`Cannot complete job: missing ${missing.map((c) => DOCUMENT_LABELS[c]).join(', ')}. Upload these documents to the job first.`);
   }
-  job.completedAt = new Date().toISOString().slice(0, 10);
-  job.updatedAt = new Date().toISOString();
-  save(state);
-  return job;
+  const { data, error } = await supabase.from('jobs')
+    .update({ completed_at: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Job not found');
+  return getJob(id);
 }
 
-function reopenJob(id) {
-  const state = load();
-  const job = state.jobs.find((j) => j.id === id);
-  if (!job) throw new Error('Job not found');
-  job.completedAt = '';
-  job.updatedAt = new Date().toISOString();
-  save(state);
-  return job;
+async function reopenJob(id) {
+  const { data, error } = await supabase.from('jobs')
+    .update({ completed_at: '', updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Job not found');
+  return getJob(id);
 }
 
 // ---------- Job Documents ----------
+// Metadata lives here; the actual file bytes live in Supabase Storage (handled in server.js).
 
-function addJobDocument(jobId, category, fileInfo) {
+async function addJobDocument(jobId, category, fileInfo) {
   if (!DOCUMENT_CATEGORIES.includes(category)) throw new Error('Invalid document category');
-  const state = load();
-  const job = state.jobs.find((j) => j.id === jobId);
+  const { data: job, error: jobErr } = await supabase.from('jobs').select('id').eq('id', jobId).maybeSingle();
+  check(jobErr);
   if (!job) throw new Error('Job not found');
-  ensureDocuments(job);
-  const doc = {
+  const row = {
     id: genId(),
-    originalName: fileInfo.originalName,
-    storedName: fileInfo.storedName,
+    job_id: jobId,
+    category,
+    original_name: fileInfo.originalName,
+    stored_name: fileInfo.storedName,
     size: fileInfo.size,
-    uploadedAt: new Date().toISOString(),
+    uploaded_at: new Date().toISOString(),
   };
-  job.documents[category].push(doc);
-  save(state);
+  const { data, error } = await supabase.from('job_documents').insert(row).select().single();
+  check(error);
+  return rowToDocument(data);
+}
+
+async function getJobDocument(jobId, category, docId) {
+  if (!DOCUMENT_CATEGORIES.includes(category)) return null;
+  const { data, error } = await supabase.from('job_documents').select('*')
+    .eq('id', docId).eq('job_id', jobId).eq('category', category).maybeSingle();
+  check(error);
+  return data ? rowToDocument(data) : null;
+}
+
+async function deleteJobDocument(jobId, category, docId) {
+  const doc = await getJobDocument(jobId, category, docId);
+  if (!doc) return null;
+  const { error } = await supabase.from('job_documents').delete().eq('id', docId);
+  check(error);
   return doc;
-}
-
-function getJobDocument(jobId, category, docId) {
-  if (!DOCUMENT_CATEGORIES.includes(category)) return null;
-  const job = getJob(jobId);
-  if (!job) return null;
-  return job.documents[category].find((d) => d.id === docId) || null;
-}
-
-function deleteJobDocument(jobId, category, docId) {
-  if (!DOCUMENT_CATEGORIES.includes(category)) return null;
-  const state = load();
-  const job = state.jobs.find((j) => j.id === jobId);
-  if (!job) return null;
-  ensureDocuments(job);
-  const idx = job.documents[category].findIndex((d) => d.id === docId);
-  if (idx === -1) return null;
-  const [removed] = job.documents[category].splice(idx, 1);
-  save(state);
-  return removed;
 }
 
 // ---------- Reports ----------
 
-function yearlyReport() {
-  const state = load();
-  const empById = Object.fromEntries(state.employees.map((e) => [e.id, e.name]));
+async function yearlyReport() {
+  const [{ data: jobs, error }, empNameById] = await Promise.all([
+    supabase.from('jobs').select('*'),
+    employeeNameMap(),
+  ]);
+  check(error);
   const byYear = {};
 
-  for (const job of state.jobs) {
-    if (!job.dateWon) continue;
-    const year = job.dateWon.slice(0, 4);
+  for (const job of jobs) {
+    if (!job.date_won) continue;
+    const year = job.date_won.slice(0, 4);
     if (!byYear[year]) byYear[year] = { year, totalTurnover: 0, totalProfit: 0, jobCount: 0, employees: {} };
     const bucket = byYear[year];
     bucket.totalTurnover += job.value || 0;
     bucket.totalProfit += job.profit || 0;
     bucket.jobCount += 1;
-    const name = empById[job.employeeId] || '(unassigned)';
+    const name = empNameById[job.employee_id] || '(unassigned)';
     if (!bucket.employees[name]) bucket.employees[name] = { employee: name, totalValue: 0, totalProfit: 0, jobCount: 0 };
     bucket.employees[name].totalValue += job.value || 0;
     bucket.employees[name].totalProfit += job.profit || 0;
     bucket.employees[name].jobCount += 1;
   }
 
-  const years = Object.values(byYear)
+  return Object.values(byYear)
     .map((bucket) => {
       const employees = Object.values(bucket.employees).sort((a, b) => b.totalValue - a.totalValue);
       return {
@@ -306,15 +323,14 @@ function yearlyReport() {
       };
     })
     .sort((a, b) => b.year.localeCompare(a.year));
-
-  return years;
 }
 
-function clientReport() {
-  const state = load();
+async function clientReport() {
+  const { data: jobs, error } = await supabase.from('jobs').select('*');
+  check(error);
   const byClient = {};
 
-  for (const job of state.jobs) {
+  for (const job of jobs) {
     const name = (job.client || '').trim() || '(unknown client)';
     if (!byClient[name]) byClient[name] = { client: name, totalValue: 0, totalProfit: 0, jobCount: 0 };
     byClient[name].totalValue += job.value || 0;
@@ -326,7 +342,7 @@ function clientReport() {
 }
 
 // ---------- Calendar ----------
-// A shared team calendar — anyone signed in can see and add to it. Entries have a start date
+// A shared team calendar - anyone signed in can see and add to it. Entries have a start date
 // and a duration; a multi-day duration makes the entry span forward across that many calendar
 // days, so a "2 days" entry added on the 5th also shows on the 6th.
 
@@ -340,11 +356,27 @@ function addDaysToDateString(dateStr, days) {
   return dt.toISOString().slice(0, 10);
 }
 
-function listCalendarEvents() {
-  return load().calendarEvents.slice().sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+function rowToEvent(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    date: row.date,
+    endDate: row.end_date,
+    title: row.title,
+    durationValue: Number(row.duration_value),
+    durationUnit: row.duration_unit,
+    createdAt: row.created_at,
+  };
 }
 
-function createCalendarEvent(input, user) {
+async function listCalendarEvents() {
+  const { data, error } = await supabase.from('calendar_events').select('*').order('date').order('created_at');
+  check(error);
+  return data.map(rowToEvent);
+}
+
+async function createCalendarEvent(input, user) {
   const errors = [];
   if (!input.date || !DATE_RE.test(input.date)) errors.push('A valid date is required');
   const title = (input.title || '').trim();
@@ -356,48 +388,48 @@ function createCalendarEvent(input, user) {
   if (errors.length) throw new Error(errors.join('; '));
 
   const spanDays = durationUnit === 'days' ? Math.max(1, Math.ceil(durationValue)) : 1;
-  const state = load();
-  const event = {
+  const row = {
     id: genId(),
-    userId: user.id,
-    userName: user.name,
+    user_id: user.id,
+    user_name: user.name,
     date: input.date,
-    endDate: addDaysToDateString(input.date, spanDays - 1),
+    end_date: addDaysToDateString(input.date, spanDays - 1),
     title,
-    durationValue,
-    durationUnit,
-    createdAt: new Date().toISOString(),
+    duration_value: durationValue,
+    duration_unit: durationUnit,
+    created_at: new Date().toISOString(),
   };
-  state.calendarEvents.push(event);
-  save(state);
-  return event;
+  const { data, error } = await supabase.from('calendar_events').insert(row).select().single();
+  check(error);
+  return rowToEvent(data);
 }
 
-function deleteCalendarEvent(id, user) {
-  const state = load();
-  const event = state.calendarEvents.find((e) => e.id === id);
+async function deleteCalendarEvent(id, user) {
+  const { data: event, error } = await supabase.from('calendar_events').select('*').eq('id', id).maybeSingle();
+  check(error);
   if (!event) throw new Error('Calendar entry not found');
-  if (event.userId !== user.id && user.role !== 'admin') {
+  if (event.user_id !== user.id && user.role !== 'admin') {
     throw new Error('You can only delete your own calendar entries');
   }
-  state.calendarEvents = state.calendarEvents.filter((e) => e.id !== id);
-  save(state);
+  const { error: delErr } = await supabase.from('calendar_events').delete().eq('id', id);
+  check(delErr);
 }
 
 // ---------- Auth ----------
 
-function sanitizeUser(user) {
-  if (!user) return null;
-  const { passwordHash, ...safe } = user;
-  return safe;
+function sanitizeUser(row) {
+  if (!row) return null;
+  return { id: row.id, name: row.name, email: row.email, role: row.role, createdAt: row.created_at };
 }
 
-function findUserByEmail(state, email) {
+async function findUserByEmail(email) {
   const norm = (email || '').trim().toLowerCase();
-  return state.users.find((u) => u.email === norm);
+  const { data, error } = await supabase.from('users').select('*').eq('email', norm).maybeSingle();
+  check(error);
+  return data;
 }
 
-function registerUser({ name, email, password }) {
+async function registerUser({ name, email, password }) {
   const cleanName = (name || '').trim();
   const cleanEmail = (email || '').trim().toLowerCase();
   const errors = [];
@@ -406,74 +438,74 @@ function registerUser({ name, email, password }) {
   if (!password || password.length < 6) errors.push('Password must be at least 6 characters');
   if (errors.length) throw new Error(errors.join('; '));
 
-  const state = load();
-  if (findUserByEmail(state, cleanEmail)) throw new Error('An account with that email already exists');
+  if (await findUserByEmail(cleanEmail)) throw new Error('An account with that email already exists');
 
-  const user = {
+  const { count, error: countErr } = await supabase.from('users').select('*', { count: 'exact', head: true });
+  check(countErr);
+
+  const row = {
     id: genId(),
     name: cleanName,
     email: cleanEmail,
-    passwordHash: bcrypt.hashSync(password, 10),
-    // First account becomes admin. Roles aren't enforced anywhere yet — this just means
-    // there's already an identity/role model in place for when permissions are added.
-    role: state.users.length === 0 ? 'admin' : 'staff',
-    createdAt: new Date().toISOString(),
+    password_hash: bcrypt.hashSync(password, 10),
+    // First account becomes admin, same bootstrap rule as before.
+    role: count === 0 ? 'admin' : 'staff',
+    created_at: new Date().toISOString(),
   };
-  state.users.push(user);
-  save(state);
-  return sanitizeUser(user);
+  const { data, error } = await supabase.from('users').insert(row).select().single();
+  check(error);
+  return sanitizeUser(data);
 }
 
-function verifyLogin(email, password) {
-  const state = load();
-  const user = findUserByEmail(state, email);
-  if (!user || !bcrypt.compareSync(password || '', user.passwordHash)) {
+async function verifyLogin(email, password) {
+  const user = await findUserByEmail(email);
+  if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
     throw new Error('Incorrect email or password');
   }
   return sanitizeUser(user);
 }
 
-function createSession(userId) {
-  const state = load();
+async function createSession(userId) {
   const now = Date.now();
-  state.sessions = state.sessions.filter((s) => new Date(s.expiresAt).getTime() > now);
+  await supabase.from('sessions').delete().lt('expires_at', new Date(now).toISOString());
   const token = crypto.randomBytes(32).toString('hex');
-  state.sessions.push({
+  const { error } = await supabase.from('sessions').insert({
     token,
-    userId,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(now + SESSION_TTL_MS).toISOString(),
+    user_id: userId,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(now + SESSION_TTL_MS).toISOString(),
   });
-  save(state);
+  check(error);
   return token;
 }
 
-function getUserBySession(token) {
+async function getUserBySession(token) {
   if (!token) return null;
-  const state = load();
-  const session = state.sessions.find((s) => s.token === token);
+  const { data: session, error } = await supabase.from('sessions').select('*').eq('token', token).maybeSingle();
+  check(error);
   if (!session) return null;
-  if (new Date(session.expiresAt).getTime() < Date.now()) return null;
-  return sanitizeUser(state.users.find((u) => u.id === session.userId));
-}
-
-function deleteSession(token) {
-  const state = load();
-  state.sessions = state.sessions.filter((s) => s.token !== token);
-  save(state);
-}
-
-function listUsers() {
-  return load().users.map(sanitizeUser).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function promoteToAdmin(id) {
-  const state = load();
-  const user = state.users.find((u) => u.id === id);
-  if (!user) throw new Error('User not found');
-  user.role = 'admin';
-  save(state);
+  if (new Date(session.expires_at).getTime() < Date.now()) return null;
+  const { data: user, error: userErr } = await supabase.from('users').select('*').eq('id', session.user_id).maybeSingle();
+  check(userErr);
   return sanitizeUser(user);
+}
+
+async function deleteSession(token) {
+  const { error } = await supabase.from('sessions').delete().eq('token', token);
+  check(error);
+}
+
+async function listUsers() {
+  const { data, error } = await supabase.from('users').select('*').order('name');
+  check(error);
+  return data.map(sanitizeUser);
+}
+
+async function promoteToAdmin(id) {
+  const { data, error } = await supabase.from('users').update({ role: 'admin' }).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
 }
 
 module.exports = {
