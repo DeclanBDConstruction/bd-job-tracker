@@ -1,0 +1,16 @@
+{
+  "name": "BD Construction Job Tracker",
+  "short_name": "Job Tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef2f5",
+  "theme_color": "#186a9c",
+  "icons": [
+    {
+      "src": "assets/logo-mark.png",
+      "sizes": "818x514",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

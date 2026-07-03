@@ -4,6 +4,10 @@ A simple job tracker: log jobs, assign them to whoever won them, track value/pro
 import jobs straight from your job costing sheets, and view yearly reports of who won the
 most money and total turnover.
 
+Data lives in Supabase (Postgres for records, Supabase Storage for uploaded files —
+RAMS, drawings, sign-off sheets, photos), not on a local disk, so everyone is always looking
+at the same live data no matter which device or network they're on.
+
 ## First-time setup
 
 1. Install [Node.js](https://nodejs.org) (LTS version) if it isn't already installed.
@@ -12,8 +16,13 @@ most money and total turnover.
    npm install
    ```
    This only needs to be done once (or again if you copy the folder to a new PC).
+3. Set the Supabase environment variables the server needs to connect (see
+   `scripts/supabase-schema.sql` for the database schema). At minimum:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_BUCKET` (optional, defaults to `job-documents`)
 
-## Running the app
+## Running the app locally
 
 ```
 npm start
@@ -23,17 +32,39 @@ Then open **http://localhost:3000** in your browser.
 
 Leave the terminal window open while people are using the tracker — closing it stops the app.
 
-### Letting other office staff use it
+### Letting other office staff use it over Wi-Fi
 
-The app runs on one PC and other people on the same office network/Wi-Fi can connect to it
-from their own browser:
+Anyone on the same office network/Wi-Fi as the PC running the app can connect to it
+from their own browser (including phones):
 
 1. On the PC running the app, find its local IP address: open a terminal and run `ipconfig`,
    look for "IPv4 Address" (e.g. `192.168.1.42`).
 2. Other staff open a browser and go to `http://192.168.1.42:3000` (using the real IP shown).
 3. The terminal window also prints this address when you run `npm start`.
 
-Everyone sees and edits the same data, live.
+This only works while that PC is on, running the app, and everyone's on the same network.
+
+## Using it on your phone from anywhere (not just office Wi-Fi)
+
+For access away from the office (e.g. on site, on mobile data), the app needs to run
+somewhere always-on and internet-reachable rather than on one PC — deploy it to a host
+like [Render](https://render.com):
+
+1. Push this repo to GitHub (if it isn't already).
+2. In Render, create a new **Web Service** from the repo — a `render.yaml` blueprint is
+   included in this repo, so Render can pick up the build/start commands automatically.
+3. Set the `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables on the
+   Render service (same values as your local setup, from the Supabase project's API
+   settings) so it points at the same data everyone already uses.
+4. Once deployed, Render gives you an `https://…onrender.com` URL — open that on any
+   phone/laptop, on any network, and sign in as normal.
+
+On a phone, open that URL in the browser and use **Add to Home Screen** — the tracker has
+an app icon and manifest set up, so it opens full-screen like a normal app from then on.
+
+*Note: this project was deployed to Render before (`bd-job-tracker.onrender.com`), but
+that service isn't currently responding — check the Render dashboard to see whether it
+needs restarting, or whether a fresh deployment is simpler.*
 
 ### Signing in
 
@@ -42,14 +73,13 @@ they click **Create an account** (name, email, password) and are signed in strai
 after that they use **Sign In** with the same email/password. Sign-in stays active for 30
 days per device, and there's a **Sign Out** button top-right of the header.
 
-Accounts are stored locally in `data/db.json`, same as everything else — there's no email
-sent, nothing leaves this PC. The very first account created becomes an "admin" behind the
-scenes; this doesn't do anything yet, but it's there ready for when permissions (who can see
-or edit what) get added later.
+Accounts are stored in Supabase, same as everything else — there's no email sent as part
+of sign-up. The very first account created becomes an "admin", which grants extra
+permissions (deleting jobs, managing the employee list, promoting other admins).
 
 There's no "forgot password" flow (no email is sent from this app). If someone forgets
-theirs, open `data/db.json`, delete their entry from the `users` array, and have them create
-the account again — ask if you'd like help with that.
+theirs, delete their row from the `users` table in Supabase and have them create the
+account again — ask if you'd like help with that.
 
 ## Importing a job from a job costing sheet
 
@@ -71,9 +101,13 @@ updated, re-upload the same sheet and confirm to sync it.
 
 ## Data
 
-All data is stored in `data/db.json` in this folder. Back this file up periodically
-(e.g. copy it to OneDrive/a USB stick) — if the folder is lost, the data is lost.
-There's no cloud storage involved; everything stays local to this PC.
+All data (jobs, employees, calendar, accounts) lives in Supabase — Postgres for records,
+Supabase Storage for uploaded files (RAMS, drawings, sign-off sheets, photos). It's not
+tied to any one PC, so losing/wiping this folder doesn't lose the data.
+
+To back everything up to a local folder anyway (e.g. before a big change), run
+`node scripts/backup-from-render.js` — it logs into the live app like a browser would and
+downloads jobs, employees, calendar and all uploaded documents into `backup/`.
 
 ## What's tracked per job
 

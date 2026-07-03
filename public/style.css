@@ -1573,3 +1573,72 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ---------- Mobile ---------- */
+
+@media (max-width: 720px) {
+  .topbar { padding: 0 14px; }
+  .topbar h1 { font-size: 18px; padding: 14px 0 10px; gap: 8px; }
+  .topbar h1 .logo-mark { height: 36px; padding: 4px 7px; }
+  .topbar-user { font-size: 12px; gap: 8px; }
+
+  /* Nine tabs won't fit a phone width; scroll horizontally instead of wrapping into
+     a multi-row menu that pushes the page content down. */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin: 0 -14px;
+    padding: 0 14px;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { flex: 0 0 auto; white-space: nowrap; padding: 10px 12px; font-size: 13px; }
+
+  main { margin: 16px auto; padding: 0 12px 40px; }
+
+  .panel-header { flex-direction: column; align-items: stretch; }
+  .filters { flex-direction: column; align-items: stretch; }
+  .filters input, .filters select, .filters button { width: 100%; }
+  .import-upload { flex-direction: column; align-items: stretch; }
+
+  .data-table th, .data-table td { padding: 10px 8px; font-size: 12px; }
+
+  .modal-overlay { padding: 16px 8px; align-items: center; }
+  .modal { padding: 18px; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; }
+
+  .job-detail-tabs { gap: 2px; }
+  .job-detail-tab { padding: 8px 10px; font-size: 12px; }
+  .detail-grid { grid-template-columns: 1fr; }
+
+  /* Reflow each employee bar from "label | bar | value" into label+value on one line
+     with the bar filling the row underneath, since 140px for the label alone doesn't
+     leave room for a usable bar on a narrow screen. */
+  .bar-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "name value" "track track";
+    row-gap: 6px;
+  }
+  .bar-row > div:nth-child(1) { grid-area: name; }
+  .bar-row > div:nth-child(2) { grid-area: track; }
+  .bar-row > div:nth-child(3) { grid-area: value; text-align: right; }
+
+  .report-summary { gap: 10px; }
+  .report-summary .stat { flex: 1 1 45%; min-width: 0; }
+
+  .dashboard-grid, .gallery, .ra-grid { grid-template-columns: 1fr; }
+
+  .home-hero { padding: 20px 12px 30px; }
+  .home-hero h2 { font-size: 21px; }
+
+  .calendar-weekdays, .calendar-grid { gap: 4px; }
+  .calendar-weekdays { font-size: 9px; }
+  .cal-cell { min-height: 58px; padding: 5px; gap: 2px; }
+  .cal-cell-date { font-size: 10px; }
+  .cal-today-badge { display: none; }
+  .cal-chip { font-size: 9px; padding: 1px 4px; }
+
+  .auth-card { padding: 24px 18px; }
+}
