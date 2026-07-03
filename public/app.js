@@ -4,6 +4,8 @@ const state = {
   statuses: [],
   riskAssessments: [],
   calendarEvents: [],
+  calendarColors: [],
+  userColors: [],
   currentUser: null,
 };
 
@@ -72,7 +74,7 @@ function connectLiveUpdates() {
     if (type === 'jobs') handleLiveJobsChange();
     else if (type === 'employees') handleLiveEmployeesChange();
     else if (type === 'calendar') handleLiveCalendarChange();
-    else if (type === 'users' && activeTab() === 'admin') loadAdminUsers();
+    else if (type === 'users') handleLiveUsersChange();
   };
 }
 
@@ -107,6 +109,21 @@ async function handleLiveCalendarChange() {
   renderCalendar();
   renderHomeDashboard();
   if (calSelectedDate && !calDayModal.hidden) renderCalDayEvents();
+}
+
+// Covers both admin promotions and calendar-colour picks - either way, everyone's picker
+// and calendar chips need to reflect who owns what right away, not just the person who changed it.
+async function handleLiveUsersChange() {
+  try {
+    state.userColors = await api('/api/users/colors');
+    renderCalendar();
+    renderColorPicker();
+    renderHomeDashboard();
+    if (calSelectedDate && !calDayModal.hidden) renderCalDayEvents();
+  } catch (err) {
+    console.warn('Calendar colours unavailable:', err.message);
+  }
+  if (activeTab() === 'admin') loadAdminUsers();
 }
 
 async function checkAuth() {
@@ -231,6 +248,21 @@ async function bootstrap() {
   renderRiskAssessments();
   renderCalendar();
   renderHomeDashboard();
+
+  // Split from the Promise.all above: this needs a `users.color` column that only
+  // exists once the Supabase migration has been run. Isolating it means a
+  // not-yet-migrated database degrades to "no colour picker yet" instead of the
+  // whole app failing to load.
+  try {
+    const [calendarColors, userColors] = await Promise.all([api('/api/calendar-colors'), api('/api/users/colors')]);
+    state.calendarColors = calendarColors;
+    state.userColors = userColors;
+    renderCalendar();
+    renderColorPicker();
+    renderHomeDashboard();
+  } catch (err) {
+    console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
+  }
 }
 
 function renderStatusOptions() {
@@ -717,7 +749,13 @@ document.querySelector('#employeesTable tbody').addEventListener('click', async 
 
 // ---------- Calendar ----------
 
-function userColor(name) {
+// Prefer the colour someone has actually chosen (state.userColors, kept in sync with the
+// server); anyone who hasn't picked yet still gets a stable-looking colour via the old
+// name hash, so the calendar never shows blank/white chips.
+function userColor(event) {
+  const chosen = state.userColors.find((u) => u.id === event.userId);
+  if (chosen && chosen.color) return chosen.color;
+  const name = event.userName || '';
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
   return PIE_COLORS[hash % PIE_COLORS.length];
@@ -765,7 +803,7 @@ function renderCalendar() {
     const dayEvents = eventsOnDate(ds);
     const isToday = ds === todayStr;
     const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => `
-      <div class="cal-chip" style="background:${userColor(e.userName)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatDuration(e.durationValue, e.durationUnit)})">${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}</div>
+      <div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatDuration(e.durationValue, e.durationUnit)})">${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}</div>
     `).join('');
     const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
     return `
@@ -778,6 +816,43 @@ function renderCalendar() {
 
   grid.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
     cell.addEventListener('click', () => openCalDayModal(cell.dataset.date));
+  });
+}
+
+// Ten fixed colours, one person per colour (server enforces this - see
+// users_color_unique_idx). Taken-by-someone-else swatches are shown but disabled;
+// your own is checked; either way the swatch's title always names who has it, so
+// colour is never the only way anyone's identified on the calendar.
+function renderColorPicker() {
+  const container = document.getElementById('calColorPicker');
+  if (!container || !state.currentUser) return;
+  const myColor = (state.userColors.find((u) => u.id === state.currentUser.id) || {}).color;
+
+  container.innerHTML = state.calendarColors.map((c) => {
+    const owner = state.userColors.find((u) => u.color === c.hex);
+    const isMine = c.hex === myColor;
+    const isTaken = !!owner && !isMine;
+    const title = isMine ? `${c.name} (yours)` : isTaken ? `${c.name} — taken by ${owner.name}` : c.name;
+    return `
+      <button type="button" class="color-swatch-btn${isMine ? ' selected' : ''}${isTaken ? ' taken' : ''}"
+        style="background:${c.hex}" data-color="${c.hex}" title="${escapeHtml(title)}" ${isTaken ? 'disabled' : ''}
+        aria-label="${escapeHtml(title)}">${isMine ? '✓' : ''}</button>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.color-swatch-btn:not(.taken)').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api('/api/users/me/color', { method: 'PUT', body: JSON.stringify({ color: btn.dataset.color }) });
+        state.userColors = await api('/api/users/colors');
+        renderColorPicker();
+        renderCalendar();
+      } catch (err) {
+        alert(err.message);
+        state.userColors = await api('/api/users/colors');
+        renderColorPicker();
+      }
+    });
   });
 }
 
@@ -819,7 +894,7 @@ function renderCalDayEvents() {
   const list = document.getElementById('calDayEventsList');
   list.innerHTML = events.map((e) => `
     <li class="cal-day-event-item">
-      <span class="cal-swatch" style="background:${userColor(e.userName)}"></span>
+      <span class="cal-swatch" style="background:${userColor(e)}"></span>
       <div class="cal-day-event-body">
         <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
         <div class="cal-day-event-meta">${escapeHtml(e.userName)} · ${formatDuration(e.durationValue, e.durationUnit)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
@@ -910,7 +985,7 @@ function renderHomeDashboard() {
   const todayHtml = todaysEvents.length
     ? `<ul class="home-today-list">${todaysEvents.map((e) => `
         <li>
-          <span class="cal-swatch" style="background:${userColor(e.userName)}"></span>
+          <span class="cal-swatch" style="background:${userColor(e)}"></span>
           <span class="home-today-name">${escapeHtml(e.userName)}</span>
           <span class="home-today-desc">${escapeHtml(e.title)}</span>
           <span class="home-today-duration">${formatDuration(e.durationValue, e.durationUnit)}</span>

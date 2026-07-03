@@ -12,8 +12,17 @@ create table if not exists users (
   email text not null unique,
   password_hash text not null,
   role text not null default 'staff',
+  color text,
   created_at timestamptz not null default now()
 );
+
+-- Adds `color` to a users table that already existed before this column did
+-- (the CREATE TABLE above only applies to a brand-new table).
+alter table users add column if not exists color text;
+
+-- One person per calendar colour: a partial unique index (color is nullable, so
+-- anyone who hasn't picked yet doesn't collide with everyone else's null).
+create unique index if not exists users_color_unique_idx on users (color) where color is not null;
 
 create table if not exists sessions (
   token text primary key,

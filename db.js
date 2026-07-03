@@ -7,6 +7,25 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'signoff', 'photos'];
 const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', signoff: 'Sign-off sheet', photos: 'Photos' };
 
+// Fixed 10-colour set for the calendar: chosen so every colour stays legible with white
+// text on it and any two are tell-apart-able (including colour-blind vision), verified with
+// the data-viz skill's palette validator rather than picked by eye. Each person picks one
+// (enforced one-per-colour by the `users_color_unique_idx` partial unique index), so the
+// server is the single source of truth both apps agree on - see CALENDAR_COLORS below.
+const CALENDAR_COLORS = [
+  { name: 'Blue', hex: '#1c6e9c' },
+  { name: 'Red', hex: '#b6402e' },
+  { name: 'Amber', hex: '#b8720d' },
+  { name: 'Violet', hex: '#7a4fb0' },
+  { name: 'Green', hex: '#2f7a3a' },
+  { name: 'Teal', hex: '#009a8b' },
+  { name: 'Wine', hex: '#7b354c' },
+  { name: 'Cyan', hex: '#0096a9' },
+  { name: 'Rose', hex: '#a65a67' },
+  { name: 'Magenta', hex: '#87156c' },
+];
+const CALENDAR_COLOR_HEXES = CALENDAR_COLORS.map((c) => c.hex);
+
 function genId() {
   return crypto.randomUUID();
 }
@@ -436,7 +455,7 @@ async function deleteCalendarEvent(id, user) {
 
 function sanitizeUser(row) {
   if (!row) return null;
-  return { id: row.id, name: row.name, email: row.email, role: row.role, createdAt: row.created_at };
+  return { id: row.id, name: row.name, email: row.email, role: row.role, color: row.color || null, createdAt: row.created_at };
 }
 
 async function findUserByEmail(email) {
@@ -525,9 +544,30 @@ async function promoteToAdmin(id) {
   return sanitizeUser(data);
 }
 
+// Everyone signed in needs to see who's using which colour (to grey out taken ones), so
+// this is deliberately not admin-only like listUsers().
+async function listUserColors() {
+  const { data, error } = await supabase.from('users').select('id, name, color').order('name');
+  check(error);
+  return data;
+}
+
+async function setUserColor(userId, color) {
+  if (!CALENDAR_COLOR_HEXES.includes(color)) throw new Error('Not a valid calendar colour');
+  const { data, error } = await supabase.from('users').update({ color }).eq('id', userId).select().maybeSingle();
+  if (error) {
+    // Postgres unique_violation on the partial index - someone else grabbed it first.
+    if (error.code === '23505') throw new Error('That colour was just taken by someone else - pick another');
+    check(error);
+  }
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
 module.exports = {
   DEFAULT_STATUSES,
   DOCUMENT_CATEGORIES,
+  CALENDAR_COLORS,
   registerUser,
   verifyLogin,
   createSession,
@@ -535,6 +575,8 @@ module.exports = {
   deleteSession,
   listUsers,
   promoteToAdmin,
+  listUserColors,
+  setUserColor,
   listEmployees,
   addEmployee,
   renameEmployee,
