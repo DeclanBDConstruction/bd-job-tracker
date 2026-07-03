@@ -331,15 +331,19 @@
     <button type="button" id="calDayAddBtn">+ Add</button>
     <form id="calDayAddForm" hidden>
       <label>What are you doing? *<input type="text" id="calDayAddTitle" required placeholder="e.g. Site visit – Beehive Carlisle"></label>
-      <label>Duration *
-        <div class="duration-row">
-          <input type="number" id="calDayAddDurationValue" min="0.5" step="0.5" value="1" required>
-          <select id="calDayAddDurationUnit">
-            <option value="hours">Hours</option>
-            <option value="days">Days</option>
-          </select>
-        </div>
+      <label>When *
+        <select id="calDayAddKind">
+          <option value="time">Specific time</option>
+          <option value="days">Multiple days / all day</option>
+        </select>
       </label>
+      <div class="duration-row" id="calDayAddTimeFields">
+        <label>Start<input type="time" id="calDayAddStartTime" value="09:00" required></label>
+        <label>End<input type="time" id="calDayAddEndTime" value="10:00" required></label>
+      </div>
+      <div class="duration-row" id="calDayAddDaysFields" hidden>
+        <label>Number of days<input type="number" id="calDayAddDurationValue" min="1" step="1" value="1"></label>
+      </div>
       <div class="modal-actions">
         <button type="button" id="calDayAddCancelBtn">Cancel</button>
         <button type="submit" class="primary">Save</button>
@@ -360,15 +364,19 @@
     <button type="button" id="myCalDayAddBtn">+ Add</button>
     <form id="myCalDayAddForm" hidden>
       <label>What are you doing? *<input type="text" id="myCalDayAddTitle" required placeholder="e.g. Dentist appointment"></label>
-      <label>Duration *
-        <div class="duration-row">
-          <input type="number" id="myCalDayAddDurationValue" min="0.5" step="0.5" value="1" required>
-          <select id="myCalDayAddDurationUnit">
-            <option value="hours">Hours</option>
-            <option value="days">Days</option>
-          </select>
-        </div>
+      <label>When *
+        <select id="myCalDayAddKind">
+          <option value="time">Specific time</option>
+          <option value="days">Multiple days / all day</option>
+        </select>
       </label>
+      <div class="duration-row" id="myCalDayAddTimeFields">
+        <label>Start<input type="time" id="myCalDayAddStartTime" value="09:00" required></label>
+        <label>End<input type="time" id="myCalDayAddEndTime" value="10:00" required></label>
+      </div>
+      <div class="duration-row" id="myCalDayAddDaysFields" hidden>
+        <label>Number of days<input type="number" id="myCalDayAddDurationValue" min="1" step="1" value="1"></label>
+      </div>
       <div class="modal-actions">
         <button type="button" id="myCalDayAddCancelBtn">Cancel</button>
         <button type="submit" class="primary">Save</button>

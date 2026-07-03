@@ -383,8 +383,9 @@ async function clientReport() {
 // and a duration; a multi-day duration makes the entry span forward across that many calendar
 // days, so a "2 days" entry added on the 5th also shows on the 6th.
 
-const DURATION_UNITS = ['hours', 'days'];
+const DURATION_UNITS = ['time', 'days'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^\d{2}:\d{2}$/;
 
 function addDaysToDateString(dateStr, days) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -401,8 +402,10 @@ function rowToEvent(row) {
     date: row.date,
     endDate: row.end_date,
     title: row.title,
-    durationValue: Number(row.duration_value),
+    durationValue: row.duration_value === null ? null : Number(row.duration_value),
     durationUnit: row.duration_unit,
+    startTime: row.start_time,
+    endTime: row.end_time,
     isPrivate: row.is_private,
     createdAt: row.created_at,
   };
@@ -423,10 +426,21 @@ async function createCalendarEvent(input, user) {
   if (!input.date || !DATE_RE.test(input.date)) errors.push('A valid date is required');
   const title = (input.title || '').trim();
   if (!title) errors.push('A description of what you\'re doing is required');
-  const durationValue = Number(input.durationValue);
-  if (!durationValue || isNaN(durationValue) || durationValue <= 0) errors.push('Duration must be a positive number');
   const durationUnit = DURATION_UNITS.includes(input.durationUnit) ? input.durationUnit : null;
-  if (!durationUnit) errors.push('Duration unit must be hours or days');
+  if (!durationUnit) errors.push('Choose either a specific time or a number of days');
+
+  let durationValue = null;
+  let startTime = null;
+  let endTime = null;
+  if (durationUnit === 'days') {
+    durationValue = Number(input.durationValue);
+    if (!durationValue || isNaN(durationValue) || durationValue <= 0) errors.push('Number of days must be a positive number');
+  } else if (durationUnit === 'time') {
+    startTime = input.startTime;
+    endTime = input.endTime;
+    if (!TIME_RE.test(startTime || '') || !TIME_RE.test(endTime || '')) errors.push('A valid start and end time is required');
+    else if (endTime <= startTime) errors.push('End time must be after start time');
+  }
   if (errors.length) throw new Error(errors.join('; '));
 
   const spanDays = durationUnit === 'days' ? Math.max(1, Math.ceil(durationValue)) : 1;
@@ -439,6 +453,8 @@ async function createCalendarEvent(input, user) {
     title,
     duration_value: durationValue,
     duration_unit: durationUnit,
+    start_time: startTime,
+    end_time: endTime,
     is_private: !!input.isPrivate,
     created_at: new Date().toISOString(),
   };

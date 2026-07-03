@@ -67,13 +67,17 @@ create table if not exists calendar_events (
   title text not null,
   duration_value numeric,
   duration_unit text,
+  start_time text,
+  end_time text,
   is_private boolean not null default false,
   created_at timestamptz not null default now()
 );
 
--- Adds `is_private` to a calendar_events table that already existed before this column did
+-- Adds columns to a calendar_events table that already existed before these did
 -- (the CREATE TABLE above only applies to a brand-new table).
 alter table calendar_events add column if not exists is_private boolean not null default false;
+alter table calendar_events add column if not exists start_time text;
+alter table calendar_events add column if not exists end_time text;
 
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);

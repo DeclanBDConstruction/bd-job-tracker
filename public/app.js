@@ -771,10 +771,15 @@ function calDateStr(year, month, day) {
   return `${year}-${pad2(month + 1)}-${pad2(day)}`;
 }
 
-function formatDuration(value, unit) {
-  const v = Number(value);
-  const label = unit === 'days' ? (v === 1 ? 'day' : 'days') : (v === 1 ? 'hour' : 'hours');
-  return `${v} ${label}`;
+// Entries saved before start/end times existed are still stored as "X hours" - keep showing
+// those as-is rather than as "undefined–undefined" now that new entries use actual times.
+function formatWhen(e) {
+  if (e.durationUnit === 'days' || e.durationUnit === 'hours') {
+    const v = Number(e.durationValue);
+    const label = e.durationUnit === 'days' ? (v === 1 ? 'day' : 'days') : (v === 1 ? 'hour' : 'hours');
+    return `${v} ${label}`;
+  }
+  return `${e.startTime}–${e.endTime}`;
 }
 
 // Public/team events, visible to everyone. Excludes private entries - even your own -
@@ -822,7 +827,7 @@ function createCalendarView({ scope, ids }) {
       const dayEvents = eventsOnDate(ds);
       const isToday = ds === todayStr;
       const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => `
-        <div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatDuration(e.durationValue, e.durationUnit)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>
+        <div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>
       `).join('');
       const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
       return `
@@ -846,6 +851,7 @@ function createCalendarView({ scope, ids }) {
     document.getElementById(ids.addForm).reset();
     document.getElementById(ids.addForm).hidden = true;
     document.getElementById(ids.addBtn).hidden = false;
+    syncKindFields();
     document.getElementById(ids.modal).hidden = false;
   }
 
@@ -857,7 +863,7 @@ function createCalendarView({ scope, ids }) {
         <span class="cal-swatch" style="background:${userColor(e)}"></span>
         <div class="cal-day-event-body">
           <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
-          <div class="cal-day-event-meta">${scope === 'private' ? '' : `${escapeHtml(e.userName)} · `}${formatDuration(e.durationValue, e.durationUnit)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
+          <div class="cal-day-event-meta">${scope === 'private' ? '' : `${escapeHtml(e.userName)} · `}${formatWhen(e)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
         </div>
         ${(state.currentUser && (state.currentUser.id === e.userId || state.currentUser.role === 'admin')) ? `<button type="button" class="danger cal-day-event-delete" data-id="${e.id}">Delete</button>` : ''}
       </li>
@@ -905,27 +911,44 @@ function createCalendarView({ scope, ids }) {
     document.getElementById(ids.addTitle).focus();
   });
 
+  // Toggles between a specific start/end time (same day) and a number-of-days field
+  // (for holidays/multi-day entries) depending on what's picked in the "When" dropdown.
+  function syncKindFields() {
+    const kind = document.getElementById(ids.kind).value;
+    document.getElementById(ids.timeFields).hidden = kind !== 'time';
+    document.getElementById(ids.daysFields).hidden = kind !== 'days';
+  }
+  document.getElementById(ids.kind).addEventListener('change', syncKindFields);
+
   document.getElementById(ids.addCancelBtn).addEventListener('click', () => {
     document.getElementById(ids.addForm).reset();
     document.getElementById(ids.addForm).hidden = true;
     document.getElementById(ids.addBtn).hidden = false;
+    syncKindFields();
   });
 
   document.getElementById(ids.addForm).addEventListener('submit', async (e) => {
     e.preventDefault();
+    const kind = document.getElementById(ids.kind).value;
     const payload = {
       date: selectedDate,
       title: document.getElementById(ids.addTitle).value,
-      durationValue: document.getElementById(ids.addDurationValue).value,
-      durationUnit: document.getElementById(ids.addDurationUnit).value,
+      durationUnit: kind,
       isPrivate: scope === 'private',
     };
+    if (kind === 'days') {
+      payload.durationValue = document.getElementById(ids.addDurationValue).value;
+    } else {
+      payload.startTime = document.getElementById(ids.addStartTime).value;
+      payload.endTime = document.getElementById(ids.addEndTime).value;
+    }
     try {
       await api('/api/calendar', { method: 'POST', body: JSON.stringify(payload) });
       state.calendarEvents = await api('/api/calendar');
       document.getElementById(ids.addForm).reset();
       document.getElementById(ids.addForm).hidden = true;
       document.getElementById(ids.addBtn).hidden = false;
+      syncKindFields();
       renderDayEvents();
       render();
     } catch (err) {
@@ -946,7 +969,9 @@ const teamCalendar = createCalendarView({
     grid: 'calendarGrid', monthLabel: 'calMonthLabel', prevBtn: 'calPrevBtn', nextBtn: 'calNextBtn', todayBtn: 'calTodayBtn',
     modal: 'calDayModal', modalTitle: 'calDayModalTitle', closeBtn: 'calDayCloseBtn', eventsList: 'calDayEventsList',
     emptyState: 'calDayEmptyState', addBtn: 'calDayAddBtn', addForm: 'calDayAddForm', addTitle: 'calDayAddTitle',
-    addDurationValue: 'calDayAddDurationValue', addDurationUnit: 'calDayAddDurationUnit', addCancelBtn: 'calDayAddCancelBtn',
+    kind: 'calDayAddKind', timeFields: 'calDayAddTimeFields', daysFields: 'calDayAddDaysFields',
+    addStartTime: 'calDayAddStartTime', addEndTime: 'calDayAddEndTime',
+    addDurationValue: 'calDayAddDurationValue', addCancelBtn: 'calDayAddCancelBtn',
   },
 });
 
@@ -956,7 +981,9 @@ const myCalendar = createCalendarView({
     grid: 'myCalendarGrid', monthLabel: 'myCalMonthLabel', prevBtn: 'myCalPrevBtn', nextBtn: 'myCalNextBtn', todayBtn: 'myCalTodayBtn',
     modal: 'myCalDayModal', modalTitle: 'myCalDayModalTitle', closeBtn: 'myCalDayCloseBtn', eventsList: 'myCalDayEventsList',
     emptyState: 'myCalDayEmptyState', addBtn: 'myCalDayAddBtn', addForm: 'myCalDayAddForm', addTitle: 'myCalDayAddTitle',
-    addDurationValue: 'myCalDayAddDurationValue', addDurationUnit: 'myCalDayAddDurationUnit', addCancelBtn: 'myCalDayAddCancelBtn',
+    kind: 'myCalDayAddKind', timeFields: 'myCalDayAddTimeFields', daysFields: 'myCalDayAddDaysFields',
+    addStartTime: 'myCalDayAddStartTime', addEndTime: 'myCalDayAddEndTime',
+    addDurationValue: 'myCalDayAddDurationValue', addCancelBtn: 'myCalDayAddCancelBtn',
   },
 });
 
@@ -1036,7 +1063,7 @@ function renderHomeDashboard() {
           <span class="cal-swatch" style="background:${userColor(e)}"></span>
           <span class="home-today-name">${escapeHtml(e.userName)}</span>
           <span class="home-today-desc">${escapeHtml(e.title)}</span>
-          <span class="home-today-duration">${formatDuration(e.durationValue, e.durationUnit)}</span>
+          <span class="home-today-duration">${formatWhen(e)}</span>
         </li>
       `).join('')}</ul>`
     : `<p class="empty-state">Nothing on the calendar for today.</p>`;
