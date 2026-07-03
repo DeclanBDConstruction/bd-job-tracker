@@ -1037,13 +1037,12 @@ document.getElementById('raAttachBtn').addEventListener('click', async () => {
 // ---------- Reports ----------
 
 async function loadReports() {
-  const years = await api('/api/reports/yearly');
+  const [years, monthly] = await Promise.all([api('/api/reports/yearly'), api('/api/reports/monthly')]);
   const container = document.getElementById('reportsContainer');
-  if (!years.length) {
-    container.innerHTML = '<p class="empty-state">No jobs recorded yet — add or import jobs to see reports.</p>';
-    return;
-  }
-  container.innerHTML = years.map((y) => {
+
+  const yearCardsHtml = !years.length
+    ? '<p class="empty-state">No jobs recorded yet — add or import jobs to see reports.</p>'
+    : years.map((y) => {
     const maxValue = Math.max(...y.employees.map((e) => e.totalValue), 1);
     const bars = y.employees.map((e) => `
       <div class="bar-row">
@@ -1065,6 +1064,215 @@ async function loadReports() {
       </div>
     `;
   }).join('');
+
+  container.innerHTML = `<div class="monthly-chart-card" id="monthlyChartCard"></div>${yearCardsHtml}`;
+  buildMonthlyChart(monthly);
+}
+
+// ---------- Monthly Comparison Chart ----------
+// One line per year, £ value won per calendar month, so the office can see at a
+// glance whether this month is up or down against last month and against the
+// same month in previous years.
+
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function shortMoney(n) {
+  const v = Math.round(n);
+  if (Math.abs(v) >= 1000000) return '£' + (v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1) + 'M';
+  if (Math.abs(v) >= 1000) return '£' + Math.round(v / 1000) + 'k';
+  return '£' + v;
+}
+
+// Picks a "nice" round step (1/2/5/10 × a power of ten) for axis ticks, the way
+// most charting libraries do, so the axis reads 5,000 / 10,000 rather than 4,873.
+function niceTickStep(roughStep) {
+  const mag = Math.pow(10, Math.floor(Math.log10(roughStep || 1)));
+  const residual = roughStep / mag;
+  if (residual > 5) return 10 * mag;
+  if (residual > 2) return 5 * mag;
+  if (residual > 1) return 2 * mag;
+  return mag;
+}
+
+function buildMonthlyChart(monthly) {
+  const card = document.getElementById('monthlyChartCard');
+  if (!monthly.length) {
+    card.innerHTML = `
+      <h3>Monthly Comparison</h3>
+      <p class="empty-state">No jobs recorded yet — add or import jobs to see the monthly comparison.</p>
+    `;
+    return;
+  }
+
+  const currentYear = String(new Date().getFullYear());
+  const currentMonthIdx = new Date().getMonth();
+
+  // The current year's line stops at this month rather than dropping to a
+  // misleading zero for months that simply haven't happened yet.
+  const series = monthly.map((y) => {
+    const lastIdx = y.year === currentYear ? currentMonthIdx : 11;
+    return { year: y.year, values: y.months.slice(0, lastIdx + 1) };
+  });
+
+  const colors = PIE_COLORS.filter((c) => c !== '#9c9c9c');
+  const colorByYear = {};
+  series.forEach((s, i) => { colorByYear[s.year] = colors[i % colors.length]; });
+
+  const maxValue = Math.max(1, ...series.flatMap((s) => s.values));
+  const step = niceTickStep(maxValue / 4);
+  const ticks = [0];
+  while (ticks[ticks.length - 1] < maxValue) ticks.push(ticks[ticks.length - 1] + step);
+  const maxTick = ticks[ticks.length - 1];
+
+  const W = 760, H = 300;
+  const marginLeft = 54, marginRight = 60, marginTop = 16, marginBottom = 28;
+  const plotW = W - marginLeft - marginRight;
+  const plotH = H - marginTop - marginBottom;
+  const x = (i) => marginLeft + (i / 11) * plotW;
+  const y = (v) => marginTop + plotH - (v / maxTick) * plotH;
+
+  const gridlines = ticks.map((t) => `
+    <line class="chart-gridline" x1="${marginLeft}" y1="${y(t).toFixed(1)}" x2="${W - marginRight}" y2="${y(t).toFixed(1)}"></line>
+    <text class="chart-axis-label" x="${marginLeft - 8}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end">${shortMoney(t)}</text>
+  `).join('');
+
+  const xLabels = MONTH_LABELS.map((m, i) => `
+    <text class="chart-axis-label" x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle">${m}</text>
+  `).join('');
+
+  // End-of-line year labels can collide when two years finish close together in
+  // value - nudge the lower one down rather than let them overlap.
+  const endPoints = series
+    .filter((s) => s.values.length)
+    .map((s) => ({ year: s.year, actualY: y(s.values[s.values.length - 1]) }))
+    .sort((a, b) => a.actualY - b.actualY);
+  const MIN_LABEL_GAP = 14;
+  for (let i = 1; i < endPoints.length; i++) {
+    if (endPoints[i].actualY - endPoints[i - 1].actualY < MIN_LABEL_GAP) {
+      endPoints[i].actualY = endPoints[i - 1].actualY + MIN_LABEL_GAP;
+    }
+  }
+  const labelYByYear = Object.fromEntries(endPoints.map((e) => [e.year, e.actualY]));
+
+  const lines = series.filter((s) => s.values.length).map((s) => {
+    const color = colorByYear[s.year];
+    const d = s.values.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const lastIdx = s.values.length - 1;
+    const lastX = x(lastIdx);
+    const lastYActual = y(s.values[lastIdx]);
+    const labelY = labelYByYear[s.year];
+    return `
+      <path class="chart-line" d="${d}" stroke="${color}"></path>
+      <circle class="chart-end-dot" cx="${lastX.toFixed(1)}" cy="${lastYActual.toFixed(1)}" r="4" fill="${color}"></circle>
+      ${Math.abs(labelY - lastYActual) > 0.5 ? `<line x1="${(lastX + 6).toFixed(1)}" y1="${lastYActual.toFixed(1)}" x2="${(lastX + 14).toFixed(1)}" y2="${labelY.toFixed(1)}" stroke="${color}" stroke-width="1"></line>` : ''}
+      <text class="chart-end-label" x="${(lastX + 16).toFixed(1)}" y="${(labelY + 4).toFixed(1)}">${s.year}</text>
+    `;
+  }).join('');
+
+  const legend = series.map((s) => `
+    <div class="chart-legend-item"><span class="chart-legend-key" style="background:${colorByYear[s.year]}"></span>${s.year}</div>
+  `).join('');
+
+  card.innerHTML = `
+    <div class="monthly-chart-head">
+      <h3>Monthly Comparison</h3>
+      <button type="button" class="chart-table-toggle" id="monthlyTableToggle">View as table</button>
+    </div>
+    <p class="monthly-chart-sub">Value won per month — compare this year's pace against previous years.</p>
+    <div class="chart-legend">${legend}</div>
+    <div class="chart-wrap" id="monthlyChartWrap">
+      <svg viewBox="0 0 ${W} ${H}" id="monthlyChartSvg">
+        ${gridlines}
+        ${xLabels}
+        ${lines}
+        <line class="chart-crosshair" id="monthlyCrosshair" x1="0" y1="${marginTop}" x2="0" y2="${H - marginBottom}"></line>
+        <rect class="chart-hit-area" x="${marginLeft}" y="${marginTop}" width="${plotW}" height="${plotH}"></rect>
+      </svg>
+      <div class="chart-tooltip" id="monthlyTooltip"></div>
+    </div>
+    <div class="table-scroll" id="monthlyTableWrap" hidden>
+      <table class="monthly-table">
+        <thead><tr><th>Month</th>${series.map((s) => `<th>${s.year}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${MONTH_LABELS.map((m, i) => `
+            <tr>
+              <td>${m}</td>
+              ${series.map((s) => `<td>${i < s.values.length ? money(s.values[i]) : '—'}</td>`).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  wireMonthlyChartInteraction(series, colorByYear, { x, marginLeft, plotW, W });
+
+  document.getElementById('monthlyTableToggle').addEventListener('click', () => {
+    const chartWrap = document.getElementById('monthlyChartWrap');
+    const tableWrap = document.getElementById('monthlyTableWrap');
+    const toggle = document.getElementById('monthlyTableToggle');
+    const showingTable = !tableWrap.hidden;
+    tableWrap.hidden = showingTable;
+    chartWrap.hidden = !showingTable;
+    toggle.textContent = showingTable ? 'View as table' : 'View as chart';
+  });
+}
+
+function wireMonthlyChartInteraction(series, colorByYear, geo) {
+  const svg = document.getElementById('monthlyChartSvg');
+  const hitArea = svg.querySelector('.chart-hit-area');
+  const crosshair = document.getElementById('monthlyCrosshair');
+  const tooltip = document.getElementById('monthlyTooltip');
+  const wrap = document.getElementById('monthlyChartWrap');
+
+  function monthIndexAt(clientX) {
+    const rect = svg.getBoundingClientRect();
+    const scale = geo.W / rect.width;
+    const svgX = (clientX - rect.left) * scale;
+    const idx = Math.round(((svgX - geo.marginLeft) / geo.plotW) * 11);
+    return Math.max(0, Math.min(11, idx));
+  }
+
+  function hide() {
+    crosshair.style.opacity = '0';
+    tooltip.classList.remove('visible');
+  }
+
+  function showAt(clientX, clientY) {
+    const idx = monthIndexAt(clientX);
+    const rows = series
+      .filter((s) => idx < s.values.length)
+      .map((s) => ({ year: s.year, value: s.values[idx] }))
+      .sort((a, b) => b.value - a.value);
+    if (!rows.length) { hide(); return; }
+
+    crosshair.setAttribute('x1', geo.x(idx).toFixed(1));
+    crosshair.setAttribute('x2', geo.x(idx).toFixed(1));
+    crosshair.style.opacity = '1';
+
+    tooltip.innerHTML = `
+      <div class="chart-tooltip-title">${MONTH_LABELS[idx]}</div>
+      ${rows.map((r) => `
+        <div class="chart-tooltip-row">
+          <span class="chart-tooltip-key" style="background:${colorByYear[r.year]}"></span>
+          <span class="chart-tooltip-year">${r.year}</span>
+          <span class="chart-tooltip-value">${money(r.value)}</span>
+        </div>
+      `).join('')}
+    `;
+    tooltip.classList.add('visible');
+
+    const wrapRect = wrap.getBoundingClientRect();
+    let left = clientX - wrapRect.left + 14;
+    const top = clientY - wrapRect.top - 10;
+    const maxLeft = wrapRect.width - tooltip.offsetWidth - 8;
+    if (left > maxLeft) left = clientX - wrapRect.left - tooltip.offsetWidth - 14;
+    tooltip.style.left = `${Math.max(4, left)}px`;
+    tooltip.style.top = `${Math.max(4, top)}px`;
+  }
+
+  hitArea.addEventListener('pointermove', (e) => showAt(e.clientX, e.clientY));
+  hitArea.addEventListener('pointerleave', hide);
 }
 
 const PIE_COLORS = ['#186a9c', '#92c648', '#e8a13d', '#c8574f', '#7c5cbf', '#2fa89a', '#d6668f', '#5c8a3c', '#9c9c9c'];

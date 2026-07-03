@@ -325,6 +325,23 @@ async function yearlyReport() {
     .sort((a, b) => b.year.localeCompare(a.year));
 }
 
+// Value won per calendar month, split out by year, so the front end can plot one
+// line per year and let the office compare this year's pace against past ones.
+async function monthlyReport() {
+  const { data: jobs, error } = await supabase.from('jobs').select('date_won, value');
+  check(error);
+  const byYear = {};
+  for (const job of jobs) {
+    if (!job.date_won) continue;
+    const year = job.date_won.slice(0, 4);
+    const month = Number(job.date_won.slice(5, 7)) - 1;
+    if (month < 0 || month > 11) continue;
+    if (!byYear[year]) byYear[year] = Array(12).fill(0);
+    byYear[year][month] += job.value || 0;
+  }
+  return Object.keys(byYear).sort().map((year) => ({ year, months: byYear[year] }));
+}
+
 async function clientReport() {
   const { data: jobs, error } = await supabase.from('jobs').select('*');
   check(error);
@@ -533,6 +550,7 @@ module.exports = {
   getJobDocument,
   deleteJobDocument,
   yearlyReport,
+  monthlyReport,
   clientReport,
   listCalendarEvents,
   createCalendarEvent,

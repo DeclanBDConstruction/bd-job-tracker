@@ -350,6 +350,10 @@ app.get('/api/reports/yearly', handle(async (req, res) => {
   res.json(await db.yearlyReport());
 }));
 
+app.get('/api/reports/monthly', handle(async (req, res) => {
+  res.json(await db.monthlyReport());
+}));
+
 app.get('/api/reports/clients', handle(async (req, res) => {
   res.json(await db.clientReport());
 }));

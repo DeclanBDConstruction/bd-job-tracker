@@ -1419,3 +1419,157 @@ button:disabled {
   font-weight: 700;
   color: var(--muted);
 }
+
+/* ---------- Monthly Comparison Chart ---------- */
+
+.monthly-chart-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin-bottom: 22px;
+  box-shadow: var(--shadow);
+  border-top: 4px solid var(--blue);
+}
+
+.monthly-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.monthly-chart-head h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.monthly-chart-sub {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chart-table-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue-dark);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chart-table-toggle:hover { background: var(--blue-light); }
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.chart-legend-key {
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.chart-wrap {
+  position: relative;
+}
+
+.chart-wrap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-gridline { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.chart-axis-label { fill: var(--muted); font-size: 11px; }
+.chart-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-end-dot { stroke: white; stroke-width: 2; }
+.chart-end-label { font-size: 12px; font-weight: 700; fill: var(--text); }
+.chart-crosshair { stroke: var(--muted); stroke-width: 1; opacity: 0; pointer-events: none; }
+.chart-hit-area { fill: transparent; cursor: crosshair; }
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  background: var(--text);
+  color: white;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  box-shadow: var(--shadow-hover);
+  opacity: 0;
+  transition: opacity 0.08s ease;
+  min-width: 150px;
+}
+
+.chart-tooltip.visible { opacity: 1; }
+
+.chart-tooltip-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+}
+
+.chart-tooltip-key {
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.chart-tooltip-year {
+  flex: 1 1 auto;
+  color: #c9d2dc;
+}
+
+.chart-tooltip-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.monthly-table th, .monthly-table td {
+  padding: 7px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.monthly-table th:first-child, .monthly-table td:first-child {
+  text-align: left;
+}
+
+.monthly-table thead th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
