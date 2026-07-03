@@ -798,9 +798,14 @@ function createCalendarView({ scope, ids }) {
   let viewMonth = calToday.getMonth();
   let selectedDate = null;
 
+  // "My Calendar" is everything that's yours - your private entries plus anything you've put
+  // on the shared team calendar, so your day is in one place without duplicating any rows.
   function eventsOnDate(ds) {
     return state.calendarEvents.filter((e) => {
-      if (scope === 'private' ? !e.isPrivate : e.isPrivate) return false;
+      const include = scope === 'private'
+        ? !!(state.currentUser && e.userId === state.currentUser.id)
+        : !e.isPrivate;
+      if (!include) return false;
       return ds >= e.date && ds <= e.endDate;
     });
   }
@@ -862,7 +867,7 @@ function createCalendarView({ scope, ids }) {
       <li class="cal-day-event-item">
         <span class="cal-swatch" style="background:${userColor(e)}"></span>
         <div class="cal-day-event-body">
-          <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
+          <div class="cal-day-event-title">${escapeHtml(e.title)}${scope === 'private' && !e.isPrivate ? ' <span class="cal-today-badge" title="Also visible to everyone on the team calendar">Team</span>' : ''}</div>
           <div class="cal-day-event-meta">${scope === 'private' ? '' : `${escapeHtml(e.userName)} · `}${formatWhen(e)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
         </div>
         ${(state.currentUser && (state.currentUser.id === e.userId || state.currentUser.role === 'admin')) ? `<button type="button" class="danger cal-day-event-delete" data-id="${e.id}">Delete</button>` : ''}
