@@ -347,6 +347,30 @@ app.delete('/api/calendar/:id', handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Price List (Labour & Materials) ----------
+
+app.get('/api/price-list', handle(async (req, res) => {
+  res.json(await db.listPriceListItems());
+}));
+
+app.post('/api/price-list', handle(async (req, res) => {
+  const item = await db.createPriceListItem(req.body);
+  broadcast('priceList');
+  res.status(201).json(item);
+}));
+
+app.put('/api/price-list/:id', handle(async (req, res) => {
+  const item = await db.updatePriceListItem(req.params.id, req.body);
+  broadcast('priceList');
+  res.json(item);
+}));
+
+app.delete('/api/price-list/:id', requireAdmin, handle(async (req, res) => {
+  await db.deletePriceListItem(req.params.id);
+  broadcast('priceList');
+  res.status(204).end();
+}));
+
 // ---------- Status list ----------
 
 app.get('/api/statuses', handle(async (req, res) => {

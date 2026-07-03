@@ -474,6 +474,69 @@ async function deleteCalendarEvent(id, user) {
   check(delErr);
 }
 
+// ---------- Price List (Labour & Materials) ----------
+// One flat table of name+price items, split into the Labour tab and the Price List tab by
+// `kind` - reference data for pricing up quotes, not tied to any specific job.
+
+const PRICE_LIST_KINDS = ['labour', 'material'];
+
+function rowToPriceListItem(row) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    price: Number(row.price),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listPriceListItems() {
+  const { data, error } = await supabase.from('price_list_items').select('*').order('name');
+  check(error);
+  return data.map(rowToPriceListItem);
+}
+
+async function createPriceListItem(input) {
+  const kind = PRICE_LIST_KINDS.includes(input.kind) ? input.kind : null;
+  if (!kind) throw new Error('Kind must be labour or material');
+  const name = (input.name || '').trim();
+  if (!name) throw new Error('Item name is required');
+  const price = Number(input.price);
+  if (isNaN(price) || price < 0) throw new Error('Price must be a valid number');
+
+  const row = {
+    id: genId(),
+    kind,
+    name,
+    price,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('price_list_items').insert(row).select().single();
+  check(error);
+  return rowToPriceListItem(data);
+}
+
+async function updatePriceListItem(id, input) {
+  const name = (input.name || '').trim();
+  if (!name) throw new Error('Item name is required');
+  const price = Number(input.price);
+  if (isNaN(price) || price < 0) throw new Error('Price must be a valid number');
+
+  const { data, error } = await supabase.from('price_list_items')
+    .update({ name, price, updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Item not found');
+  return rowToPriceListItem(data);
+}
+
+async function deletePriceListItem(id) {
+  const { error } = await supabase.from('price_list_items').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Auth ----------
 
 function sanitizeUser(row) {
@@ -620,4 +683,8 @@ module.exports = {
   listCalendarEvents,
   createCalendarEvent,
   deleteCalendarEvent,
+  listPriceListItems,
+  createPriceListItem,
+  updatePriceListItem,
+  deletePriceListItem,
 };

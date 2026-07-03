@@ -67,6 +67,8 @@
     <button class="tab-btn" data-tab="jobs">Jobs</button>
     <button class="tab-btn" data-tab="completed">Completed Jobs</button>
     <button class="tab-btn" data-tab="employees">Employees</button>
+    <button class="tab-btn" data-tab="labour">Labour</button>
+    <button class="tab-btn" data-tab="pricelist">Price List</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
     <button class="tab-btn" data-tab="risk">Risk Assessments</button>
@@ -183,6 +185,46 @@
     </div>
     <table class="data-table" id="employeesTable">
       <thead><tr><th>Name</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- LABOUR TAB -->
+  <section id="tab-labour" class="tab-panel">
+    <div class="panel-header">
+      <h2>Labour</h2>
+      <div class="filters">
+        <input type="text" id="labourSearch" placeholder="Search labour…">
+      </div>
+    </div>
+    <p class="hint">Labour rates to use when pricing up quotes — anyone can add an item or update a price.</p>
+    <div class="import-upload">
+      <input type="text" id="newLabourName" placeholder="e.g. Labourer (per day)">
+      <input type="number" id="newLabourPrice" placeholder="Price (£)" step="0.01" min="0">
+      <button type="button" id="addLabourBtn" class="primary">+ Add</button>
+    </div>
+    <table class="data-table" id="labourTable">
+      <thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- PRICE LIST TAB -->
+  <section id="tab-pricelist" class="tab-panel">
+    <div class="panel-header">
+      <h2>Price List</h2>
+      <div class="filters">
+        <input type="text" id="priceListSearch" placeholder="Search price list…">
+      </div>
+    </div>
+    <p class="hint">Material and item prices to use when pricing up quotes — anyone can add an item or update a price.</p>
+    <div class="import-upload">
+      <input type="text" id="newPriceListName" placeholder="e.g. Plasterboard sheet">
+      <input type="number" id="newPriceListPrice" placeholder="Price (£)" step="0.01" min="0">
+      <button type="button" id="addPriceListBtn" class="primary">+ Add</button>
+    </div>
+    <table class="data-table" id="priceListTable">
+      <thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </section>

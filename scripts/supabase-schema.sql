@@ -79,10 +79,22 @@ alter table calendar_events add column if not exists is_private boolean not null
 alter table calendar_events add column if not exists start_time text;
 alter table calendar_events add column if not exists end_time text;
 
+-- Labour rates and material prices used when pricing up quotes. `kind` splits the same
+-- shape of data into the Labour tab and the Price List tab.
+create table if not exists price_list_items (
+  id uuid primary key,
+  kind text not null,
+  name text not null,
+  price numeric not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
 create index if not exists sessions_expires_at_idx on sessions (expires_at);
 create index if not exists calendar_events_date_idx on calendar_events (date);
+create index if not exists price_list_items_kind_idx on price_list_items (kind);
 
 -- Lock every table down by default. The app only ever talks to Supabase using the
 -- service-role key (which bypasses RLS), so these policies exist purely as a safety
@@ -94,6 +106,7 @@ alter table sessions enable row level security;
 alter table jobs enable row level security;
 alter table job_documents enable row level security;
 alter table calendar_events enable row level security;
+alter table price_list_items enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

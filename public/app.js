@@ -6,6 +6,7 @@ const state = {
   calendarEvents: [],
   calendarColors: [],
   userColors: [],
+  priceListItems: [],
   currentUser: null,
 };
 
@@ -75,6 +76,7 @@ function connectLiveUpdates() {
     else if (type === 'employees') handleLiveEmployeesChange();
     else if (type === 'calendar') handleLiveCalendarChange();
     else if (type === 'users') handleLiveUsersChange();
+    else if (type === 'priceList') handleLivePriceListChange();
   };
 }
 
@@ -83,6 +85,11 @@ function disconnectLiveUpdates() {
     liveEvents.close();
     liveEvents = null;
   }
+}
+
+async function handleLivePriceListChange() {
+  state.priceListItems = await api('/api/price-list');
+  renderPriceLists();
 }
 
 async function handleLiveJobsChange() {
@@ -230,18 +237,20 @@ document.getElementById('logoHomeBtn').addEventListener('click', () => goToTab('
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, calendarEvents] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, calendarEvents, priceListItems] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
     api('/api/risk-assessments'),
     api('/api/calendar'),
+    api('/api/price-list'),
   ]);
   state.jobs = jobs;
   state.employees = employees;
   state.statuses = statuses;
   state.riskAssessments = riskAssessmentsList;
   state.calendarEvents = calendarEvents;
+  state.priceListItems = priceListItems;
   renderStatusOptions();
   renderEmployeeOptions();
   renderJobs();
@@ -249,6 +258,7 @@ async function bootstrap() {
   renderEmployees();
   renderRiskAssessments();
   renderCalendar();
+  renderPriceLists();
   renderHomeDashboard();
 
   // Split from the Promise.all above: this needs a `users.color` column that only
@@ -750,6 +760,124 @@ document.querySelector('#employeesTable tbody').addEventListener('click', async 
     alert(err.message);
   }
 });
+
+// ---------- Price List (Labour & Materials) ----------
+
+// Builds one item+price list (search, add row, inline edit/delete) wired to its own DOM ids.
+// Used once for Labour and once for Price List - same table/search/edit behaviour, just
+// scoped to a different `kind` slice of state.priceListItems.
+function createPriceListView({ kind, ids }) {
+  let editingId = null;
+  let searchTerm = '';
+
+  function items() {
+    const term = searchTerm.trim().toLowerCase();
+    return state.priceListItems
+      .filter((it) => it.kind === kind && (!term || it.name.toLowerCase().includes(term)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function render() {
+    const list = items();
+    const tbody = document.querySelector(`#${ids.table} tbody`);
+    tbody.innerHTML = list.length ? list.map((it) => {
+      if (editingId === it.id) {
+        return `
+          <tr data-id="${it.id}">
+            <td><input type="text" class="pl-edit-name" value="${escapeHtml(it.name)}"></td>
+            <td><input type="number" step="0.01" min="0" class="pl-edit-price" value="${it.price}"></td>
+            <td class="row-actions">
+              <button type="button" class="primary pl-save-btn">Save</button>
+              <button type="button" class="pl-cancel-btn">Cancel</button>
+            </td>
+          </tr>`;
+      }
+      return `
+        <tr data-id="${it.id}">
+          <td>${escapeHtml(it.name)}</td>
+          <td>${money(it.price)}</td>
+          <td class="row-actions">
+            <button type="button" class="pl-edit-btn">Edit</button>
+            ${isAdmin() ? '<button type="button" class="danger pl-delete-btn">Delete</button>' : ''}
+          </td>
+        </tr>`;
+    }).join('') : `<tr><td colspan="3" class="empty-state">${searchTerm.trim() ? 'No items match your search.' : 'Nothing added yet.'}</td></tr>`;
+
+    tbody.querySelectorAll('.pl-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => { editingId = btn.closest('tr').dataset.id; render(); });
+    });
+    tbody.querySelectorAll('.pl-cancel-btn').forEach((btn) => {
+      btn.addEventListener('click', () => { editingId = null; render(); });
+    });
+    tbody.querySelectorAll('.pl-save-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const tr = btn.closest('tr');
+        const payload = {
+          name: tr.querySelector('.pl-edit-name').value,
+          price: tr.querySelector('.pl-edit-price').value,
+        };
+        try {
+          await api(`/api/price-list/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+          state.priceListItems = await api('/api/price-list');
+          editingId = null;
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+    tbody.querySelectorAll('.pl-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.closest('tr').dataset.id;
+        if (!confirm('Delete this item?')) return;
+        try {
+          await api(`/api/price-list/${id}`, { method: 'DELETE' });
+          state.priceListItems = await api('/api/price-list');
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+  }
+
+  document.getElementById(ids.search).addEventListener('input', (e) => {
+    searchTerm = e.target.value;
+    render();
+  });
+
+  document.getElementById(ids.addBtn).addEventListener('click', async () => {
+    const nameInput = document.getElementById(ids.addName);
+    const priceInput = document.getElementById(ids.addPrice);
+    if (!nameInput.value.trim()) return;
+    try {
+      await api('/api/price-list', { method: 'POST', body: JSON.stringify({ kind, name: nameInput.value, price: priceInput.value }) });
+      nameInput.value = '';
+      priceInput.value = '';
+      state.priceListItems = await api('/api/price-list');
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  return { render };
+}
+
+const labourList = createPriceListView({
+  kind: 'labour',
+  ids: { search: 'labourSearch', addName: 'newLabourName', addPrice: 'newLabourPrice', addBtn: 'addLabourBtn', table: 'labourTable' },
+});
+
+const materialList = createPriceListView({
+  kind: 'material',
+  ids: { search: 'priceListSearch', addName: 'newPriceListName', addPrice: 'newPriceListPrice', addBtn: 'addPriceListBtn', table: 'priceListTable' },
+});
+
+function renderPriceLists() {
+  labourList.render();
+  materialList.render();
+}
 
 // ---------- Calendar ----------
 
