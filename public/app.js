@@ -235,6 +235,50 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 
 document.getElementById('logoHomeBtn').addEventListener('click', () => goToTab('home'));
 
+// ---------- Home Slideshow ----------
+// Static marketing images, not tied to any app data, so this runs once at load rather
+// than as part of bootstrap/render.
+
+(function initHomeSlideshow() {
+  const slideshow = document.getElementById('homeSlideshow');
+  const track = slideshow && slideshow.querySelector('.slideshow-track');
+  const slides = track ? Array.from(track.children) : [];
+  if (!slideshow || !slides.length) return;
+
+  const dotsContainer = slideshow.querySelector('.slideshow-dots');
+  const dots = slides.map((_, i) => {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'slideshow-dot';
+    dot.setAttribute('aria-label', `Go to slide ${i + 1}`);
+    dot.addEventListener('click', () => { goTo(i); restart(); });
+    dotsContainer.appendChild(dot);
+    return dot;
+  });
+
+  let index = 0;
+  let timer = null;
+
+  function goTo(i) {
+    index = (i + slides.length) % slides.length;
+    track.style.transform = `translateX(-${index * 100}%)`;
+    dots.forEach((d, di) => d.classList.toggle('active', di === index));
+  }
+
+  function restart() {
+    clearInterval(timer);
+    timer = setInterval(() => goTo(index + 1), 5000);
+  }
+
+  slideshow.querySelector('.slideshow-prev').addEventListener('click', () => { goTo(index - 1); restart(); });
+  slideshow.querySelector('.slideshow-next').addEventListener('click', () => { goTo(index + 1); restart(); });
+  slideshow.addEventListener('mouseenter', () => clearInterval(timer));
+  slideshow.addEventListener('mouseleave', restart);
+
+  goTo(0);
+  restart();
+})();
+
 // ---------- Bootstrap ----------
 
 async function bootstrap() {

@@ -21,29 +21,37 @@
 <!-- SIGN IN / CREATE ACCOUNT -->
 <div id="authScreen" class="auth-screen" hidden>
   <div class="auth-card">
-    <img src="assets/logo-mark.png" alt="BD Construction Ltd" class="auth-logo">
-
-    <div id="loginView">
-      <h2>Sign In</h2>
-      <form id="loginForm">
-        <label>Email<input type="email" id="loginEmail" required autocomplete="username"></label>
-        <label>Password<input type="password" id="loginPassword" required autocomplete="current-password"></label>
-        <p class="auth-error" id="loginError" hidden></p>
-        <button type="submit" class="primary">Sign In</button>
-      </form>
-      <p class="auth-switch">New here? <button type="button" id="showRegisterBtn" class="link-btn">Create an account</button></p>
+    <div class="auth-brand">
+      <img src="assets/logo-mark.png" alt="BD Construction Ltd" class="auth-logo">
+      <h1>BD Construction</h1>
+      <p>Job Tracker</p>
     </div>
 
-    <div id="registerView" hidden>
-      <h2>Create Account</h2>
-      <form id="registerForm">
-        <label>Name<input type="text" id="registerName" required autocomplete="name"></label>
-        <label>Email<input type="email" id="registerEmail" required autocomplete="username"></label>
-        <label>Password (min. 6 characters)<input type="password" id="registerPassword" required minlength="6" autocomplete="new-password"></label>
-        <p class="auth-error" id="registerError" hidden></p>
-        <button type="submit" class="primary">Create Account</button>
-      </form>
-      <p class="auth-switch">Already have an account? <button type="button" id="showLoginBtn" class="link-btn">Sign in</button></p>
+    <div class="auth-form-panel">
+      <div id="loginView">
+        <h2>Sign In</h2>
+        <p class="auth-subtitle">Welcome back — enter your details to continue.</p>
+        <form id="loginForm">
+          <label>Email<input type="email" id="loginEmail" required autocomplete="username"></label>
+          <label>Password<input type="password" id="loginPassword" required autocomplete="current-password"></label>
+          <p class="auth-error" id="loginError" hidden></p>
+          <button type="submit" class="primary">Sign In</button>
+        </form>
+        <p class="auth-switch">New here? <button type="button" id="showRegisterBtn" class="link-btn">Create an account</button></p>
+      </div>
+
+      <div id="registerView" hidden>
+        <h2>Create Account</h2>
+        <p class="auth-subtitle">Set up your account to get started.</p>
+        <form id="registerForm">
+          <label>Name<input type="text" id="registerName" required autocomplete="name"></label>
+          <label>Email<input type="email" id="registerEmail" required autocomplete="username"></label>
+          <label>Password (min. 6 characters)<input type="password" id="registerPassword" required minlength="6" autocomplete="new-password"></label>
+          <p class="auth-error" id="registerError" hidden></p>
+          <button type="submit" class="primary">Create Account</button>
+        </form>
+        <p class="auth-switch">Already have an account? <button type="button" id="showLoginBtn" class="link-btn">Sign in</button></p>
+      </div>
     </div>
   </div>
 </div>
@@ -88,27 +96,32 @@
       <h2>Welcome to the BD Construction Job Tracker</h2>
       <p>A look at some of the jobs we've delivered.</p>
     </div>
-    <div class="gallery">
-      <figure class="gallery-item">
-        <img src="assets/gallery/retail-fitout.jpg" alt="Retail store fit-out">
-        <figcaption>Retail Fit-Out</figcaption>
-      </figure>
-      <figure class="gallery-item">
-        <img src="assets/gallery/cafe-fitout.jpg" alt="Café fit-out with seating booths">
-        <figcaption>Café Fit-Out</figcaption>
-      </figure>
-      <figure class="gallery-item">
-        <img src="assets/gallery/hotel-lounge.jpg" alt="Hotel lounge with planting and feature lighting">
-        <figcaption>Hotel Lounge</figcaption>
-      </figure>
-      <figure class="gallery-item">
-        <img src="assets/gallery/games-room.jpg" alt="Games room with dartboard bays">
-        <figcaption>Leisure &amp; Games Room</figcaption>
-      </figure>
-      <figure class="gallery-item">
-        <img src="assets/gallery/restaurant-fitout.jpg" alt="Restaurant fit-out in progress">
-        <figcaption>Restaurant Fit-Out</figcaption>
-      </figure>
+    <div class="slideshow" id="homeSlideshow">
+      <div class="slideshow-track">
+        <figure class="slide">
+          <img src="assets/gallery/retail-fitout.jpg" alt="Retail store fit-out">
+          <figcaption>Retail Fit-Out</figcaption>
+        </figure>
+        <figure class="slide">
+          <img src="assets/gallery/cafe-fitout.jpg" alt="Café fit-out with seating booths">
+          <figcaption>Café Fit-Out</figcaption>
+        </figure>
+        <figure class="slide">
+          <img src="assets/gallery/hotel-lounge.jpg" alt="Hotel lounge with planting and feature lighting">
+          <figcaption>Hotel Lounge</figcaption>
+        </figure>
+        <figure class="slide">
+          <img src="assets/gallery/games-room.jpg" alt="Games room with dartboard bays">
+          <figcaption>Leisure &amp; Games Room</figcaption>
+        </figure>
+        <figure class="slide">
+          <img src="assets/gallery/restaurant-fitout.jpg" alt="Restaurant fit-out in progress">
+          <figcaption>Restaurant Fit-Out</figcaption>
+        </figure>
+      </div>
+      <button type="button" class="slideshow-nav slideshow-prev" aria-label="Previous slide">&#8249;</button>
+      <button type="button" class="slideshow-nav slideshow-next" aria-label="Next slide">&#8250;</button>
+      <div class="slideshow-dots"></div>
     </div>
   </section>
 
