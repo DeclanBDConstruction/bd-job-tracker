@@ -667,10 +667,16 @@ async function refreshJobDetail() {
   job.employeeName = emp ? emp.name : '(unassigned)';
   renderJobDetailInfo(job);
   DOCUMENT_SECTIONS.forEach((category) => renderDocumentSection(category, (job.documents || {})[category]));
+  renderVariationsSection(job.variations || []);
+}
+
+function variationsTotal(variations) {
+  return (variations || []).reduce((sum, v) => sum + v.value, 0);
 }
 
 function renderJobDetailInfo(job) {
   document.getElementById('jobDetailTitle').textContent = `${job.client}${job.location ? ' — ' + job.location : ''}`;
+  const varTotal = variationsTotal(job.variations);
   document.getElementById('jobDetailSection-info').innerHTML = `
     <dl class="detail-grid">
       <div><dt>Job Number</dt><dd>${escapeHtml(job.jobReference || '—')}</dd></div>
@@ -680,6 +686,8 @@ function renderJobDetailInfo(job) {
       <div><dt>Date Won</dt><dd>${job.dateWon || '—'}</dd></div>
       <div><dt>Start Date</dt><dd>${job.startDate || '—'}</dd></div>
       <div><dt>Value</dt><dd>${money(job.value)}</dd></div>
+      ${varTotal ? `<div><dt>Variations Total</dt><dd>${money(varTotal)}</dd></div>
+      <div><dt>Adjusted Value</dt><dd>${money(job.value + varTotal)}</dd></div>` : ''}
       <div><dt>Profit</dt><dd>${money(job.profit)}</dd></div>
       <div><dt>Status</dt><dd><span class="status-pill ${slug(job.status)}">${escapeHtml(job.status)}</span></dd></div>
       <div><dt>Notes</dt><dd>${escapeHtml(job.description || '—')}</dd></div>
@@ -698,6 +706,59 @@ function formatBytes(bytes) {
   if (!bytes) return '0 KB';
   const kb = bytes / 1024;
   return kb < 1024 ? `${kb.toFixed(0)} KB` : `${(kb / 1024).toFixed(1)} MB`;
+}
+
+// ---------- Job Variations ----------
+// Extra works agreed after the original quote - tracked separately from the job's Value
+// so scope changes stay visible instead of quietly making the quoted value stale.
+
+function renderVariationsSection(variations) {
+  const container = document.getElementById('jobDetailSection-variations');
+  const items = variations.map((v) => `
+    <li class="doc-list-item">
+      <span class="variation-desc">${escapeHtml(v.description)}</span>
+      <span class="doc-meta">${money(v.value)} · ${new Date(v.createdAt).toLocaleDateString('en-GB')}</span>
+      <button type="button" class="danger variation-delete-btn" data-variation="${v.id}">Delete</button>
+    </li>
+  `).join('');
+  container.innerHTML = `
+    <form id="variationAddForm" class="variation-add-form">
+      <input type="text" id="variationDescInput" placeholder="Description (e.g. Extra electrical sockets)" required>
+      <input type="number" id="variationValueInput" placeholder="Value (£, use - for a deduction)" step="0.01" required>
+      <button type="submit" class="primary">+ Add Variation</button>
+    </form>
+    <ul class="doc-list">${items}</ul>
+    ${!variations.length ? '<p class="empty-state">No variations recorded yet.</p>' : `<p class="variation-total">Variations total: <strong>${money(variationsTotal(variations))}</strong></p>`}
+  `;
+
+  document.getElementById('variationAddForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const description = document.getElementById('variationDescInput').value.trim();
+    const value = document.getElementById('variationValueInput').value;
+    if (!description) { alert('Enter a description.'); return; }
+    if (value === '' || isNaN(Number(value))) { alert('Enter a valid value.'); return; }
+    try {
+      await api(`/api/jobs/${currentDetailJobId}/variations`, {
+        method: 'POST',
+        body: JSON.stringify({ description, value: Number(value) }),
+      });
+      await refreshJobDetail();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  container.querySelectorAll('.variation-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this variation? This cannot be undone.')) return;
+      try {
+        await api(`/api/jobs/${currentDetailJobId}/variations/${btn.dataset.variation}`, { method: 'DELETE' });
+        await refreshJobDetail();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 }
 
 function renderDocumentSection(category, docs) {
@@ -777,7 +838,8 @@ function renderEmployees() {
   state.employees.forEach((e) => {
     const jobCount = state.jobs.filter((j) => j.employeeId === e.id).length;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtml(e.name)} <span style="color:var(--muted)">(${jobCount} job${jobCount === 1 ? '' : 's'})</span></td>
+    if (e.hasAccount) tr.classList.add('employee-linked');
+    tr.innerHTML = `<td>${escapeHtml(e.name)} <span style="color:var(--muted)">(${jobCount} job${jobCount === 1 ? '' : 's'})</span>${e.hasAccount ? '<span class="linked-badge" title="An account has been created and linked to this employee">Account linked</span>' : ''}</td>
       <td class="row-actions">${isAdmin() ? `<button data-del-emp="${e.id}" class="danger">Delete</button>` : ''}</td>`;
     tbody.appendChild(tr);
   });

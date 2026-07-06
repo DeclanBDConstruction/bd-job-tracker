@@ -559,6 +559,23 @@ button.danger:hover { background: #fdecea; }
 .data-table tbody tr:hover { background: var(--blue-light); }
 .data-table tbody tr:last-child td { border-bottom: none; }
 
+.data-table tbody tr.employee-linked { background: var(--green-light); }
+.data-table tbody tr.employee-linked:hover { background: #e2f0cc; }
+
+.linked-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--green);
+  color: white;
+}
+
 .table-scroll { overflow-x: auto; border-radius: var(--radius); }
 
 .desc-cell {
@@ -897,6 +914,41 @@ button:disabled {
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* ---------- Job Variations ---------- */
+
+.variation-add-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.variation-add-form input[type="text"] {
+  flex: 1 1 320px;
+  min-width: 200px;
+}
+
+.variation-add-form input[type="number"] {
+  flex: 0 1 220px;
+}
+
+.variation-desc {
+  flex: 1 1 auto;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.variation-total {
+  margin: 14px 2px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.variation-total strong {
+  color: var(--blue-dark);
 }
 
 /* ---------- Home ---------- */

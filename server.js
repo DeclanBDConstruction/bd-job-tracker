@@ -260,6 +260,21 @@ app.post('/api/jobs/:id/reopen', handle(async (req, res) => {
   res.json(job);
 }));
 
+app.post('/api/jobs/:id/variations', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const variation = await db.addJobVariation(req.params.id, req.body);
+  broadcast('jobs');
+  res.status(201).json(variation);
+}));
+
+app.delete('/api/jobs/:id/variations/:variationId', handle(async (req, res) => {
+  const variation = await db.deleteJobVariation(req.params.id, req.params.variationId);
+  if (!variation) return res.status(404).json({ error: 'Variation not found' });
+  broadcast('jobs');
+  res.status(204).end();
+}));
+
 app.post('/api/jobs/:id/documents/:category', validateDocumentParams, uploadDocument.single('file'), handle(async (req, res) => {
   if (!req.file) throw new Error('No file uploaded');
   const storedName = makeStoredName(req.file.originalname);

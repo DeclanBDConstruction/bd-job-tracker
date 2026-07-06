@@ -36,10 +36,18 @@ function check(error) {
 
 // ---------- Employees ----------
 
+// `hasAccount` flags employees whose name matched a user account at registration
+// (see registerUser's employee_id auto-link), so the Employees tab can show at a
+// glance who's actually signed up versus who's just a name on jobs.
 async function listEmployees() {
-  const { data, error } = await supabase.from('employees').select('*').order('name');
+  const [{ data, error }, { data: userRows, error: userErr }] = await Promise.all([
+    supabase.from('employees').select('*').order('name'),
+    supabase.from('users').select('employee_id').not('employee_id', 'is', null),
+  ]);
   check(error);
-  return data;
+  check(userErr);
+  const linkedIds = new Set(userRows.map((u) => u.employee_id));
+  return data.map((e) => ({ id: e.id, name: e.name, hasAccount: linkedIds.has(e.id) }));
 }
 
 async function findEmployeeByName(name) {
@@ -115,6 +123,7 @@ function rowToJob(row, empNameById) {
     description: row.description || '',
     completedAt: row.completed_at || '',
     documents: { rams: [], drawings: [], signoff: [], photos: [] },
+    variations: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     progress: computeProgress(row),
@@ -144,6 +153,30 @@ async function attachDocuments(jobs) {
   return jobs;
 }
 
+function rowToVariation(row) {
+  return {
+    id: row.id,
+    description: row.description,
+    value: Number(row.value) || 0,
+    createdAt: row.created_at,
+  };
+}
+
+async function attachVariations(jobs) {
+  if (!jobs.length) return jobs;
+  const { data: rows, error } = await supabase.from('job_variations').select('*').in('job_id', jobs.map((j) => j.id));
+  check(error);
+  const byJob = {};
+  for (const r of rows) {
+    if (!byJob[r.job_id]) byJob[r.job_id] = [];
+    byJob[r.job_id].push(rowToVariation(r));
+  }
+  jobs.forEach((j) => {
+    j.variations = (byJob[j.id] || []).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  });
+  return jobs;
+}
+
 async function employeeNameMap() {
   const { data, error } = await supabase.from('employees').select('*');
   check(error);
@@ -157,7 +190,7 @@ async function listJobs() {
   ]);
   check(error);
   const jobs = rows.map((r) => rowToJob(r, empNameById));
-  await attachDocuments(jobs);
+  await Promise.all([attachDocuments(jobs), attachVariations(jobs)]);
   return jobs.sort((a, b) => (b.dateWon || '').localeCompare(a.dateWon || ''));
 }
 
@@ -169,7 +202,7 @@ async function getJob(id) {
   check(error);
   if (!row) return null;
   const job = rowToJob(row, empNameById);
-  await attachDocuments([job]);
+  await Promise.all([attachDocuments([job]), attachVariations([job])]);
   return job;
 }
 
@@ -230,7 +263,7 @@ async function updateJob(id, input) {
   check(error);
   if (!data) throw new Error('Job not found');
   const job = rowToJob(data, { [emp.id]: emp.name });
-  await attachDocuments([job]);
+  await Promise.all([attachDocuments([job]), attachVariations([job])]);
   return job;
 }
 
@@ -264,6 +297,40 @@ async function reopenJob(id) {
   check(error);
   if (!data) throw new Error('Job not found');
   return getJob(id);
+}
+
+// ---------- Job Variations ----------
+// Extra works agreed after the original quote - kept separate from the job's Value so
+// scope changes are visible instead of silently making the quoted value stale.
+
+async function addJobVariation(jobId, input) {
+  const description = (input.description || '').trim();
+  if (!description) throw new Error('Description is required');
+  const value = Number(input.value);
+  if (isNaN(value)) throw new Error('Value must be a number');
+  const { data: job, error: jobErr } = await supabase.from('jobs').select('id').eq('id', jobId).maybeSingle();
+  check(jobErr);
+  if (!job) throw new Error('Job not found');
+  const row = {
+    id: genId(),
+    job_id: jobId,
+    description,
+    value,
+    created_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('job_variations').insert(row).select().single();
+  check(error);
+  return rowToVariation(data);
+}
+
+async function deleteJobVariation(jobId, variationId) {
+  const { data, error } = await supabase.from('job_variations').select('*')
+    .eq('id', variationId).eq('job_id', jobId).maybeSingle();
+  check(error);
+  if (!data) return null;
+  const { error: delErr } = await supabase.from('job_variations').delete().eq('id', variationId);
+  check(delErr);
+  return rowToVariation(data);
 }
 
 // ---------- Job Documents ----------
@@ -760,6 +827,8 @@ module.exports = {
   deleteJob,
   completeJob,
   reopenJob,
+  addJobVariation,
+  deleteJobVariation,
   addJobDocument,
   getJobDocument,
   deleteJobDocument,

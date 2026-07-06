@@ -54,6 +54,17 @@ create table if not exists jobs (
   updated_at timestamptz not null default now()
 );
 
+-- Extra works added to a job after the original quote - scope changes are normal
+-- mid-job, and without tracking them separately the job's quoted Value silently
+-- stops matching what it's actually worth.
+create table if not exists job_variations (
+  id uuid primary key,
+  job_id uuid not null references jobs(id) on delete cascade,
+  description text not null,
+  value numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists job_documents (
   id uuid primary key,
   job_id uuid not null references jobs(id) on delete cascade,
@@ -111,6 +122,7 @@ create table if not exists saved_risk_assessments (
 );
 
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
+create index if not exists job_variations_job_id_idx on job_variations (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
 create index if not exists sessions_expires_at_idx on sessions (expires_at);
 create index if not exists calendar_events_date_idx on calendar_events (date);
@@ -125,6 +137,7 @@ alter table employees enable row level security;
 alter table users enable row level security;
 alter table sessions enable row level security;
 alter table jobs enable row level security;
+alter table job_variations enable row level security;
 alter table job_documents enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
