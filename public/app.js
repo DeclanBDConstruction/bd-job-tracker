@@ -260,7 +260,6 @@ async function bootstrap() {
   renderCompletedJobs();
   renderEmployees();
   renderRiskAssessments();
-  renderRaLibrary();
   renderCalendar();
   renderPriceLists();
   renderHomeDashboard();
@@ -1239,35 +1238,49 @@ function renderHomeDashboard() {
   });
 }
 
-// ---------- Saved Risk Assessments (library) ----------
-// Risk assessments staff have written and uploaded themselves - saved once so they can be
-// attached to any job, including the same job again next time it comes up.
+// ---------- Risk Assessments ----------
+// Generic in-code templates and staff-uploaded ones (saved once, attach to any job -
+// including the same job again next time it comes up) render as the same kind of card
+// in the same grid, distinguished by data-kind on their "View & Attach to Job" button.
 
-function renderRaLibrary() {
-  const list = document.getElementById('raLibraryList');
-  if (!state.raLibrary.length) {
-    list.innerHTML = '<p class="empty-state">No saved risk assessments yet — upload one above.</p>';
-    return;
-  }
-  list.innerHTML = state.raLibrary.map((ra) => `
-    <li class="doc-list-item">
-      <a href="/api/risk-assessments/library/${ra.id}/file" target="_blank">${escapeHtml(ra.name)}</a>
-      <span class="doc-meta">${formatBytes(ra.size)} · ${new Date(ra.createdAt).toLocaleDateString('en-GB')}</span>
-      <button type="button" class="ra-library-attach-btn" data-ra="${ra.id}" data-name="${escapeHtml(ra.name)}">Attach to Job</button>
-      ${isAdmin() ? `<button type="button" class="danger ra-library-delete-btn" data-ra="${ra.id}">Delete</button>` : ''}
-    </li>
-  `).join('');
-
-  list.querySelectorAll('.ra-library-attach-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openRaLibraryAttachModal(btn.dataset.ra, btn.dataset.name));
-  });
-  list.querySelectorAll('.ra-library-delete-btn').forEach((btn) => {
+function renderRiskAssessments() {
+  const grid = document.getElementById('raGrid');
+  const libraryCards = state.raLibrary.map((ra) => `
+    <div class="ra-card">
+      <div class="ra-card-top">
+        <h3>${escapeHtml(ra.name)}</h3>
+        <span class="risk-badge">Saved</span>
+      </div>
+      <p class="ra-card-summary">Uploaded ${new Date(ra.createdAt).toLocaleDateString('en-GB')} · ${formatBytes(ra.size)}${ra.uploadedBy ? ' · ' + escapeHtml(ra.uploadedBy) : ''}</p>
+      <div class="ra-card-actions">
+        <button type="button" class="ra-view-btn" data-kind="library" data-ra="${ra.id}">View &amp; Attach to Job</button>
+        <a href="/api/risk-assessments/library/${ra.id}/file" class="ra-download-btn">Download</a>
+        ${isAdmin() ? `<button type="button" class="danger ra-library-delete-btn" data-ra="${ra.id}">Delete</button>` : ''}
+      </div>
+    </div>
+  `);
+  const genericCards = state.riskAssessments.map((ra) => `
+    <div class="ra-card">
+      <div class="ra-card-top">
+        <h3>${escapeHtml(ra.title)}</h3>
+        <span class="risk-badge ${ra.currentBand.slug}">${escapeHtml(ra.currentBand.label)}</span>
+      </div>
+      <p class="ra-card-summary">Risk rating ${ra.currentL} × ${ra.currentC} = ${ra.currentR}, reduced to ${ra.additionalR} with additional controls.</p>
+      <div class="ra-card-actions">
+        <button type="button" class="ra-view-btn" data-kind="generic" data-ra="${ra.id}">View &amp; Attach to Job</button>
+        <a href="/api/risk-assessments/${ra.id}/download" class="ra-download-btn">Download</a>
+      </div>
+    </div>
+  `);
+  grid.innerHTML = libraryCards.join('') + genericCards.join('');
+  grid.querySelectorAll('.ra-view-btn').forEach((btn) => btn.addEventListener('click', () => openRaModal(btn.dataset.kind, btn.dataset.ra)));
+  grid.querySelectorAll('.ra-library-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this saved risk assessment? This cannot be undone.')) return;
       try {
         await api(`/api/risk-assessments/library/${btn.dataset.ra}`, { method: 'DELETE' });
         state.raLibrary = await api('/api/risk-assessments/library');
-        renderRaLibrary();
+        renderRiskAssessments();
       } catch (err) {
         alert(err.message);
       }
@@ -1300,98 +1313,52 @@ document.getElementById('raLibraryUploadForm').addEventListener('submit', async 
     e.target.reset();
     document.getElementById('raLibraryFileName').textContent = '';
     state.raLibrary = await api('/api/risk-assessments/library');
-    renderRaLibrary();
+    renderRiskAssessments();
   } catch (err) {
     alert(err.message);
   }
 });
-
-const raLibraryAttachModal = document.getElementById('raLibraryAttachModal');
-let currentRaLibraryId = null;
-
-function openRaLibraryAttachModal(id, name) {
-  currentRaLibraryId = id;
-  document.getElementById('raLibraryAttachTitle').textContent = name;
-  const jobSelect = document.getElementById('raLibraryAttachJobSelect');
-  jobSelect.innerHTML = '<option value="">Attach to job…</option>';
-  state.jobs
-    .filter((j) => !j.completedAt)
-    .sort((a, b) => a.client.localeCompare(b.client))
-    .forEach((j) => {
-      const o = document.createElement('option');
-      o.value = j.id;
-      o.textContent = `${j.client}${j.location ? ' — ' + j.location : ''}${j.jobReference ? ' (' + j.jobReference + ')' : ''}`;
-      jobSelect.appendChild(o);
-    });
-  raLibraryAttachModal.hidden = false;
-}
-
-function closeRaLibraryAttachModal() {
-  raLibraryAttachModal.hidden = true;
-  currentRaLibraryId = null;
-}
-
-document.getElementById('raLibraryAttachCloseBtn').addEventListener('click', closeRaLibraryAttachModal);
-
-document.getElementById('raLibraryAttachBtn').addEventListener('click', async () => {
-  const jobId = document.getElementById('raLibraryAttachJobSelect').value;
-  if (!jobId) { alert('Choose a job to attach this risk assessment to.'); return; }
-  try {
-    await api(`/api/jobs/${jobId}/risk-assessments/library/${currentRaLibraryId}/attach`, { method: 'POST' });
-    alert('Attached — you\'ll find it in that job\'s RAMS documents.');
-    closeRaLibraryAttachModal();
-  } catch (err) {
-    alert(err.message);
-  }
-});
-
-// ---------- Risk Assessments ----------
-
-function renderRiskAssessments() {
-  const grid = document.getElementById('raGrid');
-  grid.innerHTML = state.riskAssessments.map((ra) => `
-    <div class="ra-card">
-      <div class="ra-card-top">
-        <h3>${escapeHtml(ra.title)}</h3>
-        <span class="risk-badge ${ra.currentBand.slug}">${escapeHtml(ra.currentBand.label)}</span>
-      </div>
-      <p class="ra-card-summary">Risk rating ${ra.currentL} × ${ra.currentC} = ${ra.currentR}, reduced to ${ra.additionalR} with additional controls.</p>
-      <div class="ra-card-actions">
-        <button type="button" class="ra-view-btn" data-ra="${ra.id}">View &amp; Attach to Job</button>
-        <a href="/api/risk-assessments/${ra.id}/download" class="ra-download-btn">Download</a>
-      </div>
-    </div>
-  `).join('');
-  grid.querySelectorAll('[data-ra]').forEach((btn) => btn.addEventListener('click', () => openRaModal(btn.dataset.ra)));
-}
 
 const raModal = document.getElementById('raModal');
 let currentRaId = null;
+let currentRaKind = 'generic';
 
-function openRaModal(id) {
-  const ra = state.riskAssessments.find((r) => r.id === id);
-  if (!ra) return;
+function openRaModal(kind, id) {
+  currentRaKind = kind;
   currentRaId = id;
-  document.getElementById('raModalTitle').textContent = ra.title;
-  document.getElementById('raModalBody').innerHTML = `
-    <p class="ra-meta">
-      <span class="risk-badge ${ra.currentBand.slug}">Current: ${ra.currentL} × ${ra.currentC} = ${ra.currentR} — ${escapeHtml(ra.currentBand.label)}</span>
-      <span class="risk-badge ${ra.additionalBand.slug}">With additional controls: ${ra.additionalL} × ${ra.additionalC} = ${ra.additionalR} — ${escapeHtml(ra.additionalBand.label)}</span>
-    </p>
-    ${ra.legislation ? `<p class="ra-meta">${escapeHtml(ra.legislation)}</p>` : ''}
-    <h4>Hazard &amp; Potential Harm</h4>
-    <p>${escapeHtml(ra.hazard)}</p>
-    <h4>Who Might Be Harmed</h4>
-    <p>${escapeHtml(ra.peopleAffected)}</p>
-    <h4>Current Risk Controls</h4>
-    <ul>${ra.currentControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-    <h4>Additional Risk Controls</h4>
-    <ul>${ra.additionalControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-    <h4>PPE Required</h4>
-    <ul>${ra.ppe.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
-  `;
 
-  document.getElementById('raDownloadLink').href = `/api/risk-assessments/${ra.id}/download`;
+  if (kind === 'library') {
+    const ra = state.raLibrary.find((r) => r.id === id);
+    if (!ra) return;
+    document.getElementById('raModalTitle').textContent = ra.name;
+    document.getElementById('raModalBody').innerHTML = `
+      <p>Uploaded file: <a href="/api/risk-assessments/library/${ra.id}/file" target="_blank">${escapeHtml(ra.originalName)}</a> (${formatBytes(ra.size)})</p>
+      <p class="hint">Open the file above to review it, then attach it to a job below.</p>
+    `;
+    document.getElementById('raDownloadLink').href = `/api/risk-assessments/library/${ra.id}/file`;
+  } else {
+    const ra = state.riskAssessments.find((r) => r.id === id);
+    if (!ra) return;
+    document.getElementById('raModalTitle').textContent = ra.title;
+    document.getElementById('raModalBody').innerHTML = `
+      <p class="ra-meta">
+        <span class="risk-badge ${ra.currentBand.slug}">Current: ${ra.currentL} × ${ra.currentC} = ${ra.currentR} — ${escapeHtml(ra.currentBand.label)}</span>
+        <span class="risk-badge ${ra.additionalBand.slug}">With additional controls: ${ra.additionalL} × ${ra.additionalC} = ${ra.additionalR} — ${escapeHtml(ra.additionalBand.label)}</span>
+      </p>
+      ${ra.legislation ? `<p class="ra-meta">${escapeHtml(ra.legislation)}</p>` : ''}
+      <h4>Hazard &amp; Potential Harm</h4>
+      <p>${escapeHtml(ra.hazard)}</p>
+      <h4>Who Might Be Harmed</h4>
+      <p>${escapeHtml(ra.peopleAffected)}</p>
+      <h4>Current Risk Controls</h4>
+      <ul>${ra.currentControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+      <h4>Additional Risk Controls</h4>
+      <ul>${ra.additionalControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+      <h4>PPE Required</h4>
+      <ul>${ra.ppe.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
+    `;
+    document.getElementById('raDownloadLink').href = `/api/risk-assessments/${ra.id}/download`;
+  }
 
   const jobSelect = document.getElementById('raAttachJobSelect');
   jobSelect.innerHTML = '<option value="">Attach to job…</option>';
@@ -1418,8 +1385,11 @@ document.getElementById('raModalCloseBtn').addEventListener('click', closeRaModa
 document.getElementById('raAttachBtn').addEventListener('click', async () => {
   const jobId = document.getElementById('raAttachJobSelect').value;
   if (!jobId) { alert('Choose a job to attach this risk assessment to.'); return; }
+  const endpoint = currentRaKind === 'library'
+    ? `/api/jobs/${jobId}/risk-assessments/library/${currentRaId}/attach`
+    : `/api/jobs/${jobId}/risk-assessments/${currentRaId}/attach`;
   try {
-    await api(`/api/jobs/${jobId}/risk-assessments/${currentRaId}/attach`, { method: 'POST' });
+    await api(endpoint, { method: 'POST' });
     alert('Attached — you\'ll find it in that job\'s RAMS documents.');
     closeRaModal();
   } catch (err) {

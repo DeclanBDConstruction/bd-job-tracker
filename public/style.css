@@ -1251,10 +1251,6 @@ button:disabled {
 
 /* ---------- Risk Assessments ---------- */
 
-.ra-section-heading {
-  margin-top: 32px;
-}
-
 .ra-library-upload {
   display: flex;
   align-items: center;
@@ -1275,10 +1271,6 @@ button:disabled {
 .ra-library-filename {
   font-size: 13px;
   color: var(--muted);
-}
-
-.ra-library-list {
-  margin-bottom: 8px;
 }
 
 .ra-grid {
