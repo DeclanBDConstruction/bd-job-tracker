@@ -99,7 +99,10 @@ body {
 /* ---------- Header ---------- */
 
 .topbar {
-  background: linear-gradient(120deg, var(--blue-dark), var(--blue) 60%, #1c7ba8);
+  background:
+    radial-gradient(650px 240px at 12% 0%, rgba(255,255,255,0.12), transparent),
+    radial-gradient(520px 280px at 100% 100%, rgba(146,198,72,0.20), transparent),
+    linear-gradient(120deg, var(--blue-dark), var(--blue) 60%, #1c7ba8);
   color: white;
   padding: 0 28px;
   box-shadow: 0 2px 16px rgba(18,45,66,0.18);
@@ -111,6 +114,7 @@ body {
   display: block;
   height: 3px;
   background: linear-gradient(90deg, var(--green), transparent 70%);
+  box-shadow: 0 0 12px rgba(146,198,72,0.55);
 }
 
 .topbar-row {
@@ -130,26 +134,47 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 
 .topbar-user {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   font-size: 13px;
-  color: rgba(255,255,255,0.85);
+  color: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 6px 6px 6px 10px;
+  border-radius: 999px;
+}
+
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
 }
 
 .topbar-user button {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.32);
   color: white;
-  padding: 6px 12px;
+  padding: 6px 14px;
   font-size: 13px;
+  border-radius: 999px;
 }
 
 .topbar-user button:hover {
-  background: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.26);
 }
 
 .topbar h1 .logo-mark {
@@ -201,29 +226,36 @@ body {
 
 .tabs {
   display: flex;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 3px;
+  background: rgba(6,20,32,0.20);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 11px;
+  padding: 4px;
+  margin: 2px 0 14px;
 }
 
 .tab-btn {
   background: none;
   border: none;
-  color: rgba(255,255,255,0.68);
-  padding: 11px 18px;
+  color: rgba(255,255,255,0.72);
+  padding: 9px 16px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  border-bottom: 3px solid transparent;
-  border-radius: 6px 6px 0 0;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 
-.tab-btn:hover { color: white; background: rgba(255,255,255,0.07); }
+.tab-btn:hover { color: white; background: rgba(255,255,255,0.12); transform: translateY(-1px); }
 
 .tab-btn.active {
-  color: white;
-  border-bottom-color: var(--green);
-  background: rgba(255,255,255,0.08);
+  color: var(--blue-dark);
+  background: white;
+  box-shadow: 0 3px 10px rgba(6,20,32,0.3);
 }
+
+.tab-btn.active:hover { transform: none; }
 
 /* ---------- Auth ---------- */
 

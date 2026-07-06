@@ -47,6 +47,8 @@ function showApp(user) {
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
   document.getElementById('currentUserName').textContent = user.name;
+  document.getElementById('userAvatar').textContent = (user.name || '')
+    .trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   document.getElementById('adminTabBtn').hidden = !isAdmin();
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
