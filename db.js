@@ -6,6 +6,9 @@ const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'signoff', 'photos'];
 const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', signoff: 'Sign-off sheet', photos: 'Photos' };
+// Drawings aren't needed for every job (e.g. no design changes involved), so they're
+// still uploadable but don't block marking a job complete like the others do.
+const REQUIRED_DOCUMENT_CATEGORIES = DOCUMENT_CATEGORIES.filter((c) => c !== 'drawings');
 
 // Fixed 10-colour set for the calendar: chosen so every colour stays legible with white
 // text on it and any two are tell-apart-able (including colour-blind vision), verified with
@@ -278,7 +281,7 @@ async function completeJob(id) {
   check(docErr);
   const counts = { rams: 0, drawings: 0, signoff: 0, photos: 0 };
   docs.forEach((d) => { counts[d.category] += 1; });
-  const missing = DOCUMENT_CATEGORIES.filter((c) => counts[c] === 0);
+  const missing = REQUIRED_DOCUMENT_CATEGORIES.filter((c) => counts[c] === 0);
   if (missing.length) {
     throw new Error(`Cannot complete job: missing ${missing.map((c) => DOCUMENT_LABELS[c]).join(', ')}. Upload these documents to the job first.`);
   }
