@@ -107,14 +107,19 @@ create table if not exists price_list_items (
   updated_at timestamptz not null default now()
 );
 
--- Hired-in plant/equipment, admin-only. `job_id` is optional since a hire isn't always
--- tied to one specific job in the tracker. Due-back date and overdue/due-soon flagging
--- are computed from hire_date + duration at read time (see db.js), not stored.
+-- Hired-in plant/equipment, admin-only. Job number/description are free text (typed
+-- in directly) rather than linked to a row in `jobs`, since a hire doesn't need to match
+-- an existing job entry. Due-back date and overdue/due-soon flagging are computed from
+-- hire_date + duration at read time (see db.js), not stored.
 create table if not exists hires (
   id uuid primary key,
   item text not null,
   supplier text,
+  -- No longer written by the app (job number/description below replaced it as free text) -
+  -- left in place rather than dropped so no data is lost from before this changed.
   job_id uuid references jobs(id) on delete set null,
+  job_number text,
+  job_description text,
   hire_date text not null,
   quantity numeric not null default 1,
   duration_value numeric not null default 1,
@@ -123,6 +128,12 @@ create table if not exists hires (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Adds job_number/job_description to a hires table that already existed before this
+-- changed from a job dropdown to free text (the CREATE TABLE above only applies to a
+-- brand-new table).
+alter table hires add column if not exists job_number text;
+alter table hires add column if not exists job_description text;
 
 -- Risk assessments staff upload themselves (as opposed to the generic in-code templates),
 -- kept separate from any one job so the same file can be attached again next time that job

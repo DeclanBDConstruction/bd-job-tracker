@@ -246,6 +246,68 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 
 document.getElementById('logoHomeBtn').addEventListener('click', () => goToTab('home'));
 
+// ---------- Header Search ----------
+// Jump straight to a job from anywhere in the app, regardless of which tab is active -
+// searches state.jobs (which includes completed jobs too, not just the open Jobs list).
+
+function headerSearchMatches(term) {
+  const q = term.trim().toLowerCase();
+  if (!q) return [];
+  return state.jobs
+    .filter((j) => [j.jobReference, j.client, j.location, j.employeeName, j.description]
+      .some((v) => (v || '').toLowerCase().includes(q)))
+    .slice(0, 8);
+}
+
+function renderHeaderSearchResults(term) {
+  const panel = document.getElementById('headerSearchResults');
+  if (!term.trim()) {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    return;
+  }
+  const matches = headerSearchMatches(term);
+  panel.hidden = false;
+  panel.innerHTML = matches.length
+    ? matches.map((j) => `
+        <div class="header-search-item" data-job="${j.id}">
+          <span class="header-search-item-title">${escapeHtml(j.client)}${j.location ? ' — ' + escapeHtml(j.location) : ''}</span>
+          <span class="header-search-item-meta">${j.jobReference ? 'Job ' + escapeHtml(j.jobReference) + ' · ' : ''}${escapeHtml(j.status)}${j.completedAt ? ' · Completed' : ''}</span>
+        </div>
+      `).join('')
+    : '<div class="header-search-empty">No jobs match your search.</div>';
+
+  panel.querySelectorAll('[data-job]').forEach((el) => {
+    el.addEventListener('click', () => {
+      openJobDetail(el.dataset.job);
+      closeHeaderSearch();
+    });
+  });
+}
+
+function closeHeaderSearch() {
+  document.getElementById('headerSearchInput').value = '';
+  const panel = document.getElementById('headerSearchResults');
+  panel.hidden = true;
+  panel.innerHTML = '';
+}
+
+document.getElementById('headerSearchInput').addEventListener('input', (e) => {
+  renderHeaderSearchResults(e.target.value);
+});
+
+document.getElementById('headerSearchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeHeaderSearch();
+  if (e.key === 'Enter') {
+    const first = document.querySelector('#headerSearchResults [data-job]');
+    if (first) { openJobDetail(first.dataset.job); closeHeaderSearch(); }
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('headerSearchWrap').contains(e.target)) closeHeaderSearch();
+});
+
 // ---------- Home Slideshow ----------
 // Static marketing images, not tied to any app data, so this runs once at load rather
 // than as part of bootstrap/render.
@@ -1007,24 +1069,7 @@ const HIRE_STATUS_LABELS = { 'on-hire': 'On Hire', 'due-soon': 'Due Soon', overd
 
 async function loadHires() {
   state.hires = await api('/api/hires');
-  renderHireJobOptions();
   renderHires();
-}
-
-function renderHireJobOptions() {
-  const select = document.getElementById('hireJobSelect');
-  const current = select.value;
-  select.innerHTML = '<option value="">No specific job</option>';
-  state.jobs
-    .filter((j) => !j.completedAt)
-    .sort((a, b) => a.client.localeCompare(b.client))
-    .forEach((j) => {
-      const o = document.createElement('option');
-      o.value = j.id;
-      o.textContent = `${j.client}${j.location ? ' — ' + j.location : ''}${j.jobReference ? ' (' + j.jobReference + ')' : ''}`;
-      select.appendChild(o);
-    });
-  select.value = current;
 }
 
 function renderHires() {
@@ -1039,7 +1084,7 @@ function renderHires() {
 
   const term = document.getElementById('hireSearch').value.trim().toLowerCase();
   const filtered = term
-    ? state.hires.filter((h) => [h.item, h.supplier, h.jobLabel].some((v) => (v || '').toLowerCase().includes(term)))
+    ? state.hires.filter((h) => [h.item, h.supplier, h.jobNumber, h.jobDescription].some((v) => (v || '').toLowerCase().includes(term)))
     : state.hires;
 
   const tbody = document.querySelector('#hiresTable tbody');
@@ -1051,7 +1096,8 @@ function renderHires() {
     <tr>
       <td>${escapeHtml(h.item)}</td>
       <td>${escapeHtml(h.supplier || '—')}</td>
-      <td>${escapeHtml(h.jobLabel || '—')}</td>
+      <td>${escapeHtml(h.jobNumber || '—')}</td>
+      <td>${escapeHtml(h.jobDescription || '—')}</td>
       <td>${h.hireDate}</td>
       <td>${h.quantity}</td>
       <td>${h.durationValue} ${h.durationUnit}</td>
@@ -1094,7 +1140,8 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
   const body = {
     item: document.getElementById('hireItemInput').value.trim(),
     supplier: document.getElementById('hireSupplierInput').value.trim(),
-    jobId: document.getElementById('hireJobSelect').value || null,
+    jobNumber: document.getElementById('hireJobNumberInput').value.trim(),
+    jobDescription: document.getElementById('hireJobDescInput').value.trim(),
     hireDate: document.getElementById('hireDateInput').value,
     quantity: Number(document.getElementById('hireQuantityInput').value),
     durationValue: Number(document.getElementById('hireDurationInput').value),
