@@ -107,16 +107,17 @@ create table if not exists price_list_items (
   updated_at timestamptz not null default now()
 );
 
--- Hired-in plant/equipment, admin-only. Job number/description are free text (typed
--- in directly) rather than linked to a row in `jobs`, since a hire doesn't need to match
--- an existing job entry. Due-back date and overdue/due-soon flagging are computed from
--- hire_date + duration at read time (see db.js), not stored.
+-- Hired-in plant/equipment, admin-only. Job number is free text (typed in directly)
+-- rather than linked to a row in `jobs`, since a hire doesn't need to match an existing
+-- job entry. Due-back date and overdue/due-soon flagging are computed from hire_date +
+-- duration at read time (see db.js), not stored.
 create table if not exists hires (
   id uuid primary key,
   item text not null,
   supplier text,
-  -- No longer written by the app (job number/description below replaced it as free text) -
-  -- left in place rather than dropped so no data is lost from before this changed.
+  -- job_id and job_description: no longer written by the app (job_number below replaced
+  -- both as a single free-text field) - left in place rather than dropped so no data is
+  -- lost from before this changed.
   job_id uuid references jobs(id) on delete set null,
   job_number text,
   job_description text,
@@ -131,7 +132,8 @@ create table if not exists hires (
 
 -- Adds job_number/job_description to a hires table that already existed before this
 -- changed from a job dropdown to free text (the CREATE TABLE above only applies to a
--- brand-new table).
+-- brand-new table). job_description is no longer written to (see comment above) but the
+-- column stays so nothing already saved there is lost.
 alter table hires add column if not exists job_number text;
 alter table hires add column if not exists job_description text;
 

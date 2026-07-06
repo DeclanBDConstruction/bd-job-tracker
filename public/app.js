@@ -1080,7 +1080,6 @@ function hireEditRow(h) {
       <td><input type="text" class="hire-edit-item" value="${escapeHtml(h.item)}"></td>
       <td><input type="text" class="hire-edit-supplier" value="${escapeHtml(h.supplier)}"></td>
       <td><input type="text" class="hire-edit-jobnumber" value="${escapeHtml(h.jobNumber)}"></td>
-      <td><input type="text" class="hire-edit-jobdesc" value="${escapeHtml(h.jobDescription)}"></td>
       <td><input type="date" class="hire-edit-date" value="${h.hireDate}"></td>
       <td><input type="number" min="1" step="1" class="hire-edit-qty" value="${h.quantity}"></td>
       <td class="hire-edit-length">
@@ -1106,7 +1105,6 @@ function hireDisplayRow(h) {
       <td>${escapeHtml(h.item)}</td>
       <td>${escapeHtml(h.supplier || '—')}</td>
       <td>${escapeHtml(h.jobNumber || '—')}</td>
-      <td>${escapeHtml(h.jobDescription || '—')}</td>
       <td>${h.hireDate}</td>
       <td>${h.quantity}</td>
       <td>${h.durationValue} ${h.durationUnit}</td>
@@ -1133,7 +1131,7 @@ function renderHires() {
 
   const term = document.getElementById('hireSearch').value.trim().toLowerCase();
   const filtered = term
-    ? state.hires.filter((h) => [h.item, h.supplier, h.jobNumber, h.jobDescription].some((v) => (v || '').toLowerCase().includes(term)))
+    ? state.hires.filter((h) => [h.item, h.supplier, h.jobNumber].some((v) => (v || '').toLowerCase().includes(term)))
     : state.hires;
 
   const tbody = document.querySelector('#hiresTable tbody');
@@ -1162,7 +1160,6 @@ function renderHires() {
         item: tr.querySelector('.hire-edit-item').value.trim(),
         supplier: tr.querySelector('.hire-edit-supplier').value.trim(),
         jobNumber: tr.querySelector('.hire-edit-jobnumber').value.trim(),
-        jobDescription: tr.querySelector('.hire-edit-jobdesc').value.trim(),
         hireDate: tr.querySelector('.hire-edit-date').value,
         quantity: Number(tr.querySelector('.hire-edit-qty').value),
         durationValue: Number(tr.querySelector('.hire-edit-duration').value),
@@ -1208,7 +1205,6 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
     item: document.getElementById('hireItemInput').value.trim(),
     supplier: document.getElementById('hireSupplierInput').value.trim(),
     jobNumber: document.getElementById('hireJobNumberInput').value.trim(),
-    jobDescription: document.getElementById('hireJobDescInput').value.trim(),
     hireDate: document.getElementById('hireDateInput').value,
     quantity: Number(document.getElementById('hireQuantityInput').value),
     durationValue: Number(document.getElementById('hireDurationInput').value),
