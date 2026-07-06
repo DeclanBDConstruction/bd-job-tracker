@@ -1251,6 +1251,36 @@ button:disabled {
 
 /* ---------- Risk Assessments ---------- */
 
+.ra-section-heading {
+  margin-top: 32px;
+}
+
+.ra-library-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+
+.ra-library-upload input[type="text"] {
+  flex: 1 1 320px;
+  min-width: 220px;
+}
+
+.ra-library-upload .upload-btn {
+  margin-bottom: 0;
+}
+
+.ra-library-filename {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ra-library-list {
+  margin-bottom: 8px;
+}
+
 .ra-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

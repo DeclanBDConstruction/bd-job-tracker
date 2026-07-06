@@ -304,6 +304,60 @@ async function deleteJobDocument(jobId, category, docId) {
   return doc;
 }
 
+// ---------- Saved Risk Assessments (library) ----------
+// Staff-uploaded risk assessments, kept separate from any one job so the same file can be
+// attached again next time that job (or a similar one) comes up. Metadata lives here; the
+// file bytes live in Supabase Storage (handled in server.js), same bucket as job documents.
+
+function rowToSavedRiskAssessment(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    originalName: row.original_name,
+    storedName: row.stored_name,
+    size: row.size,
+    uploadedBy: row.uploaded_by || '',
+    createdAt: row.created_at,
+  };
+}
+
+async function listSavedRiskAssessments() {
+  const { data, error } = await supabase.from('saved_risk_assessments').select('*').order('name');
+  check(error);
+  return data.map(rowToSavedRiskAssessment);
+}
+
+async function getSavedRiskAssessment(id) {
+  const { data, error } = await supabase.from('saved_risk_assessments').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToSavedRiskAssessment(data) : null;
+}
+
+async function addSavedRiskAssessment(fileInfo) {
+  const name = (fileInfo.name || '').trim();
+  if (!name) throw new Error('Name is required');
+  const row = {
+    id: genId(),
+    name,
+    original_name: fileInfo.originalName,
+    stored_name: fileInfo.storedName,
+    size: fileInfo.size,
+    uploaded_by: fileInfo.uploadedBy || null,
+    created_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('saved_risk_assessments').insert(row).select().single();
+  check(error);
+  return rowToSavedRiskAssessment(data);
+}
+
+async function deleteSavedRiskAssessment(id) {
+  const ra = await getSavedRiskAssessment(id);
+  if (!ra) return null;
+  const { error } = await supabase.from('saved_risk_assessments').delete().eq('id', id);
+  check(error);
+  return ra;
+}
+
 // ---------- Reports ----------
 
 async function yearlyReport() {
@@ -677,6 +731,10 @@ module.exports = {
   addJobDocument,
   getJobDocument,
   deleteJobDocument,
+  listSavedRiskAssessments,
+  getSavedRiskAssessment,
+  addSavedRiskAssessment,
+  deleteSavedRiskAssessment,
   yearlyReport,
   monthlyReport,
   clientReport,

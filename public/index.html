@@ -274,6 +274,18 @@
     <div class="panel-header">
       <h2>Risk Assessments</h2>
     </div>
+
+    <h3>Your Saved Risk Assessments</h3>
+    <p class="hint">Upload a risk assessment you've written once, then attach it to any job — including this same job again if it comes up in future.</p>
+    <form id="raLibraryUploadForm" class="ra-library-upload">
+      <input type="text" id="raLibraryNameInput" placeholder="Name (e.g. Roof Access - Beehive Carlisle)" required>
+      <label class="upload-btn">Choose File<input type="file" id="raLibraryFileInput" hidden required></label>
+      <span id="raLibraryFileName" class="ra-library-filename"></span>
+      <button type="submit" class="primary">Save to Library</button>
+    </form>
+    <ul class="doc-list ra-library-list" id="raLibraryList"></ul>
+
+    <h3 class="ra-section-heading">Generic Templates</h3>
     <p class="hint">Generic risk assessment templates you can attach straight to a job's RAMS documents. Always review and adjust for the actual site conditions before anyone works to one.</p>
     <div class="ra-grid" id="raGrid"></div>
   </section>
@@ -459,6 +471,20 @@
       <a id="raDownloadLink" class="ra-download-btn" href="#">Download</a>
       <select id="raAttachJobSelect"><option value="">Attach to job…</option></select>
       <button type="button" id="raAttachBtn" class="primary">Attach to Job</button>
+    </div>
+  </div>
+</div>
+
+<!-- Saved Risk Assessment Attach Modal -->
+<div id="raLibraryAttachModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2 id="raLibraryAttachTitle">Attach Risk Assessment</h2>
+      <button type="button" id="raLibraryAttachCloseBtn" class="link-btn">Close</button>
+    </div>
+    <div class="modal-actions ra-attach-row">
+      <select id="raLibraryAttachJobSelect"><option value="">Attach to job…</option></select>
+      <button type="button" id="raLibraryAttachBtn" class="primary">Attach to Job</button>
     </div>
   </div>
 </div>

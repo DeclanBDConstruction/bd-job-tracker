@@ -3,6 +3,7 @@ const state = {
   employees: [],
   statuses: [],
   riskAssessments: [],
+  raLibrary: [],
   calendarEvents: [],
   calendarColors: [],
   userColors: [],
@@ -237,11 +238,12 @@ document.getElementById('logoHomeBtn').addEventListener('click', () => goToTab('
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, calendarEvents, priceListItems] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, calendarEvents, priceListItems] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
     api('/api/risk-assessments'),
+    api('/api/risk-assessments/library'),
     api('/api/calendar'),
     api('/api/price-list'),
   ]);
@@ -249,6 +251,7 @@ async function bootstrap() {
   state.employees = employees;
   state.statuses = statuses;
   state.riskAssessments = riskAssessmentsList;
+  state.raLibrary = raLibrary;
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   renderStatusOptions();
@@ -257,6 +260,7 @@ async function bootstrap() {
   renderCompletedJobs();
   renderEmployees();
   renderRiskAssessments();
+  renderRaLibrary();
   renderCalendar();
   renderPriceLists();
   renderHomeDashboard();
@@ -1234,6 +1238,112 @@ function renderHomeDashboard() {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
   });
 }
+
+// ---------- Saved Risk Assessments (library) ----------
+// Risk assessments staff have written and uploaded themselves - saved once so they can be
+// attached to any job, including the same job again next time it comes up.
+
+function renderRaLibrary() {
+  const list = document.getElementById('raLibraryList');
+  if (!state.raLibrary.length) {
+    list.innerHTML = '<p class="empty-state">No saved risk assessments yet — upload one above.</p>';
+    return;
+  }
+  list.innerHTML = state.raLibrary.map((ra) => `
+    <li class="doc-list-item">
+      <a href="/api/risk-assessments/library/${ra.id}/file" target="_blank">${escapeHtml(ra.name)}</a>
+      <span class="doc-meta">${formatBytes(ra.size)} · ${new Date(ra.createdAt).toLocaleDateString('en-GB')}</span>
+      <button type="button" class="ra-library-attach-btn" data-ra="${ra.id}" data-name="${escapeHtml(ra.name)}">Attach to Job</button>
+      ${isAdmin() ? `<button type="button" class="danger ra-library-delete-btn" data-ra="${ra.id}">Delete</button>` : ''}
+    </li>
+  `).join('');
+
+  list.querySelectorAll('.ra-library-attach-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openRaLibraryAttachModal(btn.dataset.ra, btn.dataset.name));
+  });
+  list.querySelectorAll('.ra-library-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this saved risk assessment? This cannot be undone.')) return;
+      try {
+        await api(`/api/risk-assessments/library/${btn.dataset.ra}`, { method: 'DELETE' });
+        state.raLibrary = await api('/api/risk-assessments/library');
+        renderRaLibrary();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('raLibraryFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  document.getElementById('raLibraryFileName').textContent = file ? file.name : '';
+  const nameInput = document.getElementById('raLibraryNameInput');
+  if (file && !nameInput.value.trim()) nameInput.value = file.name.replace(/\.[^.]+$/, '');
+});
+
+document.getElementById('raLibraryUploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const file = document.getElementById('raLibraryFileInput').files[0];
+  const name = document.getElementById('raLibraryNameInput').value.trim();
+  if (!file) { alert('Choose a file to upload.'); return; }
+  if (!name) { alert('Give this risk assessment a name.'); return; }
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('name', name);
+  try {
+    const res = await fetch('/api/risk-assessments/library', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Upload failed');
+    }
+    e.target.reset();
+    document.getElementById('raLibraryFileName').textContent = '';
+    state.raLibrary = await api('/api/risk-assessments/library');
+    renderRaLibrary();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+const raLibraryAttachModal = document.getElementById('raLibraryAttachModal');
+let currentRaLibraryId = null;
+
+function openRaLibraryAttachModal(id, name) {
+  currentRaLibraryId = id;
+  document.getElementById('raLibraryAttachTitle').textContent = name;
+  const jobSelect = document.getElementById('raLibraryAttachJobSelect');
+  jobSelect.innerHTML = '<option value="">Attach to job…</option>';
+  state.jobs
+    .filter((j) => !j.completedAt)
+    .sort((a, b) => a.client.localeCompare(b.client))
+    .forEach((j) => {
+      const o = document.createElement('option');
+      o.value = j.id;
+      o.textContent = `${j.client}${j.location ? ' — ' + j.location : ''}${j.jobReference ? ' (' + j.jobReference + ')' : ''}`;
+      jobSelect.appendChild(o);
+    });
+  raLibraryAttachModal.hidden = false;
+}
+
+function closeRaLibraryAttachModal() {
+  raLibraryAttachModal.hidden = true;
+  currentRaLibraryId = null;
+}
+
+document.getElementById('raLibraryAttachCloseBtn').addEventListener('click', closeRaLibraryAttachModal);
+
+document.getElementById('raLibraryAttachBtn').addEventListener('click', async () => {
+  const jobId = document.getElementById('raLibraryAttachJobSelect').value;
+  if (!jobId) { alert('Choose a job to attach this risk assessment to.'); return; }
+  try {
+    await api(`/api/jobs/${jobId}/risk-assessments/library/${currentRaLibraryId}/attach`, { method: 'POST' });
+    alert('Attached — you\'ll find it in that job\'s RAMS documents.');
+    closeRaLibraryAttachModal();
+  } catch (err) {
+    alert(err.message);
+  }
+});
 
 // ---------- Risk Assessments ----------
 

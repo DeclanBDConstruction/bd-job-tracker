@@ -90,11 +90,26 @@ create table if not exists price_list_items (
   updated_at timestamptz not null default now()
 );
 
+-- Risk assessments staff upload themselves (as opposed to the generic in-code templates),
+-- kept separate from any one job so the same file can be attached again next time that job
+-- or a similar one comes up. The file bytes live in the same Storage bucket as job
+-- documents, under a `_library/rams/` prefix.
+create table if not exists saved_risk_assessments (
+  id uuid primary key,
+  name text not null,
+  original_name text not null,
+  stored_name text not null,
+  size bigint,
+  uploaded_by text,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
 create index if not exists sessions_expires_at_idx on sessions (expires_at);
 create index if not exists calendar_events_date_idx on calendar_events (date);
 create index if not exists price_list_items_kind_idx on price_list_items (kind);
+create index if not exists saved_risk_assessments_name_idx on saved_risk_assessments (name);
 
 -- Lock every table down by default. The app only ever talks to Supabase using the
 -- service-role key (which bypasses RLS), so these policies exist purely as a safety
@@ -107,6 +122,7 @@ alter table jobs enable row level security;
 alter table job_documents enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
+alter table saved_risk_assessments enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

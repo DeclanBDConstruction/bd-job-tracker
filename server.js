@@ -39,6 +39,13 @@ function storagePath(jobId, category, storedName) {
   return `${jobId}/${category}/${storedName}`;
 }
 
+// Saved risk assessments (the upload-once, attach-to-any-job library) live under this
+// fixed prefix in the same bucket - `_library` can never collide with a job id (job ids
+// are UUIDs).
+function libraryStoragePath(storedName) {
+  return `_library/rams/${storedName}`;
+}
+
 function makeStoredName(originalName) {
   const safeName = originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
@@ -324,6 +331,80 @@ app.post('/api/jobs/:id/risk-assessments/:raId/attach', handle(async (req, res) 
     originalName,
     storedName,
     size: Buffer.byteLength(html),
+  });
+  broadcast('jobs');
+  res.status(201).json(doc);
+}));
+
+// ---------- Saved Risk Assessments (library) ----------
+// Risk assessments staff have written and uploaded themselves - saved once here so they
+// can be attached to any job, including the same job again if it comes up in future.
+
+app.get('/api/risk-assessments/library', handle(async (req, res) => {
+  res.json(await db.listSavedRiskAssessments());
+}));
+
+app.post('/api/risk-assessments/library', uploadDocument.single('file'), handle(async (req, res) => {
+  if (!req.file) throw new Error('No file uploaded');
+  const storedName = makeStoredName(req.file.originalname);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(libraryStoragePath(storedName), req.file.buffer, {
+      contentType: req.file.mimetype || 'application/octet-stream',
+    });
+  if (error) throw new Error(error.message);
+  const ra = await db.addSavedRiskAssessment({
+    name: req.body.name || req.file.originalname,
+    originalName: req.file.originalname,
+    storedName,
+    size: req.file.size,
+    uploadedBy: req.user.name,
+  });
+  res.status(201).json(ra);
+}));
+
+app.get('/api/risk-assessments/library/:id/file', handle(async (req, res) => {
+  const ra = await db.getSavedRiskAssessment(req.params.id);
+  if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+  const { data, error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .download(libraryStoragePath(ra.storedName));
+  if (error) return res.status(404).json({ error: 'File not found in storage' });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Disposition', `attachment; filename="${ra.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_')}"`);
+  res.send(buffer);
+}));
+
+app.delete('/api/risk-assessments/library/:id', requireAdmin, handle(async (req, res) => {
+  const ra = await db.deleteSavedRiskAssessment(req.params.id);
+  if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+  await supabase.storage.from(DOCUMENTS_BUCKET).remove([libraryStoragePath(ra.storedName)]);
+  res.status(204).end();
+}));
+
+app.post('/api/jobs/:id/risk-assessments/library/:raId/attach', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const ra = await db.getSavedRiskAssessment(req.params.raId);
+  if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+
+  const { data, error: downloadErr } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .download(libraryStoragePath(ra.storedName));
+  if (downloadErr) throw new Error('Saved file not found in storage');
+  const buffer = Buffer.from(await data.arrayBuffer());
+  const storedName = makeStoredName(ra.originalName);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(storagePath(req.params.id, 'rams', storedName), buffer, {
+      contentType: data.type || 'application/octet-stream',
+    });
+  if (error) throw new Error(error.message);
+
+  const doc = await db.addJobDocument(req.params.id, 'rams', {
+    originalName: ra.originalName,
+    storedName,
+    size: buffer.length,
   });
   broadcast('jobs');
   res.status(201).json(doc);
