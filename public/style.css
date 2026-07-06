@@ -1604,6 +1604,52 @@ button:disabled {
   flex: 1 1 auto;
 }
 
+/* ---------- Hire ---------- */
+
+.hire-add-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.hire-add-form input[type="text"] {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.hire-add-form input[type="number"] {
+  flex: 0 1 90px;
+}
+
+.hire-flag-banner {
+  background: #fef0dc;
+  border: 1px solid #f4d49b;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #7a4f00;
+  margin-bottom: 16px;
+}
+
+.hire-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #e3e9ef;
+  color: var(--muted);
+}
+.hire-status.on-hire { background: var(--blue-light); color: var(--blue-dark); }
+.hire-status.due-soon { background: #fef0dc; color: #8a5a00; }
+.hire-status.overdue { background: #fbe1e0; color: #a8271f; }
+.hire-status.returned { background: var(--green-light); color: #4c7a1f; }
+
 /* ---------- Reports ---------- */
 
 .report-year {

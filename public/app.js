@@ -8,6 +8,7 @@ const state = {
   calendarColors: [],
   userColors: [],
   priceListItems: [],
+  hires: [],
   currentUser: null,
 };
 
@@ -51,6 +52,7 @@ function showApp(user) {
     .trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   document.getElementById('adminTabBtn').hidden = !isAdmin();
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
+  document.getElementById('hireTabBtn').hidden = !isAdmin();
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
@@ -81,6 +83,7 @@ function connectLiveUpdates() {
     else if (type === 'calendar') handleLiveCalendarChange();
     else if (type === 'users') handleLiveUsersChange();
     else if (type === 'priceList') handleLivePriceListChange();
+    else if (type === 'hires') handleLiveHiresChange();
   };
 }
 
@@ -94,6 +97,10 @@ function disconnectLiveUpdates() {
 async function handleLivePriceListChange() {
   state.priceListItems = await api('/api/price-list');
   renderPriceLists();
+}
+
+async function handleLiveHiresChange() {
+  if (activeTab() === 'hire') loadHires();
 }
 
 async function handleLiveJobsChange() {
@@ -230,6 +237,7 @@ function goToTab(tab) {
   if (tab === 'clients') loadClients();
   if (tab === 'home') renderHomeDashboard();
   if (tab === 'admin') loadAdminUsers();
+  if (tab === 'hire') loadHires();
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -990,6 +998,105 @@ function renderPriceLists() {
   labourList.render();
   materialList.render();
 }
+
+// ---------- Hire ----------
+// Admin-only tracker for hired-in plant/equipment - flags a hire once it's due back
+// soon or is already overdue, computed server-side against today so it's never stale.
+
+const HIRE_STATUS_LABELS = { 'on-hire': 'On Hire', 'due-soon': 'Due Soon', overdue: 'Overdue', returned: 'Returned' };
+
+async function loadHires() {
+  state.hires = await api('/api/hires');
+  renderHireJobOptions();
+  renderHires();
+}
+
+function renderHireJobOptions() {
+  const select = document.getElementById('hireJobSelect');
+  const current = select.value;
+  select.innerHTML = '<option value="">No specific job</option>';
+  state.jobs
+    .filter((j) => !j.completedAt)
+    .sort((a, b) => a.client.localeCompare(b.client))
+    .forEach((j) => {
+      const o = document.createElement('option');
+      o.value = j.id;
+      o.textContent = `${j.client}${j.location ? ' — ' + j.location : ''}${j.jobReference ? ' (' + j.jobReference + ')' : ''}`;
+      select.appendChild(o);
+    });
+  select.value = current;
+}
+
+function renderHires() {
+  const overdue = state.hires.filter((h) => h.status === 'overdue').length;
+  const dueSoon = state.hires.filter((h) => h.status === 'due-soon').length;
+  const summary = document.getElementById('hireSummary');
+  summary.innerHTML = (overdue || dueSoon)
+    ? `<p class="hire-flag-banner">${overdue ? `<strong>${overdue}</strong> hire${overdue === 1 ? '' : 's'} overdue` : ''}${overdue && dueSoon ? ' · ' : ''}${dueSoon ? `<strong>${dueSoon}</strong> due back within 3 days` : ''}</p>`
+    : '';
+
+  const tbody = document.querySelector('#hiresTable tbody');
+  document.getElementById('hiresEmptyState').hidden = !!state.hires.length;
+  tbody.innerHTML = state.hires.map((h) => `
+    <tr>
+      <td>${escapeHtml(h.item)}</td>
+      <td>${escapeHtml(h.supplier || '—')}</td>
+      <td>${escapeHtml(h.jobLabel || '—')}</td>
+      <td>${h.hireDate}</td>
+      <td>${h.quantity}</td>
+      <td>${h.durationValue} ${h.durationUnit}</td>
+      <td>${h.dueBack}</td>
+      <td><span class="hire-status ${h.status}">${HIRE_STATUS_LABELS[h.status]}</span></td>
+      <td class="row-actions">
+        ${h.status !== 'returned' ? `<button type="button" data-return="${h.id}">Mark Returned</button>` : ''}
+        <button type="button" class="danger" data-del-hire="${h.id}">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+
+  tbody.querySelectorAll('[data-return]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api(`/api/hires/${btn.dataset.return}/return`, { method: 'POST' });
+        loadHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  tbody.querySelectorAll('[data-del-hire]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this hire record? This cannot be undone.')) return;
+      try {
+        await api(`/api/hires/${btn.dataset.delHire}`, { method: 'DELETE' });
+        loadHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    item: document.getElementById('hireItemInput').value.trim(),
+    supplier: document.getElementById('hireSupplierInput').value.trim(),
+    jobId: document.getElementById('hireJobSelect').value || null,
+    hireDate: document.getElementById('hireDateInput').value,
+    quantity: Number(document.getElementById('hireQuantityInput').value),
+    durationValue: Number(document.getElementById('hireDurationInput').value),
+    durationUnit: document.getElementById('hireDurationUnitSelect').value,
+  };
+  try {
+    await api('/api/hires', { method: 'POST', body: JSON.stringify(body) });
+    e.target.reset();
+    document.getElementById('hireQuantityInput').value = 1;
+    loadHires();
+  } catch (err) {
+    alert(err.message);
+  }
+});
 
 // ---------- Calendar ----------
 

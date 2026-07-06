@@ -677,6 +677,118 @@ async function deletePriceListItem(id) {
   check(error);
 }
 
+// ---------- Hire ----------
+// Admin-only tracker for hired-in plant/equipment. Due-back date and overdue/due-soon
+// flagging are computed at read time from hire_date + duration, not stored, so they're
+// always correct against today rather than going stale.
+
+const HIRE_DURATION_UNITS = ['days', 'weeks'];
+const HIRE_DUE_SOON_DAYS = 3; // flag as "Due Soon" once within this many days of due back
+
+function hireDueBackDate(hireDate, durationValue, durationUnit) {
+  const days = durationUnit === 'weeks' ? Math.round(durationValue * 7) : Math.round(durationValue);
+  return addDaysToDateString(hireDate, days);
+}
+
+function hireStatus(dueBack, returnedAt) {
+  if (returnedAt) return 'returned';
+  const today = new Date().toISOString().slice(0, 10);
+  if (dueBack < today) return 'overdue';
+  if (dueBack <= addDaysToDateString(today, HIRE_DUE_SOON_DAYS)) return 'due-soon';
+  return 'on-hire';
+}
+
+function rowToHire(row, jobById) {
+  const dueBack = hireDueBackDate(row.hire_date, Number(row.duration_value), row.duration_unit);
+  const job = jobById ? jobById[row.job_id] : null;
+  return {
+    id: row.id,
+    item: row.item,
+    supplier: row.supplier || '',
+    jobId: row.job_id || null,
+    jobLabel: job ? `${job.client}${job.location ? ' — ' + job.location : ''}${job.job_reference ? ' (' + job.job_reference + ')' : ''}` : '',
+    hireDate: row.hire_date,
+    quantity: Number(row.quantity) || 1,
+    durationValue: Number(row.duration_value) || 1,
+    durationUnit: row.duration_unit,
+    dueBack,
+    returnedAt: row.returned_at || '',
+    status: hireStatus(dueBack, row.returned_at),
+    createdAt: row.created_at,
+  };
+}
+
+async function jobLookupById(jobIds) {
+  const ids = [...new Set(jobIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const { data, error } = await supabase.from('jobs').select('id, client, location, job_reference').in('id', ids);
+  check(error);
+  return Object.fromEntries(data.map((j) => [j.id, j]));
+}
+
+async function listHires() {
+  const { data, error } = await supabase.from('hires').select('*');
+  check(error);
+  const jobById = await jobLookupById(data.map((r) => r.job_id));
+  const hires = data.map((r) => rowToHire(r, jobById));
+  const rank = { overdue: 0, 'due-soon': 1, 'on-hire': 2, returned: 3 };
+  return hires.sort((a, b) => {
+    if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+    return a.dueBack.localeCompare(b.dueBack);
+  });
+}
+
+async function createHire(input) {
+  const item = (input.item || '').trim();
+  if (!item) throw new Error('Item is required');
+  const hireDate = input.hireDate;
+  if (!hireDate || !DATE_RE.test(hireDate)) throw new Error('A valid hire date is required');
+  const quantity = Number(input.quantity);
+  if (isNaN(quantity) || quantity <= 0) throw new Error('Quantity must be a positive number');
+  const durationValue = Number(input.durationValue);
+  if (isNaN(durationValue) || durationValue <= 0) throw new Error('Length of hire must be a positive number');
+  const durationUnit = HIRE_DURATION_UNITS.includes(input.durationUnit) ? input.durationUnit : 'days';
+
+  if (input.jobId) {
+    const { data: job, error: jobErr } = await supabase.from('jobs').select('id').eq('id', input.jobId).maybeSingle();
+    check(jobErr);
+    if (!job) throw new Error('Job not found');
+  }
+
+  const row = {
+    id: genId(),
+    item,
+    supplier: (input.supplier || '').trim(),
+    job_id: input.jobId || null,
+    hire_date: hireDate,
+    quantity,
+    duration_value: durationValue,
+    duration_unit: durationUnit,
+    returned_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('hires').insert(row).select().single();
+  check(error);
+  const jobById = await jobLookupById([data.job_id]);
+  return rowToHire(data, jobById);
+}
+
+async function markHireReturned(id) {
+  const { data, error } = await supabase.from('hires')
+    .update({ returned_at: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Hire not found');
+  const jobById = await jobLookupById([data.job_id]);
+  return rowToHire(data, jobById);
+}
+
+async function deleteHire(id) {
+  const { error } = await supabase.from('hires').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Auth ----------
 
 function sanitizeUser(row) {
@@ -865,4 +977,8 @@ module.exports = {
   createPriceListItem,
   updatePriceListItem,
   deletePriceListItem,
+  listHires,
+  createHire,
+  markHireReturned,
+  deleteHire,
 };

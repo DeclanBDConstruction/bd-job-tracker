@@ -107,6 +107,23 @@ create table if not exists price_list_items (
   updated_at timestamptz not null default now()
 );
 
+-- Hired-in plant/equipment, admin-only. `job_id` is optional since a hire isn't always
+-- tied to one specific job in the tracker. Due-back date and overdue/due-soon flagging
+-- are computed from hire_date + duration at read time (see db.js), not stored.
+create table if not exists hires (
+  id uuid primary key,
+  item text not null,
+  supplier text,
+  job_id uuid references jobs(id) on delete set null,
+  hire_date text not null,
+  quantity numeric not null default 1,
+  duration_value numeric not null default 1,
+  duration_unit text not null default 'days',
+  returned_at text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Risk assessments staff upload themselves (as opposed to the generic in-code templates),
 -- kept separate from any one job so the same file can be attached again next time that job
 -- or a similar one comes up. The file bytes live in the same Storage bucket as job
@@ -128,6 +145,8 @@ create index if not exists sessions_expires_at_idx on sessions (expires_at);
 create index if not exists calendar_events_date_idx on calendar_events (date);
 create index if not exists price_list_items_kind_idx on price_list_items (kind);
 create index if not exists saved_risk_assessments_name_idx on saved_risk_assessments (name);
+create index if not exists hires_job_id_idx on hires (job_id);
+create index if not exists hires_hire_date_idx on hires (hire_date);
 
 -- Lock every table down by default. The app only ever talks to Supabase using the
 -- service-role key (which bypasses RLS), so these policies exist purely as a safety
@@ -142,6 +161,7 @@ alter table job_documents enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
+alter table hires enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

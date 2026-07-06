@@ -473,6 +473,30 @@ app.delete('/api/price-list/:id', requireAdmin, handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Hire (admin only) ----------
+
+app.get('/api/hires', requireAdmin, handle(async (req, res) => {
+  res.json(await db.listHires());
+}));
+
+app.post('/api/hires', requireAdmin, handle(async (req, res) => {
+  const hire = await db.createHire(req.body);
+  broadcast('hires');
+  res.status(201).json(hire);
+}));
+
+app.post('/api/hires/:id/return', requireAdmin, handle(async (req, res) => {
+  const hire = await db.markHireReturned(req.params.id);
+  broadcast('hires');
+  res.json(hire);
+}));
+
+app.delete('/api/hires/:id', requireAdmin, handle(async (req, res) => {
+  await db.deleteHire(req.params.id);
+  broadcast('hires');
+  res.status(204).end();
+}));
+
 // ---------- Status list ----------
 
 app.get('/api/statuses', handle(async (req, res) => {
