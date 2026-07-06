@@ -1067,9 +1067,58 @@ function renderPriceLists() {
 
 const HIRE_STATUS_LABELS = { 'on-hire': 'On Hire', 'due-soon': 'Due Soon', overdue: 'Overdue', returned: 'Returned' };
 
+let editingHireId = null;
+
 async function loadHires() {
   state.hires = await api('/api/hires');
   renderHires();
+}
+
+function hireEditRow(h) {
+  return `
+    <tr data-id="${h.id}">
+      <td><input type="text" class="hire-edit-item" value="${escapeHtml(h.item)}"></td>
+      <td><input type="text" class="hire-edit-supplier" value="${escapeHtml(h.supplier)}"></td>
+      <td><input type="text" class="hire-edit-jobnumber" value="${escapeHtml(h.jobNumber)}"></td>
+      <td><input type="text" class="hire-edit-jobdesc" value="${escapeHtml(h.jobDescription)}"></td>
+      <td><input type="date" class="hire-edit-date" value="${h.hireDate}"></td>
+      <td><input type="number" min="1" step="1" class="hire-edit-qty" value="${h.quantity}"></td>
+      <td class="hire-edit-length">
+        <input type="number" min="1" step="1" class="hire-edit-duration" value="${h.durationValue}">
+        <select class="hire-edit-unit">
+          <option value="days" ${h.durationUnit === 'days' ? 'selected' : ''}>Days</option>
+          <option value="weeks" ${h.durationUnit === 'weeks' ? 'selected' : ''}>Weeks</option>
+        </select>
+      </td>
+      <td>${h.dueBack}</td>
+      <td><span class="hire-status ${h.status}">${HIRE_STATUS_LABELS[h.status]}</span></td>
+      <td class="row-actions">
+        <button type="button" class="primary hire-save-btn">Save</button>
+        <button type="button" class="hire-cancel-btn">Cancel</button>
+      </td>
+    </tr>
+  `;
+}
+
+function hireDisplayRow(h) {
+  return `
+    <tr>
+      <td>${escapeHtml(h.item)}</td>
+      <td>${escapeHtml(h.supplier || '—')}</td>
+      <td>${escapeHtml(h.jobNumber || '—')}</td>
+      <td>${escapeHtml(h.jobDescription || '—')}</td>
+      <td>${h.hireDate}</td>
+      <td>${h.quantity}</td>
+      <td>${h.durationValue} ${h.durationUnit}</td>
+      <td>${h.dueBack}</td>
+      <td><span class="hire-status ${h.status}">${HIRE_STATUS_LABELS[h.status]}</span></td>
+      <td class="row-actions">
+        <button type="button" data-edit-hire="${h.id}">Edit</button>
+        ${h.status !== 'returned' ? `<button type="button" data-return="${h.id}">Mark Returned</button>` : ''}
+        <button type="button" class="danger" data-del-hire="${h.id}">Delete</button>
+      </td>
+    </tr>
+  `;
 }
 
 function renderHires() {
@@ -1092,24 +1141,42 @@ function renderHires() {
   document.getElementById('hiresEmptyState').textContent = state.hires.length && term
     ? 'No hires match your search.'
     : 'No hires recorded yet.';
-  tbody.innerHTML = filtered.map((h) => `
-    <tr>
-      <td>${escapeHtml(h.item)}</td>
-      <td>${escapeHtml(h.supplier || '—')}</td>
-      <td>${escapeHtml(h.jobNumber || '—')}</td>
-      <td>${escapeHtml(h.jobDescription || '—')}</td>
-      <td>${h.hireDate}</td>
-      <td>${h.quantity}</td>
-      <td>${h.durationValue} ${h.durationUnit}</td>
-      <td>${h.dueBack}</td>
-      <td><span class="hire-status ${h.status}">${HIRE_STATUS_LABELS[h.status]}</span></td>
-      <td class="row-actions">
-        ${h.status !== 'returned' ? `<button type="button" data-return="${h.id}">Mark Returned</button>` : ''}
-        <button type="button" class="danger" data-del-hire="${h.id}">Delete</button>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = filtered.map((h) => (h.id === editingHireId ? hireEditRow(h) : hireDisplayRow(h))).join('');
 
+  tbody.querySelectorAll('[data-edit-hire]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingHireId = btn.dataset.editHire;
+      renderHires();
+    });
+  });
+  tbody.querySelectorAll('.hire-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingHireId = null;
+      renderHires();
+    });
+  });
+  tbody.querySelectorAll('.hire-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const body = {
+        item: tr.querySelector('.hire-edit-item').value.trim(),
+        supplier: tr.querySelector('.hire-edit-supplier').value.trim(),
+        jobNumber: tr.querySelector('.hire-edit-jobnumber').value.trim(),
+        jobDescription: tr.querySelector('.hire-edit-jobdesc').value.trim(),
+        hireDate: tr.querySelector('.hire-edit-date').value,
+        quantity: Number(tr.querySelector('.hire-edit-qty').value),
+        durationValue: Number(tr.querySelector('.hire-edit-duration').value),
+        durationUnit: tr.querySelector('.hire-edit-unit').value,
+      };
+      try {
+        await api(`/api/hires/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingHireId = null;
+        loadHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
   tbody.querySelectorAll('[data-return]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {

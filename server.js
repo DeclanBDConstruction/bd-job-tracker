@@ -485,6 +485,12 @@ app.post('/api/hires', requireAdmin, handle(async (req, res) => {
   res.status(201).json(hire);
 }));
 
+app.put('/api/hires/:id', requireAdmin, handle(async (req, res) => {
+  const hire = await db.updateHire(req.params.id, req.body);
+  broadcast('hires');
+  res.json(hire);
+}));
+
 app.post('/api/hires/:id/return', requireAdmin, handle(async (req, res) => {
   const hire = await db.markHireReturned(req.params.id);
   broadcast('hires');

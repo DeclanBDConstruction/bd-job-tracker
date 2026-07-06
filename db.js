@@ -728,7 +728,7 @@ async function listHires() {
   });
 }
 
-async function createHire(input) {
+function validateHireInput(input) {
   const item = (input.item || '').trim();
   if (!item) throw new Error('Item is required');
   const hireDate = input.hireDate;
@@ -738,9 +738,7 @@ async function createHire(input) {
   const durationValue = Number(input.durationValue);
   if (isNaN(durationValue) || durationValue <= 0) throw new Error('Length of hire must be a positive number');
   const durationUnit = HIRE_DURATION_UNITS.includes(input.durationUnit) ? input.durationUnit : 'days';
-
-  const row = {
-    id: genId(),
+  return {
     item,
     supplier: (input.supplier || '').trim(),
     job_number: (input.jobNumber || '').trim(),
@@ -749,12 +747,27 @@ async function createHire(input) {
     quantity,
     duration_value: durationValue,
     duration_unit: durationUnit,
+  };
+}
+
+async function createHire(input) {
+  const row = {
+    id: genId(),
+    ...validateHireInput(input),
     returned_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
   const { data, error } = await supabase.from('hires').insert(row).select().single();
   check(error);
+  return rowToHire(data);
+}
+
+async function updateHire(id, input) {
+  const row = { ...validateHireInput(input), updated_at: new Date().toISOString() };
+  const { data, error } = await supabase.from('hires').update(row).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Hire not found');
   return rowToHire(data);
 }
 
@@ -962,6 +975,7 @@ module.exports = {
   deletePriceListItem,
   listHires,
   createHire,
+  updateHire,
   markHireReturned,
   deleteHire,
 };
