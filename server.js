@@ -468,14 +468,16 @@ app.post('/api/import/jobsheet', upload.single('file'), handle(async (req, res) 
 // ---------- Reports ----------
 
 app.get('/api/reports/yearly', handle(async (req, res) => {
-  res.json(await db.yearlyReport());
+  res.json(await db.yearlyReport(req.user));
 }));
 
-app.get('/api/reports/monthly', handle(async (req, res) => {
+// Company-wide monthly trend, not broken down by employee - still admin-only, since it
+// reveals total turnover across everyone rather than the viewer's own figures.
+app.get('/api/reports/monthly', requireAdmin, handle(async (req, res) => {
   res.json(await db.monthlyReport());
 }));
 
-app.get('/api/reports/clients', handle(async (req, res) => {
+app.get('/api/reports/clients', requireAdmin, handle(async (req, res) => {
   res.json(await db.clientReport());
 }));
 app.get('/', (req, res) => {

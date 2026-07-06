@@ -360,7 +360,10 @@ async function deleteSavedRiskAssessment(id) {
 
 // ---------- Reports ----------
 
-async function yearlyReport() {
+// Company-wide breakdown for admins; scoped to just the viewer's own figures (keyed by
+// their linked employee_id, set at registration - see registerUser) for anyone else, so
+// staff can see their own performance without seeing what everyone else won.
+async function yearlyReport(viewer) {
   const [{ data: jobs, error }, empNameById] = await Promise.all([
     supabase.from('jobs').select('*'),
     employeeNameMap(),
@@ -376,14 +379,15 @@ async function yearlyReport() {
     bucket.totalTurnover += job.value || 0;
     bucket.totalProfit += job.profit || 0;
     bucket.jobCount += 1;
+    const empKey = job.employee_id || '(unassigned)';
     const name = empNameById[job.employee_id] || '(unassigned)';
-    if (!bucket.employees[name]) bucket.employees[name] = { employee: name, totalValue: 0, totalProfit: 0, jobCount: 0 };
-    bucket.employees[name].totalValue += job.value || 0;
-    bucket.employees[name].totalProfit += job.profit || 0;
-    bucket.employees[name].jobCount += 1;
+    if (!bucket.employees[empKey]) bucket.employees[empKey] = { employeeId: job.employee_id || null, employee: name, totalValue: 0, totalProfit: 0, jobCount: 0 };
+    bucket.employees[empKey].totalValue += job.value || 0;
+    bucket.employees[empKey].totalProfit += job.profit || 0;
+    bucket.employees[empKey].jobCount += 1;
   }
 
-  return Object.values(byYear)
+  const years = Object.values(byYear)
     .map((bucket) => {
       const employees = Object.values(bucket.employees).sort((a, b) => b.totalValue - a.totalValue);
       return {
@@ -396,6 +400,18 @@ async function yearlyReport() {
       };
     })
     .sort((a, b) => b.year.localeCompare(a.year));
+
+  if (viewer && viewer.role !== 'admin') {
+    if (!viewer.employeeId) return [];
+    return years
+      .map((y) => {
+        const own = y.employees.find((e) => e.employeeId === viewer.employeeId);
+        return own ? { year: y.year, own: { totalValue: own.totalValue, totalProfit: own.totalProfit, jobCount: own.jobCount } } : null;
+      })
+      .filter(Boolean);
+  }
+
+  return years;
 }
 
 // Value won per calendar month, split out by year, so the front end can plot one
@@ -595,7 +611,15 @@ async function deletePriceListItem(id) {
 
 function sanitizeUser(row) {
   if (!row) return null;
-  return { id: row.id, name: row.name, email: row.email, role: row.role, color: row.color || null, createdAt: row.created_at };
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    color: row.color || null,
+    employeeId: row.employee_id || null,
+    createdAt: row.created_at,
+  };
 }
 
 async function findUserByEmail(email) {
@@ -619,6 +643,13 @@ async function registerUser({ name, email, password }) {
   const { count, error: countErr } = await supabase.from('users').select('*', { count: 'exact', head: true });
   check(countErr);
 
+  // Auto-link to the matching employee record by name (e.g. "Neil Gaskell" signing up
+  // links to the "Neil Gaskell" employee), so their Yearly Report can be scoped to just
+  // their own figures. Leaves employee_id null if no employee matches that name yet -
+  // an admin can add the matching employee and have them re-register, or this can be
+  // wired up to a manual override later if that turns out to be needed.
+  const matchingEmployee = await findEmployeeByName(cleanName);
+
   const row = {
     id: genId(),
     name: cleanName,
@@ -626,6 +657,7 @@ async function registerUser({ name, email, password }) {
     password_hash: bcrypt.hashSync(password, 10),
     // First account becomes admin, same bootstrap rule as before.
     role: count === 0 ? 'admin' : 'staff',
+    employee_id: matchingEmployee ? matchingEmployee.id : null,
     created_at: new Date().toISOString(),
   };
   const { data, error } = await supabase.from('users').insert(row).select().single();

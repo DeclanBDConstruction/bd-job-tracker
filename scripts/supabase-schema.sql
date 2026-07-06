@@ -20,9 +20,15 @@ create table if not exists users (
 -- (the CREATE TABLE above only applies to a brand-new table).
 alter table users add column if not exists color text;
 
+-- Links a user account to the matching employee record (matched by name at registration
+-- time, e.g. "Neil Gaskell" signing up links to the "Neil Gaskell" employee), so a
+-- non-admin can be shown only their own figures on the Yearly Reports tab.
+alter table users add column if not exists employee_id uuid references employees(id) on delete set null;
+
 -- One person per calendar colour: a partial unique index (color is nullable, so
 -- anyone who hasn't picked yet doesn't collide with everyone else's null).
 create unique index if not exists users_color_unique_idx on users (color) where color is not null;
+create index if not exists users_employee_id_idx on users (employee_id);
 
 create table if not exists sessions (
   token text primary key,

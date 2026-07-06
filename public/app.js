@@ -50,6 +50,7 @@ function showApp(user) {
   document.getElementById('userAvatar').textContent = (user.name || '')
     .trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   document.getElementById('adminTabBtn').hidden = !isAdmin();
+  document.getElementById('clientsTabBtn').hidden = !isAdmin();
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
@@ -1446,8 +1447,15 @@ document.getElementById('raAttachBtn').addEventListener('click', async () => {
 // ---------- Reports ----------
 
 async function loadReports() {
-  const [years, monthly] = await Promise.all([api('/api/reports/yearly'), api('/api/reports/monthly')]);
+  document.getElementById('reportsHeading').textContent = isAdmin() ? 'Yearly Reports' : 'My Yearly Report';
   const container = document.getElementById('reportsContainer');
+
+  if (!isAdmin()) {
+    renderOwnYearlyReport(container, await api('/api/reports/yearly'));
+    return;
+  }
+
+  const [years, monthly] = await Promise.all([api('/api/reports/yearly'), api('/api/reports/monthly')]);
 
   const yearCardsHtml = !years.length
     ? '<p class="empty-state">No jobs recorded yet — add or import jobs to see reports.</p>'
@@ -1476,6 +1484,29 @@ async function loadReports() {
 
   container.innerHTML = `<div class="monthly-chart-card" id="monthlyChartCard"></div>${yearCardsHtml}`;
   buildMonthlyChart(monthly);
+}
+
+// Non-admins only ever see their own figures per year - no company totals, no other
+// employees' numbers, no monthly trend (that's company-wide, so admin-only too).
+function renderOwnYearlyReport(container, years) {
+  if (!state.currentUser.employeeId) {
+    container.innerHTML = '<p class="empty-state">Your account isn\'t linked to an employee yet — ask an admin to check your name matches an entry on the Employees tab.</p>';
+    return;
+  }
+  if (!years.length) {
+    container.innerHTML = '<p class="empty-state">No jobs recorded against your name yet.</p>';
+    return;
+  }
+  container.innerHTML = years.map((y) => `
+    <div class="report-year">
+      <h3>${y.year}</h3>
+      <div class="report-summary">
+        <div class="stat"><div class="label">Your Value Won</div><div class="value">${money(y.own.totalValue)}</div></div>
+        <div class="stat"><div class="label">Your Profit</div><div class="value green">${money(y.own.totalProfit)}</div></div>
+        <div class="stat"><div class="label">Your Jobs Won</div><div class="value">${y.own.jobCount}</div></div>
+      </div>
+    </div>
+  `).join('');
 }
 
 // ---------- Monthly Comparison Chart ----------
