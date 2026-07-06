@@ -172,6 +172,12 @@ app.post('/api/users/:id/promote', requireAdmin, handle(async (req, res) => {
   res.json(user);
 }));
 
+app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
+  const user = await db.setUserEmployee(req.params.id, req.body.employeeId || null);
+  broadcast('users');
+  res.json(user);
+}));
+
 // Everyone (not just admins) needs these two to run the calendar colour picker: the
 // fixed palette to choose from, and who's already using which colour.
 app.get('/api/calendar-colors', handle(async (req, res) => {

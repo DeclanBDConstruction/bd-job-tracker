@@ -1862,6 +1862,12 @@ async function loadAdminUsers() {
       <td>${escapeHtml(u.name)}</td>
       <td>${escapeHtml(u.email)}</td>
       <td><span class="role-badge ${u.role}">${escapeHtml(u.role)}</span></td>
+      <td>
+        <select class="admin-employee-select" data-user="${u.id}">
+          <option value="">— Not linked —</option>
+          ${state.employees.map((e) => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </td>
       <td class="row-actions">${u.role !== 'admin' ? `<button type="button" class="primary" data-promote="${u.id}" data-name="${escapeHtml(u.name)}">Make Admin</button>` : ''}</td>
     </tr>
   `).join('');
@@ -1874,6 +1880,22 @@ async function loadAdminUsers() {
         loadAdminUsers();
       } catch (err) {
         alert(err.message);
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.admin-employee-select').forEach((select) => {
+    select.addEventListener('change', async () => {
+      try {
+        await api(`/api/users/${select.dataset.user}/employee`, {
+          method: 'PUT',
+          body: JSON.stringify({ employeeId: select.value || null }),
+        });
+        state.employees = await api('/api/employees');
+        renderEmployees();
+      } catch (err) {
+        alert(err.message);
+        loadAdminUsers();
       }
     });
   });

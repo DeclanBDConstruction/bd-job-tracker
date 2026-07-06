@@ -783,6 +783,21 @@ async function promoteToAdmin(id) {
   return sanitizeUser(data);
 }
 
+// Manual override for the name-match auto-link done at registration (see registerUser) -
+// covers accounts created before that existed, and cases where the typed name didn't
+// exactly match the employee record.
+async function setUserEmployee(userId, employeeId) {
+  if (employeeId) {
+    const { data: emp, error: empErr } = await supabase.from('employees').select('id').eq('id', employeeId).maybeSingle();
+    check(empErr);
+    if (!emp) throw new Error('Employee not found');
+  }
+  const { data, error } = await supabase.from('users').update({ employee_id: employeeId || null }).eq('id', userId).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
 // Everyone signed in needs to see who's using which colour (to grey out taken ones), so
 // this is deliberately not admin-only like listUsers().
 async function listUserColors() {
@@ -814,6 +829,7 @@ module.exports = {
   deleteSession,
   listUsers,
   promoteToAdmin,
+  setUserEmployee,
   listUserColors,
   setUserColor,
   listEmployees,
