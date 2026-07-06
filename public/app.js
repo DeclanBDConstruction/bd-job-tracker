@@ -1028,6 +1028,8 @@ function renderHireJobOptions() {
 }
 
 function renderHires() {
+  // Summary always reflects every hire, regardless of the search box, so overdue/due-soon
+  // counts stay a reliable heads-up even while someone's searching for something else.
   const overdue = state.hires.filter((h) => h.status === 'overdue').length;
   const dueSoon = state.hires.filter((h) => h.status === 'due-soon').length;
   const summary = document.getElementById('hireSummary');
@@ -1035,9 +1037,17 @@ function renderHires() {
     ? `<p class="hire-flag-banner">${overdue ? `<strong>${overdue}</strong> hire${overdue === 1 ? '' : 's'} overdue` : ''}${overdue && dueSoon ? ' · ' : ''}${dueSoon ? `<strong>${dueSoon}</strong> due back within 3 days` : ''}</p>`
     : '';
 
+  const term = document.getElementById('hireSearch').value.trim().toLowerCase();
+  const filtered = term
+    ? state.hires.filter((h) => [h.item, h.supplier, h.jobLabel].some((v) => (v || '').toLowerCase().includes(term)))
+    : state.hires;
+
   const tbody = document.querySelector('#hiresTable tbody');
-  document.getElementById('hiresEmptyState').hidden = !!state.hires.length;
-  tbody.innerHTML = state.hires.map((h) => `
+  document.getElementById('hiresEmptyState').hidden = !!filtered.length;
+  document.getElementById('hiresEmptyState').textContent = state.hires.length && term
+    ? 'No hires match your search.'
+    : 'No hires recorded yet.';
+  tbody.innerHTML = filtered.map((h) => `
     <tr>
       <td>${escapeHtml(h.item)}</td>
       <td>${escapeHtml(h.supplier || '—')}</td>
@@ -1076,6 +1086,8 @@ function renderHires() {
     });
   });
 }
+
+document.getElementById('hireSearch').addEventListener('input', renderHires);
 
 document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
   e.preventDefault();
