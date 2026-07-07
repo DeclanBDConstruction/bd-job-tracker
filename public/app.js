@@ -245,8 +245,7 @@ function goToTab(tab) {
   if (tab === 'admin') loadAdminUsers();
   if (tab === 'hire') loadHires();
   if (tab === 'diary') {
-    const dateInput = document.getElementById('diaryDateInput');
-    if (!dateInput.value) dateInput.value = todayDateStr();
+    setDiaryViewDate(todayDateStr());
     loadDiary();
   }
 }
@@ -1236,9 +1235,26 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
 // to req.user, so there's no filtering to do here beyond how it's grouped/displayed.
 
 let editingDiaryId = null;
+let diaryViewDate = null;
 
 async function loadDiary() {
   state.diaryEntries = await api('/api/diary');
+  renderDiary();
+}
+
+function shiftDateStr(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return calDateStr(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+// Also drives what date new entries get added to - there's a single "which day am I
+// looking at" concept for the whole tab, rather than a separate picker in the add form.
+function setDiaryViewDate(dateStr) {
+  diaryViewDate = dateStr;
+  document.getElementById('diaryViewDateInput').value = dateStr;
+  document.getElementById('diaryAddingForLabel').textContent =
+    dateStr === todayDateStr() ? 'Adding to today' : `Adding to ${diaryDateLabel(dateStr)}`;
   renderDiary();
 }
 
@@ -1285,18 +1301,9 @@ function diaryEntryRow(entry) {
 
 function renderDiary() {
   const list = document.getElementById('diaryEntries');
-  document.getElementById('diaryEmptyState').hidden = !!state.diaryEntries.length;
-
-  let html = '';
-  let lastDate = null;
-  for (const entry of state.diaryEntries) {
-    if (entry.date !== lastDate) {
-      html += `<li class="diary-date-heading">${diaryDateLabel(entry.date)}</li>`;
-      lastDate = entry.date;
-    }
-    html += diaryEntryRow(entry);
-  }
-  list.innerHTML = html;
+  const dayEntries = state.diaryEntries.filter((e) => e.date === diaryViewDate);
+  document.getElementById('diaryEmptyState').hidden = !!dayEntries.length;
+  list.innerHTML = dayEntries.map(diaryEntryRow).join('');
 
   list.querySelectorAll('[data-toggle-diary]').forEach((checkbox) => {
     checkbox.addEventListener('change', async () => {
@@ -1358,7 +1365,7 @@ document.getElementById('diaryAddForm').addEventListener('submit', async (e) => 
   e.preventDefault();
   const body = {
     text: document.getElementById('diaryTextInput').value.trim(),
-    date: document.getElementById('diaryDateInput').value,
+    date: diaryViewDate,
   };
   try {
     await api('/api/diary', { method: 'POST', body: JSON.stringify(body) });
@@ -1367,6 +1374,13 @@ document.getElementById('diaryAddForm').addEventListener('submit', async (e) => 
   } catch (err) {
     alert(err.message);
   }
+});
+
+document.getElementById('diaryPrevBtn').addEventListener('click', () => setDiaryViewDate(shiftDateStr(diaryViewDate, -1)));
+document.getElementById('diaryNextBtn').addEventListener('click', () => setDiaryViewDate(shiftDateStr(diaryViewDate, 1)));
+document.getElementById('diaryTodayBtn').addEventListener('click', () => setDiaryViewDate(todayDateStr()));
+document.getElementById('diaryViewDateInput').addEventListener('change', (e) => {
+  if (e.target.value) setDiaryViewDate(e.target.value);
 });
 
 // ---------- Calendar ----------
