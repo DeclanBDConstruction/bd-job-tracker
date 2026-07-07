@@ -9,6 +9,7 @@ const state = {
   userColors: [],
   priceListItems: [],
   hires: [],
+  diaryEntries: [],
   currentUser: null,
 };
 
@@ -84,6 +85,7 @@ function connectLiveUpdates() {
     else if (type === 'users') handleLiveUsersChange();
     else if (type === 'priceList') handleLivePriceListChange();
     else if (type === 'hires') handleLiveHiresChange();
+    else if (type === 'diary') handleLiveDiaryChange();
   };
 }
 
@@ -101,6 +103,10 @@ async function handleLivePriceListChange() {
 
 async function handleLiveHiresChange() {
   if (activeTab() === 'hire') loadHires();
+}
+
+async function handleLiveDiaryChange() {
+  if (activeTab() === 'diary') loadDiary();
 }
 
 async function handleLiveJobsChange() {
@@ -238,6 +244,11 @@ function goToTab(tab) {
   if (tab === 'home') renderHomeDashboard();
   if (tab === 'admin') loadAdminUsers();
   if (tab === 'hire') loadHires();
+  if (tab === 'diary') {
+    const dateInput = document.getElementById('diaryDateInput');
+    if (!dateInput.value) dateInput.value = todayDateStr();
+    loadDiary();
+  }
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -1215,6 +1226,126 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
     e.target.reset();
     document.getElementById('hireQuantityInput').value = 1;
     loadHires();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ---------- Diary ----------
+// Private journal, multiple timestamped entries per day - the server always scopes this
+// to req.user, so there's no filtering to do here beyond how it's grouped/displayed.
+
+let editingDiaryId = null;
+
+async function loadDiary() {
+  state.diaryEntries = await api('/api/diary');
+  renderDiary();
+}
+
+function diaryEntryTime(iso) {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function diaryDateLabel(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function diaryEntryRow(entry) {
+  if (entry.id === editingDiaryId) {
+    return `
+      <li class="diary-entry-item diary-entry-editing" data-id="${entry.id}">
+        <textarea class="diary-edit-text" rows="3">${escapeHtml(entry.text)}</textarea>
+        <div class="diary-entry-footer">
+          <input type="date" class="diary-edit-date" value="${entry.date}">
+          <div class="diary-entry-actions">
+            <button type="button" class="primary diary-save-btn">Save</button>
+            <button type="button" class="diary-cancel-btn">Cancel</button>
+          </div>
+        </div>
+      </li>
+    `;
+  }
+  return `
+    <li class="diary-entry-item" data-id="${entry.id}">
+      <p class="diary-entry-text">${escapeHtml(entry.text).replace(/\n/g, '<br>')}</p>
+      <div class="diary-entry-footer">
+        <span class="diary-entry-meta">${diaryEntryTime(entry.createdAt)}${entry.updatedAt !== entry.createdAt ? ' · edited' : ''}</span>
+        <div class="diary-entry-actions">
+          <button type="button" data-edit-diary="${entry.id}">Edit</button>
+          <button type="button" class="danger" data-del-diary="${entry.id}">Delete</button>
+        </div>
+      </div>
+    </li>
+  `;
+}
+
+function renderDiary() {
+  const list = document.getElementById('diaryEntries');
+  document.getElementById('diaryEmptyState').hidden = !!state.diaryEntries.length;
+
+  let html = '';
+  let lastDate = null;
+  for (const entry of state.diaryEntries) {
+    if (entry.date !== lastDate) {
+      html += `<li class="diary-date-heading">${diaryDateLabel(entry.date)}</li>`;
+      lastDate = entry.date;
+    }
+    html += diaryEntryRow(entry);
+  }
+  list.innerHTML = html;
+
+  list.querySelectorAll('[data-edit-diary]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingDiaryId = btn.dataset.editDiary;
+      renderDiary();
+    });
+  });
+  list.querySelectorAll('.diary-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingDiaryId = null;
+      renderDiary();
+    });
+  });
+  list.querySelectorAll('.diary-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const li = btn.closest('li');
+      const body = {
+        text: li.querySelector('.diary-edit-text').value.trim(),
+        date: li.querySelector('.diary-edit-date').value,
+      };
+      try {
+        await api(`/api/diary/${li.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingDiaryId = null;
+        loadDiary();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  list.querySelectorAll('[data-del-diary]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this diary entry? This cannot be undone.')) return;
+      try {
+        await api(`/api/diary/${btn.dataset.delDiary}`, { method: 'DELETE' });
+        loadDiary();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('diaryAddForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    text: document.getElementById('diaryTextInput').value.trim(),
+    date: document.getElementById('diaryDateInput').value,
+  };
+  try {
+    await api('/api/diary', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('diaryTextInput').value = '';
+    loadDiary();
   } catch (err) {
     alert(err.message);
   }

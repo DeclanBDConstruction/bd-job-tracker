@@ -151,6 +151,20 @@ create table if not exists saved_risk_assessments (
   created_at timestamptz not null default now()
 );
 
+-- Personal diary: private journal entries, multiple per day, never shown to anyone but
+-- the person who wrote them (not even admins) - the server always scopes reads/writes to
+-- req.user.id, same trust boundary as `is_private` calendar_events but with no exception.
+create table if not exists diary_entries (
+  id uuid primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  entry_date text not null,
+  entry_text text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists diary_entries_user_id_date_idx on diary_entries (user_id, entry_date desc, created_at desc);
+
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_variations_job_id_idx on job_variations (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
@@ -175,6 +189,7 @@ alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
 alter table hires enable row level security;
+alter table diary_entries enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

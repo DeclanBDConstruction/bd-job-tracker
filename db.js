@@ -783,6 +783,77 @@ async function deleteHire(id) {
   check(error);
 }
 
+// ---------- Diary ----------
+// Private journal, multiple timestamped entries per day. Every function here takes the
+// requesting user and either scopes the query to them (list/create) or checks ownership
+// before touching a row (update/delete) - there's no admin override, unlike calendar
+// entries, since a diary is meant to be nobody's business but the person who wrote it.
+
+function rowToDiaryEntry(row) {
+  return {
+    id: row.id,
+    date: row.entry_date,
+    text: row.entry_text,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listDiaryEntries(user) {
+  const { data, error } = await supabase.from('diary_entries').select('*')
+    .eq('user_id', user.id)
+    .order('entry_date', { ascending: false }).order('created_at', { ascending: false });
+  check(error);
+  return data.map(rowToDiaryEntry);
+}
+
+async function createDiaryEntry(input, user) {
+  const text = (input.text || '').trim();
+  if (!text) throw new Error('Entry text is required');
+  const date = input.date;
+  if (!date || !DATE_RE.test(date)) throw new Error('A valid date is required');
+
+  const row = {
+    id: genId(),
+    user_id: user.id,
+    entry_date: date,
+    entry_text: text,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('diary_entries').insert(row).select().single();
+  check(error);
+  return rowToDiaryEntry(data);
+}
+
+async function updateDiaryEntry(id, input, user) {
+  const text = (input.text || '').trim();
+  if (!text) throw new Error('Entry text is required');
+  const date = input.date;
+  if (!date || !DATE_RE.test(date)) throw new Error('A valid date is required');
+
+  const { data: existing, error: findErr } = await supabase.from('diary_entries').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Diary entry not found');
+  if (existing.user_id !== user.id) throw new Error('You can only edit your own diary entries');
+
+  const { data, error } = await supabase.from('diary_entries')
+    .update({ entry_date: date, entry_text: text, updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  return rowToDiaryEntry(data);
+}
+
+async function deleteDiaryEntry(id, user) {
+  const { data: existing, error: findErr } = await supabase.from('diary_entries').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Diary entry not found');
+  if (existing.user_id !== user.id) throw new Error('You can only delete your own diary entries');
+
+  const { error } = await supabase.from('diary_entries').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Auth ----------
 
 function sanitizeUser(row) {
@@ -976,4 +1047,8 @@ module.exports = {
   updateHire,
   markHireReturned,
   deleteHire,
+  listDiaryEntries,
+  createDiaryEntry,
+  updateDiaryEntry,
+  deleteDiaryEntry,
 };

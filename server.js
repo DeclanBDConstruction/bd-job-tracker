@@ -449,6 +449,30 @@ app.delete('/api/calendar/:id', handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Diary (private to the signed-in user) ----------
+
+app.get('/api/diary', handle(async (req, res) => {
+  res.json(await db.listDiaryEntries(req.user));
+}));
+
+app.post('/api/diary', handle(async (req, res) => {
+  const entry = await db.createDiaryEntry(req.body, req.user);
+  broadcast('diary');
+  res.status(201).json(entry);
+}));
+
+app.put('/api/diary/:id', handle(async (req, res) => {
+  const entry = await db.updateDiaryEntry(req.params.id, req.body, req.user);
+  broadcast('diary');
+  res.json(entry);
+}));
+
+app.delete('/api/diary/:id', handle(async (req, res) => {
+  await db.deleteDiaryEntry(req.params.id, req.user);
+  broadcast('diary');
+  res.status(204).end();
+}));
+
 // ---------- Price List (Labour & Materials) ----------
 
 app.get('/api/price-list', handle(async (req, res) => {

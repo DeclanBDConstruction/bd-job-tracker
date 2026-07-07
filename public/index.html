@@ -85,6 +85,7 @@
     <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
+    <button class="tab-btn" data-tab="diary">My Diary</button>
     <button class="tab-btn" data-tab="risk">Risk Assessments</button>
     <button class="tab-btn" data-tab="reports">Yearly Reports</button>
     <button class="tab-btn" data-tab="clients" id="clientsTabBtn" hidden>Client Report</button>
@@ -322,6 +323,23 @@
       <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
     </div>
     <div class="calendar-grid" id="myCalendarGrid"></div>
+  </section>
+
+  <!-- DIARY TAB -->
+  <section id="tab-diary" class="tab-panel">
+    <div class="panel-header">
+      <h2>My Diary</h2>
+    </div>
+    <p class="hint">A private journal, just for you — nobody else, not even admins, can see what you write here. Add as many entries as you like for a day.</p>
+    <form id="diaryAddForm" class="diary-add-form">
+      <textarea id="diaryTextInput" placeholder="What's on your mind…" rows="3" required></textarea>
+      <div class="diary-add-form-footer">
+        <input type="date" id="diaryDateInput" required>
+        <button type="submit" class="primary">+ Add Entry</button>
+      </div>
+    </form>
+    <ul class="diary-entries" id="diaryEntries"></ul>
+    <p class="empty-state" id="diaryEmptyState" hidden>No diary entries yet.</p>
   </section>
 
   <!-- RISK ASSESSMENTS TAB -->
