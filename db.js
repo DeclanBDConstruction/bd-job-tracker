@@ -794,12 +794,40 @@ function rowToDiaryEntry(row) {
     id: row.id,
     date: row.entry_date,
     text: row.entry_text,
+    completed: row.completed,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
+// Ticked-off entries are only ever cleared out, and unticked ones only ever rolled
+// forward, the next time this user's diary is actually loaded - there's no cron in this
+// app, so "at the end of the day" really means "next time you open the tab on/after the
+// next day". Same lazy-at-read-time approach as hire due-back status below.
+async function rolloverDiaryEntries(user) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: stale, error } = await supabase.from('diary_entries').select('id, completed')
+    .eq('user_id', user.id).lt('entry_date', today);
+  check(error);
+  if (!stale.length) return;
+
+  const doneIds = stale.filter((e) => e.completed).map((e) => e.id);
+  const pendingIds = stale.filter((e) => !e.completed).map((e) => e.id);
+
+  if (doneIds.length) {
+    const { error: delErr } = await supabase.from('diary_entries').delete().in('id', doneIds);
+    check(delErr);
+  }
+  if (pendingIds.length) {
+    const { error: updErr } = await supabase.from('diary_entries')
+      .update({ entry_date: today, updated_at: new Date().toISOString() })
+      .in('id', pendingIds);
+    check(updErr);
+  }
+}
+
 async function listDiaryEntries(user) {
+  await rolloverDiaryEntries(user);
   const { data, error } = await supabase.from('diary_entries').select('*')
     .eq('user_id', user.id)
     .order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -839,6 +867,19 @@ async function updateDiaryEntry(id, input, user) {
 
   const { data, error } = await supabase.from('diary_entries')
     .update({ entry_date: date, entry_text: text, updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  return rowToDiaryEntry(data);
+}
+
+async function setDiaryEntryCompleted(id, completed, user) {
+  const { data: existing, error: findErr } = await supabase.from('diary_entries').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Diary entry not found');
+  if (existing.user_id !== user.id) throw new Error('You can only update your own diary entries');
+
+  const { data, error } = await supabase.from('diary_entries')
+    .update({ completed, updated_at: new Date().toISOString() })
     .eq('id', id).select().maybeSingle();
   check(error);
   return rowToDiaryEntry(data);
@@ -1050,5 +1091,6 @@ module.exports = {
   listDiaryEntries,
   createDiaryEntry,
   updateDiaryEntry,
+  setDiaryEntryCompleted,
   deleteDiaryEntry,
 };

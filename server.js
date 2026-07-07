@@ -467,6 +467,12 @@ app.put('/api/diary/:id', handle(async (req, res) => {
   res.json(entry);
 }));
 
+app.put('/api/diary/:id/complete', handle(async (req, res) => {
+  const entry = await db.setDiaryEntryCompleted(req.params.id, !!req.body.completed, req.user);
+  broadcast('diary');
+  res.json(entry);
+}));
+
 app.delete('/api/diary/:id', handle(async (req, res) => {
   await db.deleteDiaryEntry(req.params.id, req.user);
   broadcast('diary');

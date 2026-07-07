@@ -1267,8 +1267,11 @@ function diaryEntryRow(entry) {
     `;
   }
   return `
-    <li class="diary-entry-item" data-id="${entry.id}">
-      <p class="diary-entry-text">${escapeHtml(entry.text).replace(/\n/g, '<br>')}</p>
+    <li class="diary-entry-item${entry.completed ? ' diary-entry-done' : ''}" data-id="${entry.id}">
+      <div class="diary-entry-main">
+        <input type="checkbox" class="diary-entry-check" data-toggle-diary="${entry.id}" ${entry.completed ? 'checked' : ''} title="${entry.completed ? 'Mark not done' : 'Mark done'}">
+        <p class="diary-entry-text">${escapeHtml(entry.text).replace(/\n/g, '<br>')}</p>
+      </div>
       <div class="diary-entry-footer">
         <span class="diary-entry-meta">${diaryEntryTime(entry.createdAt)}${entry.updatedAt !== entry.createdAt ? ' · edited' : ''}</span>
         <div class="diary-entry-actions">
@@ -1295,6 +1298,21 @@ function renderDiary() {
   }
   list.innerHTML = html;
 
+  list.querySelectorAll('[data-toggle-diary]').forEach((checkbox) => {
+    checkbox.addEventListener('change', async () => {
+      const id = checkbox.dataset.toggleDiary;
+      const completed = checkbox.checked;
+      try {
+        await api(`/api/diary/${id}/complete`, { method: 'PUT', body: JSON.stringify({ completed }) });
+        const entry = state.diaryEntries.find((e) => e.id === id);
+        if (entry) entry.completed = completed;
+        renderDiary();
+      } catch (err) {
+        checkbox.checked = !completed;
+        alert(err.message);
+      }
+    });
+  });
   list.querySelectorAll('[data-edit-diary]').forEach((btn) => {
     btn.addEventListener('click', () => {
       editingDiaryId = btn.dataset.editDiary;

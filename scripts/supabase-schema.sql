@@ -159,9 +159,14 @@ create table if not exists diary_entries (
   user_id uuid not null references users(id) on delete cascade,
   entry_date text not null,
   entry_text text not null,
+  completed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Adds `completed` to a diary_entries table that already existed before tick-off/rollover
+-- did (the CREATE TABLE above only applies to a brand-new table).
+alter table diary_entries add column if not exists completed boolean not null default false;
 
 create index if not exists diary_entries_user_id_date_idx on diary_entries (user_id, entry_date desc, created_at desc);
 
