@@ -677,6 +677,72 @@ async function deletePriceListItem(id) {
   check(error);
 }
 
+// ---------- Subbies (subcontractor directory) ----------
+// Shared contact list anyone can add to - not scoped to any one job or user.
+
+function rowToSubby(row) {
+  return {
+    id: row.id,
+    companyName: row.company_name,
+    personName: row.person_name,
+    phone: row.phone,
+    trade: row.trade,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listSubbies() {
+  const { data, error } = await supabase.from('subbies').select('*').order('company_name');
+  check(error);
+  return data.map(rowToSubby);
+}
+
+async function createSubby(input) {
+  const companyName = (input.companyName || '').trim();
+  const personName = (input.personName || '').trim();
+  if (!companyName) throw new Error('Company name is required');
+  if (!personName) throw new Error('Person\'s name is required');
+
+  const row = {
+    id: genId(),
+    company_name: companyName,
+    person_name: personName,
+    phone: (input.phone || '').trim() || null,
+    trade: (input.trade || '').trim() || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('subbies').insert(row).select().single();
+  check(error);
+  return rowToSubby(data);
+}
+
+async function updateSubby(id, input) {
+  const companyName = (input.companyName || '').trim();
+  const personName = (input.personName || '').trim();
+  if (!companyName) throw new Error('Company name is required');
+  if (!personName) throw new Error('Person\'s name is required');
+
+  const { data, error } = await supabase.from('subbies')
+    .update({
+      company_name: companyName,
+      person_name: personName,
+      phone: (input.phone || '').trim() || null,
+      trade: (input.trade || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Subby not found');
+  return rowToSubby(data);
+}
+
+async function deleteSubby(id) {
+  const { error } = await supabase.from('subbies').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Hire ----------
 // Admin-only tracker for hired-in plant/equipment. Due-back date and overdue/due-soon
 // flagging are computed at read time from hire_date + duration, not stored, so they're
@@ -1083,6 +1149,10 @@ module.exports = {
   createPriceListItem,
   updatePriceListItem,
   deletePriceListItem,
+  listSubbies,
+  createSubby,
+  updateSubby,
+  deleteSubby,
   listHires,
   createHire,
   updateHire,

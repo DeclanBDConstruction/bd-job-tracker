@@ -170,6 +170,20 @@ alter table diary_entries add column if not exists completed boolean not null de
 
 create index if not exists diary_entries_user_id_date_idx on diary_entries (user_id, entry_date desc, created_at desc);
 
+-- Subcontractors directory: shared contact list anyone can add to, so the whole office
+-- knows who to call for a given trade without digging through phones/emails.
+create table if not exists subbies (
+  id uuid primary key,
+  company_name text not null,
+  person_name text not null,
+  phone text,
+  trade text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists subbies_company_name_idx on subbies (company_name);
+
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_variations_job_id_idx on job_variations (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
@@ -195,6 +209,7 @@ alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
 alter table hires enable row level security;
 alter table diary_entries enable row level security;
+alter table subbies enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

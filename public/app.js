@@ -8,6 +8,7 @@ const state = {
   calendarColors: [],
   userColors: [],
   priceListItems: [],
+  subbies: [],
   hires: [],
   diaryEntries: [],
   currentUser: null,
@@ -84,6 +85,7 @@ function connectLiveUpdates() {
     else if (type === 'calendar') handleLiveCalendarChange();
     else if (type === 'users') handleLiveUsersChange();
     else if (type === 'priceList') handleLivePriceListChange();
+    else if (type === 'subbies') handleLiveSubbiesChange();
     else if (type === 'hires') handleLiveHiresChange();
     else if (type === 'diary') handleLiveDiaryChange();
   };
@@ -99,6 +101,11 @@ function disconnectLiveUpdates() {
 async function handleLivePriceListChange() {
   state.priceListItems = await api('/api/price-list');
   renderPriceLists();
+}
+
+async function handleLiveSubbiesChange() {
+  state.subbies = await api('/api/subbies');
+  renderSubbies();
 }
 
 async function handleLiveHiresChange() {
@@ -365,7 +372,7 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, calendarEvents, priceListItems] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, calendarEvents, priceListItems, subbies] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
@@ -373,6 +380,7 @@ async function bootstrap() {
     api('/api/risk-assessments/library'),
     api('/api/calendar'),
     api('/api/price-list'),
+    api('/api/subbies'),
   ]);
   state.jobs = jobs;
   state.employees = employees;
@@ -381,6 +389,7 @@ async function bootstrap() {
   state.raLibrary = raLibrary;
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
+  state.subbies = subbies;
   renderStatusOptions();
   renderEmployeeOptions();
   renderJobs();
@@ -389,6 +398,7 @@ async function bootstrap() {
   renderRiskAssessments();
   renderCalendar();
   renderPriceLists();
+  renderSubbies();
   renderHomeDashboard();
 
   // Split from the Promise.all above: this needs a `users.color` column that only
@@ -1070,6 +1080,126 @@ function renderPriceLists() {
   labourList.render();
   materialList.render();
 }
+
+// ---------- Subbies (subcontractor directory) ----------
+// Shared contact list - anyone can add/edit an entry, admins can delete. Search matches
+// company name, person's name or trade (not phone - phone numbers aren't what people
+// search by when trying to find "that plasterer" or "that lot at ABC Roofing").
+
+let editingSubbyId = null;
+let subbiesSearchTerm = '';
+
+function subbiesList() {
+  const term = subbiesSearchTerm.trim().toLowerCase();
+  return state.subbies
+    .filter((s) => !term
+      || s.companyName.toLowerCase().includes(term)
+      || s.personName.toLowerCase().includes(term)
+      || (s.trade || '').toLowerCase().includes(term))
+    .sort((a, b) => a.companyName.localeCompare(b.companyName));
+}
+
+function renderSubbies() {
+  const list = subbiesList();
+  const tbody = document.querySelector('#subbiesTable tbody');
+  tbody.innerHTML = list.length ? list.map((s) => {
+    if (editingSubbyId === s.id) {
+      return `
+        <tr data-id="${s.id}">
+          <td><input type="text" class="sb-edit-company" value="${escapeHtml(s.companyName)}"></td>
+          <td><input type="text" class="sb-edit-person" value="${escapeHtml(s.personName)}"></td>
+          <td><input type="tel" class="sb-edit-phone" value="${escapeHtml(s.phone || '')}"></td>
+          <td><input type="text" class="sb-edit-trade" value="${escapeHtml(s.trade || '')}"></td>
+          <td class="row-actions">
+            <button type="button" class="primary sb-save-btn">Save</button>
+            <button type="button" class="sb-cancel-btn">Cancel</button>
+          </td>
+        </tr>`;
+    }
+    return `
+      <tr data-id="${s.id}">
+        <td>${escapeHtml(s.companyName)}</td>
+        <td>${escapeHtml(s.personName)}</td>
+        <td>${escapeHtml(s.phone || '')}</td>
+        <td>${escapeHtml(s.trade || '')}</td>
+        <td class="row-actions">
+          <button type="button" class="sb-edit-btn">Edit</button>
+          ${isAdmin() ? '<button type="button" class="danger sb-delete-btn">Delete</button>' : ''}
+        </td>
+      </tr>`;
+  }).join('') : `<tr><td colspan="5" class="empty-state">${subbiesSearchTerm.trim() ? 'No subbies match your search.' : 'Nothing added yet.'}</td></tr>`;
+
+  tbody.querySelectorAll('.sb-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingSubbyId = btn.closest('tr').dataset.id; renderSubbies(); });
+  });
+  tbody.querySelectorAll('.sb-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingSubbyId = null; renderSubbies(); });
+  });
+  tbody.querySelectorAll('.sb-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const payload = {
+        companyName: tr.querySelector('.sb-edit-company').value,
+        personName: tr.querySelector('.sb-edit-person').value,
+        phone: tr.querySelector('.sb-edit-phone').value,
+        trade: tr.querySelector('.sb-edit-trade').value,
+      };
+      try {
+        await api(`/api/subbies/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+        state.subbies = await api('/api/subbies');
+        editingSubbyId = null;
+        renderSubbies();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  tbody.querySelectorAll('.sb-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('tr').dataset.id;
+      if (!confirm('Delete this subby?')) return;
+      try {
+        await api(`/api/subbies/${id}`, { method: 'DELETE' });
+        state.subbies = await api('/api/subbies');
+        renderSubbies();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('subbiesSearch').addEventListener('input', (e) => {
+  subbiesSearchTerm = e.target.value;
+  renderSubbies();
+});
+
+document.getElementById('addSubbyBtn').addEventListener('click', async () => {
+  const companyInput = document.getElementById('newSubbyCompany');
+  const personInput = document.getElementById('newSubbyPerson');
+  const phoneInput = document.getElementById('newSubbyPhone');
+  const tradeInput = document.getElementById('newSubbyTrade');
+  if (!companyInput.value.trim() || !personInput.value.trim()) return;
+  try {
+    await api('/api/subbies', {
+      method: 'POST',
+      body: JSON.stringify({
+        companyName: companyInput.value,
+        personName: personInput.value,
+        phone: phoneInput.value,
+        trade: tradeInput.value,
+      }),
+    });
+    companyInput.value = '';
+    personInput.value = '';
+    phoneInput.value = '';
+    tradeInput.value = '';
+    state.subbies = await api('/api/subbies');
+    renderSubbies();
+  } catch (err) {
+    alert(err.message);
+  }
+});
 
 // ---------- Hire ----------
 // Admin-only tracker for hired-in plant/equipment - flags a hire once it's due back

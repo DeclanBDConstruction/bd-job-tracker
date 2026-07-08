@@ -82,6 +82,7 @@
     <button class="tab-btn" data-tab="employees">Employees</button>
     <button class="tab-btn" data-tab="labour">Labour</button>
     <button class="tab-btn" data-tab="pricelist">Price List</button>
+    <button class="tab-btn" data-tab="subbies">Subbies</button>
     <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
@@ -245,6 +246,28 @@
     </div>
     <table class="data-table" id="priceListTable">
       <thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- SUBBIES TAB -->
+  <section id="tab-subbies" class="tab-panel">
+    <div class="panel-header">
+      <h2>Subbies</h2>
+      <div class="filters">
+        <input type="text" id="subbiesSearch" placeholder="Search name, trade or company…">
+      </div>
+    </div>
+    <p class="hint">Subcontractor directory — anyone can add a subby so the whole office knows who to call.</p>
+    <div class="import-upload">
+      <input type="text" id="newSubbyCompany" placeholder="Company name">
+      <input type="text" id="newSubbyPerson" placeholder="Person's name">
+      <input type="tel" id="newSubbyPhone" placeholder="Phone number">
+      <input type="text" id="newSubbyTrade" placeholder="Trade (e.g. Electrician)">
+      <button type="button" id="addSubbyBtn" class="primary">+ Add</button>
+    </div>
+    <table class="data-table" id="subbiesTable">
+      <thead><tr><th>Company</th><th>Name</th><th>Phone</th><th>Trade</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </section>

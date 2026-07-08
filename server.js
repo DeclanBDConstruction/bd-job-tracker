@@ -503,6 +503,30 @@ app.delete('/api/price-list/:id', requireAdmin, handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Subbies (subcontractor directory) ----------
+
+app.get('/api/subbies', handle(async (req, res) => {
+  res.json(await db.listSubbies());
+}));
+
+app.post('/api/subbies', handle(async (req, res) => {
+  const subby = await db.createSubby(req.body);
+  broadcast('subbies');
+  res.status(201).json(subby);
+}));
+
+app.put('/api/subbies/:id', handle(async (req, res) => {
+  const subby = await db.updateSubby(req.params.id, req.body);
+  broadcast('subbies');
+  res.json(subby);
+}));
+
+app.delete('/api/subbies/:id', requireAdmin, handle(async (req, res) => {
+  await db.deleteSubby(req.params.id);
+  broadcast('subbies');
+  res.status(204).end();
+}));
+
 // ---------- Hire (admin only) ----------
 
 app.get('/api/hires', requireAdmin, handle(async (req, res) => {
