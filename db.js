@@ -687,6 +687,9 @@ function rowToSubby(row) {
     personName: row.person_name,
     phone: row.phone,
     trade: row.trade,
+    formOriginalName: row.form_original_name,
+    formStoredName: row.form_stored_name,
+    formSize: row.form_size,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -698,11 +701,18 @@ async function listSubbies() {
   return data.map(rowToSubby);
 }
 
-async function createSubby(input) {
+async function getSubby(id) {
+  const { data, error } = await supabase.from('subbies').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToSubby(data) : null;
+}
+
+async function createSubby(input, fileInfo) {
   const companyName = (input.companyName || '').trim();
   const personName = (input.personName || '').trim();
   if (!companyName) throw new Error('Company name is required');
   if (!personName) throw new Error('Person\'s name is required');
+  if (!fileInfo || !fileInfo.storedName) throw new Error('Subcontractor form is required');
 
   const row = {
     id: genId(),
@@ -710,6 +720,9 @@ async function createSubby(input) {
     person_name: personName,
     phone: (input.phone || '').trim() || null,
     trade: (input.trade || '').trim() || null,
+    form_original_name: fileInfo.originalName,
+    form_stored_name: fileInfo.storedName,
+    form_size: fileInfo.size,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -739,8 +752,11 @@ async function updateSubby(id, input) {
 }
 
 async function deleteSubby(id) {
+  const subby = await getSubby(id);
+  if (!subby) return null;
   const { error } = await supabase.from('subbies').delete().eq('id', id);
   check(error);
+  return subby;
 }
 
 // ---------- Hire ----------
@@ -1150,6 +1166,7 @@ module.exports = {
   updatePriceListItem,
   deletePriceListItem,
   listSubbies,
+  getSubby,
   createSubby,
   updateSubby,
   deleteSubby,

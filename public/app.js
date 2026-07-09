@@ -1103,6 +1103,9 @@ function renderSubbies() {
   const list = subbiesList();
   const tbody = document.querySelector('#subbiesTable tbody');
   tbody.innerHTML = list.length ? list.map((s) => {
+    const formCell = s.formStoredName
+      ? `<a href="/api/subbies/${s.id}/file" target="_blank">${escapeHtml(s.formOriginalName || 'Form')}</a>`
+      : '<span class="hint">No form</span>';
     if (editingSubbyId === s.id) {
       return `
         <tr data-id="${s.id}">
@@ -1110,6 +1113,7 @@ function renderSubbies() {
           <td><input type="text" class="sb-edit-person" value="${escapeHtml(s.personName)}"></td>
           <td><input type="tel" class="sb-edit-phone" value="${escapeHtml(s.phone || '')}"></td>
           <td><input type="text" class="sb-edit-trade" value="${escapeHtml(s.trade || '')}"></td>
+          <td>${formCell}</td>
           <td class="row-actions">
             <button type="button" class="primary sb-save-btn">Save</button>
             <button type="button" class="sb-cancel-btn">Cancel</button>
@@ -1122,12 +1126,13 @@ function renderSubbies() {
         <td>${escapeHtml(s.personName)}</td>
         <td>${escapeHtml(s.phone || '')}</td>
         <td>${escapeHtml(s.trade || '')}</td>
+        <td>${formCell}</td>
         <td class="row-actions">
           <button type="button" class="sb-edit-btn">Edit</button>
           ${isAdmin() ? '<button type="button" class="danger sb-delete-btn">Delete</button>' : ''}
         </td>
       </tr>`;
-  }).join('') : `<tr><td colspan="5" class="empty-state">${subbiesSearchTerm.trim() ? 'No subbies match your search.' : 'Nothing added yet.'}</td></tr>`;
+  }).join('') : `<tr><td colspan="6" class="empty-state">${subbiesSearchTerm.trim() ? 'No subbies match your search.' : 'Nothing added yet.'}</td></tr>`;
 
   tbody.querySelectorAll('.sb-edit-btn').forEach((btn) => {
     btn.addEventListener('click', () => { editingSubbyId = btn.closest('tr').dataset.id; renderSubbies(); });
@@ -1174,26 +1179,37 @@ document.getElementById('subbiesSearch').addEventListener('input', (e) => {
   renderSubbies();
 });
 
+document.getElementById('newSubbyForm').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  document.getElementById('newSubbyFormName').textContent = file ? file.name : '';
+});
+
 document.getElementById('addSubbyBtn').addEventListener('click', async () => {
   const companyInput = document.getElementById('newSubbyCompany');
   const personInput = document.getElementById('newSubbyPerson');
   const phoneInput = document.getElementById('newSubbyPhone');
   const tradeInput = document.getElementById('newSubbyTrade');
+  const formInput = document.getElementById('newSubbyForm');
   if (!companyInput.value.trim() || !personInput.value.trim()) return;
+  if (!formInput.files[0]) { alert('Upload the subcontractor form before adding a subby.'); return; }
   try {
-    await api('/api/subbies', {
-      method: 'POST',
-      body: JSON.stringify({
-        companyName: companyInput.value,
-        personName: personInput.value,
-        phone: phoneInput.value,
-        trade: tradeInput.value,
-      }),
-    });
+    const formData = new FormData();
+    formData.append('companyName', companyInput.value);
+    formData.append('personName', personInput.value);
+    formData.append('phone', phoneInput.value);
+    formData.append('trade', tradeInput.value);
+    formData.append('file', formInput.files[0]);
+    const res = await fetch('/api/subbies', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Add failed');
+    }
     companyInput.value = '';
     personInput.value = '';
     phoneInput.value = '';
     tradeInput.value = '';
+    formInput.value = '';
+    document.getElementById('newSubbyFormName').textContent = '';
     state.subbies = await api('/api/subbies');
     renderSubbies();
   } catch (err) {

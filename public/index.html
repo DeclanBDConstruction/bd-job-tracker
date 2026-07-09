@@ -258,16 +258,18 @@
         <input type="text" id="subbiesSearch" placeholder="Search name, trade or company…">
       </div>
     </div>
-    <p class="hint">Subcontractor directory — anyone can add a subby so the whole office knows who to call.</p>
+    <p class="hint">Subcontractor directory — anyone can add a subby so the whole office knows who to call. A signed subcontractor form must be uploaded before a subby can be added.</p>
     <div class="import-upload">
       <input type="text" id="newSubbyCompany" placeholder="Company name">
       <input type="text" id="newSubbyPerson" placeholder="Person's name">
       <input type="tel" id="newSubbyPhone" placeholder="Phone number">
       <input type="text" id="newSubbyTrade" placeholder="Trade (e.g. Electrician)">
+      <label class="upload-btn">Choose Form<input type="file" id="newSubbyForm" hidden required></label>
+      <span id="newSubbyFormName" class="ra-library-filename"></span>
       <button type="button" id="addSubbyBtn" class="primary">+ Add</button>
     </div>
     <table class="data-table" id="subbiesTable">
-      <thead><tr><th>Company</th><th>Name</th><th>Phone</th><th>Trade</th><th></th></tr></thead>
+      <thead><tr><th>Company</th><th>Name</th><th>Phone</th><th>Trade</th><th>Form</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </section>

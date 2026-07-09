@@ -171,16 +171,28 @@ alter table diary_entries add column if not exists completed boolean not null de
 create index if not exists diary_entries_user_id_date_idx on diary_entries (user_id, entry_date desc, created_at desc);
 
 -- Subcontractors directory: shared contact list anyone can add to, so the whole office
--- knows who to call for a given trade without digging through phones/emails.
+-- knows who to call for a given trade without digging through phones/emails. Each subby
+-- must have a signed subcontractor form on file - the file bytes live in the same Storage
+-- bucket as job documents, under a `_library/subbies/` prefix.
 create table if not exists subbies (
   id uuid primary key,
   company_name text not null,
   person_name text not null,
   phone text,
   trade text,
+  form_original_name text,
+  form_stored_name text,
+  form_size bigint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Adds the subcontractor form columns to a subbies table that already existed before
+-- upload-on-add became required (the CREATE TABLE above only applies to a brand-new
+-- table). Nullable so subbies added before this change don't break.
+alter table subbies add column if not exists form_original_name text;
+alter table subbies add column if not exists form_stored_name text;
+alter table subbies add column if not exists form_size bigint;
 
 create index if not exists subbies_company_name_idx on subbies (company_name);
 

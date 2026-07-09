@@ -46,6 +46,11 @@ function libraryStoragePath(storedName) {
   return `_library/rams/${storedName}`;
 }
 
+// Signed subcontractor forms live under this fixed prefix in the same bucket.
+function subbyFormStoragePath(storedName) {
+  return `_library/subbies/${storedName}`;
+}
+
 function makeStoredName(originalName) {
   const safeName = originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
@@ -504,15 +509,41 @@ app.delete('/api/price-list/:id', requireAdmin, handle(async (req, res) => {
 }));
 
 // ---------- Subbies (subcontractor directory) ----------
+// Every subby needs a signed subcontractor form on file, so adding one is a multipart
+// upload rather than a plain JSON post - no file, no record.
 
 app.get('/api/subbies', handle(async (req, res) => {
   res.json(await db.listSubbies());
 }));
 
-app.post('/api/subbies', handle(async (req, res) => {
-  const subby = await db.createSubby(req.body);
+app.post('/api/subbies', uploadDocument.single('file'), handle(async (req, res) => {
+  if (!req.file) throw new Error('Subcontractor form is required');
+  const storedName = makeStoredName(req.file.originalname);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(subbyFormStoragePath(storedName), req.file.buffer, {
+      contentType: req.file.mimetype || 'application/octet-stream',
+    });
+  if (error) throw new Error(error.message);
+  const subby = await db.createSubby(req.body, {
+    originalName: req.file.originalname,
+    storedName,
+    size: req.file.size,
+  });
   broadcast('subbies');
   res.status(201).json(subby);
+}));
+
+app.get('/api/subbies/:id/file', handle(async (req, res) => {
+  const subby = await db.getSubby(req.params.id);
+  if (!subby || !subby.formStoredName) return res.status(404).json({ error: 'Form not found' });
+  const { data, error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .download(subbyFormStoragePath(subby.formStoredName));
+  if (error) return res.status(404).json({ error: 'File not found in storage' });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Disposition', `attachment; filename="${subby.formOriginalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_')}"`);
+  res.send(buffer);
 }));
 
 app.put('/api/subbies/:id', handle(async (req, res) => {
@@ -522,7 +553,10 @@ app.put('/api/subbies/:id', handle(async (req, res) => {
 }));
 
 app.delete('/api/subbies/:id', requireAdmin, handle(async (req, res) => {
-  await db.deleteSubby(req.params.id);
+  const subby = await db.deleteSubby(req.params.id);
+  if (subby && subby.formStoredName) {
+    await supabase.storage.from(DOCUMENTS_BUCKET).remove([subbyFormStoragePath(subby.formStoredName)]);
+  }
   broadcast('subbies');
   res.status(204).end();
 }));

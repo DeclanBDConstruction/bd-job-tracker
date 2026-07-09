@@ -526,7 +526,7 @@ input, select, textarea, button {
 }
 
 input[type="text"], input[type="number"], input[type="date"], input[type="time"],
-input[type="email"], input[type="password"], select, textarea {
+input[type="email"], input[type="password"], input[type="tel"], select, textarea {
   padding: 9px 11px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -536,7 +536,7 @@ input[type="email"], input[type="password"], select, textarea {
 }
 
 input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, input[type="time"]:focus,
-input[type="email"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
+input[type="email"]:focus, input[type="password"]:focus, input[type="tel"]:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(24,106,156,0.15);
@@ -763,6 +763,10 @@ button.danger:hover { background: #fdecea; }
   align-items: center;
   margin-bottom: 20px;
   flex-wrap: wrap;
+}
+
+.import-upload .upload-btn {
+  margin-bottom: 0;
 }
 
 button:disabled {
