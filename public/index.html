@@ -83,6 +83,7 @@
     <button class="tab-btn" data-tab="labour">Labour</button>
     <button class="tab-btn" data-tab="pricelist">Price List</button>
     <button class="tab-btn" data-tab="subbies">Subbies</button>
+    <button class="tab-btn" data-tab="quoting">Quoting</button>
     <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
@@ -274,6 +275,30 @@
     </table>
   </section>
 
+  <!-- QUOTING TAB -->
+  <section id="tab-quoting" class="tab-panel">
+    <div class="panel-header">
+      <h2>Quoting</h2>
+      <div class="filters">
+        <input type="text" id="quotingSearch" placeholder="Search client, address, description…">
+      </div>
+    </div>
+    <p class="hint">Jobs that need quoting, distributed to surveyors. Only Craig Davies and Declan can add, edit or reassign a quote — the surveyor it's assigned to can tick it off once it's quoted.</p>
+    <div class="import-upload" id="quotingAddRow" hidden>
+      <input type="text" id="newQuoteClient" placeholder="Client / company name">
+      <input type="text" id="newQuoteAddress" placeholder="Site address">
+      <input type="text" id="newQuoteDescription" placeholder="Description / scope of works">
+      <input type="date" id="newQuoteDueDate">
+      <select id="newQuoteAssignedTo"><option value="">Unassigned</option></select>
+      <button type="button" id="addQuoteBtn" class="primary">+ Add</button>
+    </div>
+    <table class="data-table" id="quotingTable">
+      <thead><tr><th>Client</th><th>Site Address</th><th>Description</th><th>Due Date</th><th>Assigned To</th><th>Status</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty-state" id="quotingEmptyState" hidden>No quotes yet.</p>
+  </section>
+
   <!-- HIRE TAB -->
   <section id="tab-hire" class="tab-panel">
     <div class="panel-header">
@@ -408,7 +433,7 @@
     </div>
     <p class="hint">Give another account admin access. Admins can delete jobs and manage the employee list; everyone else can't. Link each account to the matching employee so their Yearly Report shows only their own figures — this happens automatically at sign-up when the name matches, but you can fix it here if it didn't (or the account was created before this existed).</p>
     <table class="data-table" id="adminUsersTable">
-      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Quoting</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </section>

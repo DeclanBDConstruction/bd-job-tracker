@@ -9,12 +9,14 @@ const state = {
   userColors: [],
   priceListItems: [],
   subbies: [],
+  quotes: [],
   hires: [],
   diaryEntries: [],
   currentUser: null,
 };
 
 const isAdmin = () => !!(state.currentUser && state.currentUser.role === 'admin');
+const canManageQuotes = () => !!(state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.canManageQuotes));
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const slug = (s) => String(s || '').toLowerCase().replace(/\s+/g, '-');
@@ -55,6 +57,7 @@ function showApp(user) {
   document.getElementById('adminTabBtn').hidden = !isAdmin();
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
+  document.getElementById('quotingAddRow').hidden = !canManageQuotes();
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
@@ -86,6 +89,7 @@ function connectLiveUpdates() {
     else if (type === 'users') handleLiveUsersChange();
     else if (type === 'priceList') handleLivePriceListChange();
     else if (type === 'subbies') handleLiveSubbiesChange();
+    else if (type === 'quotes') handleLiveQuotesChange();
     else if (type === 'hires') handleLiveHiresChange();
     else if (type === 'diary') handleLiveDiaryChange();
   };
@@ -110,6 +114,10 @@ async function handleLiveSubbiesChange() {
 
 async function handleLiveHiresChange() {
   if (activeTab() === 'hire') loadHires();
+}
+
+async function handleLiveQuotesChange() {
+  if (activeTab() === 'quoting') loadQuotes();
 }
 
 async function handleLiveDiaryChange() {
@@ -151,6 +159,7 @@ async function handleLiveUsersChange() {
     renderCalendar();
     renderColorPicker();
     renderHomeDashboard();
+    if (activeTab() === 'quoting') renderQuoting();
     teamCalendar.refreshIfOpen();
     myCalendar.refreshIfOpen();
   } catch (err) {
@@ -251,6 +260,7 @@ function goToTab(tab) {
   if (tab === 'home') renderHomeDashboard();
   if (tab === 'admin') loadAdminUsers();
   if (tab === 'hire') loadHires();
+  if (tab === 'quoting') loadQuotes();
   if (tab === 'diary') {
     setDiaryViewDate(todayDateStr());
     loadDiary();
@@ -412,6 +422,7 @@ async function bootstrap() {
     renderCalendar();
     renderColorPicker();
     renderHomeDashboard();
+    renderQuoting();
   } catch (err) {
     console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
     const container = document.getElementById('calColorPicker');
@@ -1212,6 +1223,172 @@ document.getElementById('addSubbyBtn').addEventListener('click', async () => {
     document.getElementById('newSubbyFormName').textContent = '';
     state.subbies = await api('/api/subbies');
     renderSubbies();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ---------- Quoting ----------
+
+let quotingSearchTerm = '';
+let editingQuoteId = null;
+
+function quotingUserName(id) {
+  if (!id) return '';
+  const u = state.userColors.find((x) => x.id === id);
+  return u ? u.name : '';
+}
+
+function quotesList() {
+  const term = quotingSearchTerm.trim().toLowerCase();
+  return state.quotes.filter((q) => !term
+    || q.clientName.toLowerCase().includes(term)
+    || (q.siteAddress || '').toLowerCase().includes(term)
+    || (q.description || '').toLowerCase().includes(term)
+    || quotingUserName(q.assignedTo).toLowerCase().includes(term));
+}
+
+function quoteAssigneeOptions(selectedId) {
+  return '<option value="">Unassigned</option>'
+    + state.userColors.map((u) => `<option value="${u.id}" ${selectedId === u.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`).join('');
+}
+
+function quoteEditRow(q) {
+  return `
+    <tr data-id="${q.id}">
+      <td><input type="text" class="qt-edit-client" value="${escapeHtml(q.clientName)}"></td>
+      <td><input type="text" class="qt-edit-address" value="${escapeHtml(q.siteAddress || '')}"></td>
+      <td><input type="text" class="qt-edit-description" value="${escapeHtml(q.description || '')}"></td>
+      <td><input type="date" class="qt-edit-duedate" value="${q.dueDate || ''}"></td>
+      <td><select class="qt-edit-assigned">${quoteAssigneeOptions(q.assignedTo)}</select></td>
+      <td><span class="hire-status ${q.quoted ? 'returned' : 'due-soon'}">${q.quoted ? 'Quoted' : 'Pending'}</span></td>
+      <td class="row-actions">
+        <button type="button" class="primary qt-save-btn">Save</button>
+        <button type="button" class="qt-cancel-btn">Cancel</button>
+      </td>
+    </tr>`;
+}
+
+function quoteDisplayRow(q) {
+  const canManage = canManageQuotes();
+  const isMine = !!(state.currentUser && state.currentUser.id === q.assignedTo);
+  return `
+    <tr data-id="${q.id}">
+      <td>${escapeHtml(q.clientName)}</td>
+      <td>${escapeHtml(q.siteAddress || '—')}</td>
+      <td>${escapeHtml(q.description || '—')}</td>
+      <td>${q.dueDate ? new Date(q.dueDate).toLocaleDateString('en-GB') : '—'}</td>
+      <td>${escapeHtml(quotingUserName(q.assignedTo) || 'Unassigned')}</td>
+      <td>${(canManage || isMine)
+        ? `<label class="quote-status-toggle"><input type="checkbox" data-toggle-quote="${q.id}" ${q.quoted ? 'checked' : ''}> <span class="hire-status ${q.quoted ? 'returned' : 'due-soon'}">${q.quoted ? 'Quoted' : 'Pending'}</span></label>`
+        : `<span class="hire-status ${q.quoted ? 'returned' : 'due-soon'}">${q.quoted ? 'Quoted' : 'Pending'}</span>`}</td>
+      <td class="row-actions">
+        ${canManage ? '<button type="button" class="qt-edit-btn">Edit</button><button type="button" class="danger qt-delete-btn">Delete</button>' : ''}
+      </td>
+    </tr>`;
+}
+
+function renderQuoting() {
+  const list = quotesList();
+  const tbody = document.querySelector('#quotingTable tbody');
+  document.getElementById('quotingEmptyState').hidden = !!list.length;
+  document.getElementById('quotingEmptyState').textContent = state.quotes.length && quotingSearchTerm.trim()
+    ? 'No quotes match your search.'
+    : 'No quotes yet.';
+  tbody.innerHTML = list.map((q) => (q.id === editingQuoteId ? quoteEditRow(q) : quoteDisplayRow(q))).join('');
+
+  // Rebuild the add-form assignee list from the latest users, but keep whatever the
+  // person had already picked so a live refresh mid-selection doesn't reset it.
+  const assignSelect = document.getElementById('newQuoteAssignedTo');
+  const previousSelection = assignSelect.value;
+  assignSelect.innerHTML = quoteAssigneeOptions(previousSelection);
+
+  tbody.querySelectorAll('[data-toggle-quote]').forEach((checkbox) => {
+    checkbox.addEventListener('change', async () => {
+      const id = checkbox.dataset.toggleQuote;
+      const quoted = checkbox.checked;
+      try {
+        await api(`/api/quotes/${id}/quoted`, { method: 'PUT', body: JSON.stringify({ quoted }) });
+        const q = state.quotes.find((x) => x.id === id);
+        if (q) q.quoted = quoted;
+        renderQuoting();
+      } catch (err) {
+        checkbox.checked = !quoted;
+        alert(err.message);
+      }
+    });
+  });
+  tbody.querySelectorAll('.qt-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingQuoteId = btn.closest('tr').dataset.id; renderQuoting(); });
+  });
+  tbody.querySelectorAll('.qt-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingQuoteId = null; renderQuoting(); });
+  });
+  tbody.querySelectorAll('.qt-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const body = {
+        clientName: tr.querySelector('.qt-edit-client').value,
+        siteAddress: tr.querySelector('.qt-edit-address').value,
+        description: tr.querySelector('.qt-edit-description').value,
+        dueDate: tr.querySelector('.qt-edit-duedate').value || null,
+        assignedTo: tr.querySelector('.qt-edit-assigned').value || null,
+      };
+      try {
+        await api(`/api/quotes/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingQuoteId = null;
+        loadQuotes();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  tbody.querySelectorAll('.qt-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this quote?')) return;
+      try {
+        await api(`/api/quotes/${btn.closest('tr').dataset.id}`, { method: 'DELETE' });
+        loadQuotes();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+async function loadQuotes() {
+  state.quotes = await api('/api/quotes');
+  renderQuoting();
+}
+
+document.getElementById('quotingSearch').addEventListener('input', (e) => {
+  quotingSearchTerm = e.target.value;
+  renderQuoting();
+});
+
+document.getElementById('addQuoteBtn').addEventListener('click', async () => {
+  const clientInput = document.getElementById('newQuoteClient');
+  const addressInput = document.getElementById('newQuoteAddress');
+  const descriptionInput = document.getElementById('newQuoteDescription');
+  const dueDateInput = document.getElementById('newQuoteDueDate');
+  const assignedInput = document.getElementById('newQuoteAssignedTo');
+  if (!clientInput.value.trim()) return;
+  try {
+    await api('/api/quotes', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientName: clientInput.value,
+        siteAddress: addressInput.value,
+        description: descriptionInput.value,
+        dueDate: dueDateInput.value || null,
+        assignedTo: assignedInput.value || null,
+      }),
+    });
+    clientInput.value = '';
+    addressInput.value = '';
+    descriptionInput.value = '';
+    dueDateInput.value = '';
+    loadQuotes();
   } catch (err) {
     alert(err.message);
   }
@@ -2406,6 +2583,9 @@ async function loadAdminUsers() {
           ${state.employees.map((e) => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
         </select>
       </td>
+      <td>${u.role === 'admin'
+        ? '<span class="hint">Admin</span>'
+        : `<button type="button" data-toggle-quoting="${u.id}" data-name="${escapeHtml(u.name)}" data-on="${u.canManageQuotes}">${u.canManageQuotes ? 'Revoke Quoting' : 'Grant Quoting'}</button>`}</td>
       <td class="row-actions">${u.role !== 'admin' ? `<button type="button" class="primary" data-promote="${u.id}" data-name="${escapeHtml(u.name)}">Make Admin</button>` : ''}</td>
     </tr>
   `).join('');
@@ -2415,6 +2595,21 @@ async function loadAdminUsers() {
       if (!confirm(`Make ${btn.dataset.name} an admin? They'll be able to delete jobs and manage the employee list.`)) return;
       try {
         await api(`/api/users/${btn.dataset.promote}/promote`, { method: 'POST' });
+        loadAdminUsers();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  tbody.querySelectorAll('[data-toggle-quoting]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const grant = btn.dataset.on !== 'true';
+      try {
+        await api(`/api/users/${btn.dataset.toggleQuoting}/quoting`, {
+          method: 'PUT',
+          body: JSON.stringify({ canManageQuotes: grant }),
+        });
         loadAdminUsers();
       } catch (err) {
         alert(err.message);

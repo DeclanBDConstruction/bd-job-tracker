@@ -759,6 +759,104 @@ async function deleteSubby(id) {
   return subby;
 }
 
+// ---------- Quoting ----------
+// Jobs that need a quote, distributed to surveyors. Anyone signed in can see the list;
+// only admins and users with can_manage_quotes may add, edit, reassign or delete one. The
+// surveyor a quote is assigned to can still tick it off themselves once it's done.
+
+function rowToQuote(row) {
+  return {
+    id: row.id,
+    clientName: row.client_name,
+    siteAddress: row.site_address,
+    description: row.description,
+    dueDate: row.due_date,
+    assignedTo: row.assigned_to,
+    quoted: row.quoted,
+    quotedAt: row.quoted_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listQuotes() {
+  const { data, error } = await supabase.from('quotes').select('*').order('quoted').order('due_date', { nullsFirst: false });
+  check(error);
+  return data.map(rowToQuote);
+}
+
+async function getQuote(id) {
+  const { data, error } = await supabase.from('quotes').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToQuote(data) : null;
+}
+
+async function createQuote(input, user) {
+  if (!userCanManageQuotes(user)) throw new Error('Only quoting managers can add quotes');
+  const clientName = (input.clientName || '').trim();
+  if (!clientName) throw new Error('Client name is required');
+
+  const row = {
+    id: genId(),
+    client_name: clientName,
+    site_address: (input.siteAddress || '').trim() || null,
+    description: (input.description || '').trim() || null,
+    due_date: input.dueDate || null,
+    assigned_to: input.assignedTo || null,
+    quoted: false,
+    created_by: user.id,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('quotes').insert(row).select().single();
+  check(error);
+  return rowToQuote(data);
+}
+
+async function updateQuote(id, input, user) {
+  if (!userCanManageQuotes(user)) throw new Error('Only quoting managers can edit quotes');
+  const clientName = (input.clientName || '').trim();
+  if (!clientName) throw new Error('Client name is required');
+
+  const { data, error } = await supabase.from('quotes')
+    .update({
+      client_name: clientName,
+      site_address: (input.siteAddress || '').trim() || null,
+      description: (input.description || '').trim() || null,
+      due_date: input.dueDate || null,
+      assigned_to: input.assignedTo || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Quote not found');
+  return rowToQuote(data);
+}
+
+async function setQuoteQuoted(id, quoted, user) {
+  const quote = await getQuote(id);
+  if (!quote) throw new Error('Quote not found');
+  if (!userCanManageQuotes(user) && quote.assignedTo !== user.id) {
+    throw new Error('Only the assigned surveyor or a quoting manager can update this');
+  }
+  const { data, error } = await supabase.from('quotes')
+    .update({
+      quoted: !!quoted,
+      quoted_at: quoted ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  return rowToQuote(data);
+}
+
+async function deleteQuote(id, user) {
+  if (!userCanManageQuotes(user)) throw new Error('Only quoting managers can delete quotes');
+  const { error } = await supabase.from('quotes').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Hire ----------
 // Admin-only tracker for hired-in plant/equipment. Due-back date and overdue/due-soon
 // flagging are computed at read time from hire_date + duration, not stored, so they're
@@ -988,8 +1086,14 @@ function sanitizeUser(row) {
     role: row.role,
     color: row.color || null,
     employeeId: row.employee_id || null,
+    canManageQuotes: !!row.can_manage_quotes,
     createdAt: row.created_at,
   };
+}
+
+// Admins can always manage quotes; can_manage_quotes lets specific other people do so too.
+function userCanManageQuotes(user) {
+  return !!user && (user.role === 'admin' || user.canManageQuotes);
 }
 
 async function findUserByEmail(email) {
@@ -1086,6 +1190,13 @@ async function promoteToAdmin(id) {
   return sanitizeUser(data);
 }
 
+async function setUserCanManageQuotes(id, canManage) {
+  const { data, error } = await supabase.from('users').update({ can_manage_quotes: !!canManage }).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
 // Manual override for the name-match auto-link done at registration (see registerUser) -
 // covers accounts created before that existed, and cases where the typed name didn't
 // exactly match the employee record.
@@ -1133,6 +1244,7 @@ module.exports = {
   listUsers,
   promoteToAdmin,
   setUserEmployee,
+  setUserCanManageQuotes,
   listUserColors,
   setUserColor,
   listEmployees,
@@ -1170,6 +1282,12 @@ module.exports = {
   createSubby,
   updateSubby,
   deleteSubby,
+  listQuotes,
+  getQuote,
+  createQuote,
+  updateQuote,
+  setQuoteQuoted,
+  deleteQuote,
   listHires,
   createHire,
   updateHire,

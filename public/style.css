@@ -1718,7 +1718,19 @@ button:disabled {
 .hire-status.overdue { background: #fbe1e0; color: #a8271f; }
 .hire-status.returned { background: var(--green-light); color: #4c7a1f; }
 
+.quote-status-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 #hiresTable input[type="text"], #hiresTable input[type="number"], #hiresTable input[type="date"] {
+  width: 100%;
+  min-width: 90px;
+}
+
+#quotingTable input[type="text"], #quotingTable input[type="date"], #quotingTable select {
   width: 100%;
   min-width: 90px;
 }

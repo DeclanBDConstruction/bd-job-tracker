@@ -183,6 +183,12 @@ app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
   res.json(user);
 }));
 
+app.put('/api/users/:id/quoting', requireAdmin, handle(async (req, res) => {
+  const user = await db.setUserCanManageQuotes(req.params.id, !!req.body.canManageQuotes);
+  broadcast('users');
+  res.json(user);
+}));
+
 // Everyone (not just admins) needs these two to run the calendar colour picker: the
 // fixed palette to choose from, and who's already using which colour.
 app.get('/api/calendar-colors', handle(async (req, res) => {
@@ -558,6 +564,38 @@ app.delete('/api/subbies/:id', requireAdmin, handle(async (req, res) => {
     await supabase.storage.from(DOCUMENTS_BUCKET).remove([subbyFormStoragePath(subby.formStoredName)]);
   }
   broadcast('subbies');
+  res.status(204).end();
+}));
+
+// ---------- Quoting ----------
+// Everyone signed in can see the list; add/edit/reassign/delete is restricted to quoting
+// managers inside db.js (which also lets the assigned surveyor tick their own off).
+
+app.get('/api/quotes', handle(async (req, res) => {
+  res.json(await db.listQuotes());
+}));
+
+app.post('/api/quotes', handle(async (req, res) => {
+  const quote = await db.createQuote(req.body, req.user);
+  broadcast('quotes');
+  res.status(201).json(quote);
+}));
+
+app.put('/api/quotes/:id', handle(async (req, res) => {
+  const quote = await db.updateQuote(req.params.id, req.body, req.user);
+  broadcast('quotes');
+  res.json(quote);
+}));
+
+app.put('/api/quotes/:id/quoted', handle(async (req, res) => {
+  const quote = await db.setQuoteQuoted(req.params.id, !!req.body.quoted, req.user);
+  broadcast('quotes');
+  res.json(quote);
+}));
+
+app.delete('/api/quotes/:id', handle(async (req, res) => {
+  await db.deleteQuote(req.params.id, req.user);
+  broadcast('quotes');
   res.status(204).end();
 }));
 

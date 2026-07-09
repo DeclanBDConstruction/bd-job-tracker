@@ -25,6 +25,10 @@ alter table users add column if not exists color text;
 -- non-admin can be shown only their own figures on the Yearly Reports tab.
 alter table users add column if not exists employee_id uuid references employees(id) on delete set null;
 
+-- Grants specific non-admin users the right to manage the Quoting tab (add/edit/assign/
+-- delete quote jobs) without making them a full admin. Admins can always manage quotes too.
+alter table users add column if not exists can_manage_quotes boolean not null default false;
+
 -- One person per calendar colour: a partial unique index (color is nullable, so
 -- anyone who hasn't picked yet doesn't collide with everyone else's null).
 create unique index if not exists users_color_unique_idx on users (color) where color is not null;
@@ -196,6 +200,25 @@ alter table subbies add column if not exists form_size bigint;
 
 create index if not exists subbies_company_name_idx on subbies (company_name);
 
+-- Quote jobs to be distributed to surveyors: added by whoever manages quoting (admins,
+-- plus anyone with can_manage_quotes), assigned to a surveyor's user account, then ticked
+-- off once quoted. Not scoped to a job record since a quote often precedes a job existing.
+create table if not exists quotes (
+  id uuid primary key,
+  client_name text not null,
+  site_address text,
+  description text,
+  due_date date,
+  assigned_to uuid references users(id) on delete set null,
+  quoted boolean not null default false,
+  quoted_at timestamptz,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists quotes_assigned_to_idx on quotes (assigned_to);
+
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_variations_job_id_idx on job_variations (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
@@ -222,6 +245,7 @@ alter table saved_risk_assessments enable row level security;
 alter table hires enable row level security;
 alter table diary_entries enable row level security;
 alter table subbies enable row level security;
+alter table quotes enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.
