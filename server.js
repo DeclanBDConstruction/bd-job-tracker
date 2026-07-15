@@ -442,6 +442,57 @@ app.post('/api/jobs/:id/risk-assessments/library/:raId/attach', handle(async (re
   res.status(201).json(doc);
 }));
 
+// ---------- Custom Risk Assessments (edited "Save As" copies) ----------
+// Any risk assessment - generic or another custom one - can be edited and saved as a new
+// one here. Never overwrites the original it was based on.
+
+app.get('/api/risk-assessments/custom', handle(async (req, res) => {
+  res.json(await db.listCustomRiskAssessments());
+}));
+
+app.post('/api/risk-assessments/custom', handle(async (req, res) => {
+  const ra = await db.createCustomRiskAssessment(req.body, req.user.name);
+  res.status(201).json(ra);
+}));
+
+app.get('/api/risk-assessments/custom/:id/download', handle(async (req, res) => {
+  const ra = await db.getCustomRiskAssessment(req.params.id);
+  if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+  const html = riskAssessments.renderHtml(ra);
+  res.setHeader('Content-Disposition', `attachment; filename="${ra.title.replace(/[^a-zA-Z0-9_.\- ]/g, '_')} - Risk Assessment.html"`);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+}));
+
+app.delete('/api/risk-assessments/custom/:id', requireAdmin, handle(async (req, res) => {
+  const ra = await db.deleteCustomRiskAssessment(req.params.id);
+  if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+  res.status(204).end();
+}));
+
+app.post('/api/jobs/:id/risk-assessments/custom/:raId/attach', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const ra = await db.getCustomRiskAssessment(req.params.raId);
+  if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+
+  const html = riskAssessments.renderHtml(ra);
+  const originalName = `${ra.title} - Risk Assessment.html`;
+  const storedName = makeStoredName(originalName);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(storagePath(req.params.id, 'rams', storedName), Buffer.from(html, 'utf8'), { contentType: 'text/html' });
+  if (error) throw new Error(error.message);
+
+  const doc = await db.addJobDocument(req.params.id, 'rams', {
+    originalName,
+    storedName,
+    size: Buffer.byteLength(html),
+  });
+  broadcast('jobs');
+  res.status(201).json(doc);
+}));
+
 // ---------- Calendar ----------
 
 app.get('/api/calendar', handle(async (req, res) => {

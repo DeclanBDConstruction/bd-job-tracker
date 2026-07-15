@@ -155,6 +155,28 @@ create table if not exists saved_risk_assessments (
   created_at timestamptz not null default now()
 );
 
+-- Staff-edited copies of a risk assessment (either a generic in-code template or another
+-- custom one), tweaked and "Save As"-ed under a new title - never overwrites the original,
+-- so the in-code generic templates stay untouched and nothing already saved is lost.
+create table if not exists custom_risk_assessments (
+  id uuid primary key,
+  title text not null,
+  legislation text,
+  hazard text,
+  people_affected text,
+  current_controls jsonb not null default '[]'::jsonb,
+  current_l int not null default 1,
+  current_c int not null default 1,
+  additional_controls jsonb not null default '[]'::jsonb,
+  additional_l int not null default 1,
+  additional_c int not null default 1,
+  ppe jsonb not null default '[]'::jsonb,
+  based_on text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Personal diary: private journal entries, multiple per day, never shown to anyone but
 -- the person who wrote them (not even admins) - the server always scopes reads/writes to
 -- req.user.id, same trust boundary as `is_private` calendar_events but with no exception.
@@ -226,6 +248,7 @@ create index if not exists sessions_expires_at_idx on sessions (expires_at);
 create index if not exists calendar_events_date_idx on calendar_events (date);
 create index if not exists price_list_items_kind_idx on price_list_items (kind);
 create index if not exists saved_risk_assessments_name_idx on saved_risk_assessments (name);
+create index if not exists custom_risk_assessments_title_idx on custom_risk_assessments (title);
 create index if not exists hires_job_id_idx on hires (job_id);
 create index if not exists hires_hire_date_idx on hires (hire_date);
 
@@ -242,6 +265,7 @@ alter table job_documents enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
+alter table custom_risk_assessments enable row level security;
 alter table hires enable row level security;
 alter table diary_entries enable row level security;
 alter table subbies enable row level security;

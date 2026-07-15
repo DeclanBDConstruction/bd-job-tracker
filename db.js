@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { supabase } = require('./supabaseClient');
+const { riskBand } = require('./riskAssessments');
 
 const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 'Cancelled'];
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -424,6 +425,96 @@ async function deleteSavedRiskAssessment(id) {
   const ra = await getSavedRiskAssessment(id);
   if (!ra) return null;
   const { error } = await supabase.from('saved_risk_assessments').delete().eq('id', id);
+  check(error);
+  return ra;
+}
+
+// ---------- Custom Risk Assessments (edited "Save As" copies) ----------
+// Staff can open any risk assessment (a generic in-code template or another custom one),
+// edit it, and "Save As" a new copy here - never overwrites the original, so the in-code
+// templates stay untouched and nothing already saved is ever lost.
+
+function sanitizeRaList(items) {
+  return (Array.isArray(items) ? items : []).map((s) => String(s || '').trim()).filter(Boolean);
+}
+
+function sanitizeRaRating(n) {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.min(5, Math.max(1, Math.round(v))) : 1;
+}
+
+function rowToCustomRiskAssessment(row) {
+  const currentR = row.current_l * row.current_c;
+  const additionalR = row.additional_l * row.additional_c;
+  return {
+    id: row.id,
+    title: row.title,
+    legislation: row.legislation || '',
+    hazard: row.hazard || '',
+    peopleAffected: row.people_affected || '',
+    currentControls: row.current_controls || [],
+    currentL: row.current_l,
+    currentC: row.current_c,
+    currentR,
+    currentBand: riskBand(currentR),
+    additionalControls: row.additional_controls || [],
+    additionalL: row.additional_l,
+    additionalC: row.additional_c,
+    additionalR,
+    additionalBand: riskBand(additionalR),
+    ppe: row.ppe || [],
+    basedOn: row.based_on || null,
+    createdBy: row.created_by || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listCustomRiskAssessments() {
+  const { data, error } = await supabase.from('custom_risk_assessments').select('*').order('title');
+  check(error);
+  return data.map(rowToCustomRiskAssessment);
+}
+
+async function getCustomRiskAssessment(id) {
+  const { data, error } = await supabase.from('custom_risk_assessments').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToCustomRiskAssessment(data) : null;
+}
+
+async function createCustomRiskAssessment(input, createdBy) {
+  const title = (input.title || '').trim();
+  if (!title) throw new Error('Title is required');
+  const currentControls = sanitizeRaList(input.currentControls);
+  if (!currentControls.length) throw new Error('At least one current risk control is required');
+
+  const row = {
+    id: genId(),
+    title,
+    legislation: (input.legislation || '').trim(),
+    hazard: (input.hazard || '').trim(),
+    people_affected: (input.peopleAffected || '').trim(),
+    current_controls: currentControls,
+    current_l: sanitizeRaRating(input.currentL),
+    current_c: sanitizeRaRating(input.currentC),
+    additional_controls: sanitizeRaList(input.additionalControls),
+    additional_l: sanitizeRaRating(input.additionalL),
+    additional_c: sanitizeRaRating(input.additionalC),
+    ppe: sanitizeRaList(input.ppe),
+    based_on: input.basedOn ? String(input.basedOn).slice(0, 100) : null,
+    created_by: createdBy || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('custom_risk_assessments').insert(row).select().single();
+  check(error);
+  return rowToCustomRiskAssessment(data);
+}
+
+async function deleteCustomRiskAssessment(id) {
+  const ra = await getCustomRiskAssessment(id);
+  if (!ra) return null;
+  const { error } = await supabase.from('custom_risk_assessments').delete().eq('id', id);
   check(error);
   return ra;
 }
@@ -1267,6 +1358,10 @@ module.exports = {
   getSavedRiskAssessment,
   addSavedRiskAssessment,
   deleteSavedRiskAssessment,
+  listCustomRiskAssessments,
+  getCustomRiskAssessment,
+  createCustomRiskAssessment,
+  deleteCustomRiskAssessment,
   yearlyReport,
   monthlyReport,
   clientReport,

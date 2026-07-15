@@ -1664,6 +1664,59 @@ button:disabled {
   align-items: center;
 }
 
+#raModalBody label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+#raModalBody input, #raModalBody textarea {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  font-weight: normal;
+  color: var(--text);
+}
+
+.ra-edit-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ra-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+
+.ra-edit-grid.ra-edit-lc {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.ra-save-as {
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--blue-light);
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.ra-save-as label {
+  flex: 1 1 240px;
+  margin-bottom: 0;
+}
+
+.ra-save-as button {
+  flex: 0 0 auto;
+}
+
 .ra-attach-row {
   align-items: center;
 }
@@ -2188,6 +2241,7 @@ button:disabled {
   .report-summary .stat { flex: 1 1 45%; min-width: 0; }
 
   .dashboard-grid, .ra-grid { grid-template-columns: 1fr; }
+  .ra-edit-grid, .ra-edit-grid.ra-edit-lc { grid-template-columns: 1fr 1fr; }
 
   .home-hero { padding: 20px 12px 30px; }
   .home-hero h2 { font-size: 21px; }

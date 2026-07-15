@@ -4,6 +4,7 @@ const state = {
   statuses: [],
   riskAssessments: [],
   raLibrary: [],
+  raCustom: [],
   calendarEvents: [],
   calendarColors: [],
   userColors: [],
@@ -382,12 +383,13 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, calendarEvents, priceListItems, subbies] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
     api('/api/risk-assessments'),
     api('/api/risk-assessments/library'),
+    api('/api/risk-assessments/custom'),
     api('/api/calendar'),
     api('/api/price-list'),
     api('/api/subbies'),
@@ -397,6 +399,7 @@ async function bootstrap() {
   state.statuses = statuses;
   state.riskAssessments = riskAssessmentsList;
   state.raLibrary = raLibrary;
+  state.raCustom = raCustom;
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   state.subbies = subbies;
@@ -2063,9 +2066,19 @@ function renderHomeDashboard() {
 }
 
 // ---------- Risk Assessments ----------
-// Generic in-code templates and staff-uploaded ones (saved once, attach to any job -
-// including the same job again next time it comes up) render as the same kind of card
-// in the same grid, distinguished by data-kind on their "View & Attach to Job" button.
+// Three kinds of card in the same grid, distinguished by data-kind on their "View & Attach
+// to Job" button: staff-uploaded files ("library"), generic in-code templates ("generic"),
+// and edited "Save As" copies of either ("custom"). Generic and custom ones open in an
+// editable form; editing one and using Save As creates a new "custom" entry rather than
+// overwriting the original, so the in-code templates never change and nothing saved is lost.
+
+function raBandClient(r) {
+  if (r <= 2) return { label: 'No Action', slug: 'no-action' };
+  if (r <= 6) return { label: 'Monitor', slug: 'monitor' };
+  if (r <= 12) return { label: 'Action', slug: 'action' };
+  if (r <= 16) return { label: 'Urgent Action', slug: 'urgent-action' };
+  return { label: 'Stop', slug: 'stop' };
+}
 
 function renderRiskAssessments() {
   const grid = document.getElementById('raGrid');
@@ -2091,12 +2104,26 @@ function renderRiskAssessments() {
       </div>
       <p class="ra-card-summary">Risk rating ${ra.currentL} × ${ra.currentC} = ${ra.currentR}, reduced to ${ra.additionalR} with additional controls.</p>
       <div class="ra-card-actions">
-        <button type="button" class="ra-view-btn" data-kind="generic" data-ra="${ra.id}">View &amp; Attach to Job</button>
+        <button type="button" class="ra-view-btn" data-kind="generic" data-ra="${ra.id}">View, Edit &amp; Attach to Job</button>
         <a href="/api/risk-assessments/${ra.id}/download" class="ra-download-btn">Download</a>
       </div>
     </div>
   `);
-  grid.innerHTML = libraryCards.join('') + genericCards.join('');
+  const customCards = state.raCustom.map((ra) => `
+    <div class="ra-card">
+      <div class="ra-card-top">
+        <h3>${escapeHtml(ra.title)}</h3>
+        <span class="risk-badge ${ra.currentBand.slug}">${escapeHtml(ra.currentBand.label)}</span>
+      </div>
+      <p class="ra-card-summary">Risk rating ${ra.currentL} × ${ra.currentC} = ${ra.currentR}, reduced to ${ra.additionalR} with additional controls.${ra.createdBy ? ' · Saved by ' + escapeHtml(ra.createdBy) : ''}</p>
+      <div class="ra-card-actions">
+        <button type="button" class="ra-view-btn" data-kind="custom" data-ra="${ra.id}">View, Edit &amp; Attach to Job</button>
+        <a href="/api/risk-assessments/custom/${ra.id}/download" class="ra-download-btn">Download</a>
+        ${isAdmin() ? `<button type="button" class="danger ra-custom-delete-btn" data-ra="${ra.id}">Delete</button>` : ''}
+      </div>
+    </div>
+  `);
+  grid.innerHTML = libraryCards.join('') + customCards.join('') + genericCards.join('');
   grid.querySelectorAll('.ra-view-btn').forEach((btn) => btn.addEventListener('click', () => openRaModal(btn.dataset.kind, btn.dataset.ra)));
   grid.querySelectorAll('.ra-library-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -2104,6 +2131,18 @@ function renderRiskAssessments() {
       try {
         await api(`/api/risk-assessments/library/${btn.dataset.ra}`, { method: 'DELETE' });
         state.raLibrary = await api('/api/risk-assessments/library');
+        renderRiskAssessments();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  grid.querySelectorAll('.ra-custom-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this saved risk assessment? This cannot be undone.')) return;
+      try {
+        await api(`/api/risk-assessments/custom/${btn.dataset.ra}`, { method: 'DELETE' });
+        state.raCustom = await api('/api/risk-assessments/custom');
         renderRiskAssessments();
       } catch (err) {
         alert(err.message);
@@ -2147,6 +2186,64 @@ const raModal = document.getElementById('raModal');
 let currentRaId = null;
 let currentRaKind = 'generic';
 
+const linesToList = (text) => text.split('\n').map((s) => s.trim()).filter(Boolean);
+
+function raEditFormHtml(ra) {
+  return `
+    <div class="ra-edit-badges" id="raEditBadges"></div>
+    <label>Title<input type="text" id="raEditTitle" value="${escapeHtml(ra.title)}"></label>
+    <label>Relevant Legislation<input type="text" id="raEditLegislation" value="${escapeHtml(ra.legislation || '')}"></label>
+    <label>Hazard &amp; Potential Harm<textarea id="raEditHazard" rows="2">${escapeHtml(ra.hazard || '')}</textarea></label>
+    <label>Who Might Be Harmed<input type="text" id="raEditPeopleAffected" value="${escapeHtml(ra.peopleAffected || '')}"></label>
+    <div class="ra-edit-grid">
+      <label>Current Risk Controls (one per line)<textarea id="raEditCurrentControls" rows="5">${escapeHtml((ra.currentControls || []).join('\n'))}</textarea></label>
+      <label>Additional Risk Controls (one per line)<textarea id="raEditAdditionalControls" rows="5">${escapeHtml((ra.additionalControls || []).join('\n'))}</textarea></label>
+    </div>
+    <div class="ra-edit-grid ra-edit-lc">
+      <label>Current L<input type="number" id="raEditCurrentL" min="1" max="5" value="${ra.currentL}"></label>
+      <label>Current C<input type="number" id="raEditCurrentC" min="1" max="5" value="${ra.currentC}"></label>
+      <label>Additional L<input type="number" id="raEditAdditionalL" min="1" max="5" value="${ra.additionalL}"></label>
+      <label>Additional C<input type="number" id="raEditAdditionalC" min="1" max="5" value="${ra.additionalC}"></label>
+    </div>
+    <label>PPE Required (one per line)<textarea id="raEditPpe" rows="3">${escapeHtml((ra.ppe || []).join('\n'))}</textarea></label>
+    <div class="ra-save-as">
+      <label>Save As<input type="text" id="raSaveAsName" value="${escapeHtml(ra.title)}" placeholder="Name for the new risk assessment"></label>
+      <button type="button" id="raSaveAsBtn" class="primary">Save as New Risk Assessment</button>
+    </div>
+  `;
+}
+
+function updateRaEditBadges() {
+  const cl = Number(document.getElementById('raEditCurrentL').value) || 1;
+  const cc = Number(document.getElementById('raEditCurrentC').value) || 1;
+  const al = Number(document.getElementById('raEditAdditionalL').value) || 1;
+  const ac = Number(document.getElementById('raEditAdditionalC').value) || 1;
+  const currentR = cl * cc;
+  const additionalR = al * ac;
+  const currentBand = raBandClient(currentR);
+  const additionalBand = raBandClient(additionalR);
+  document.getElementById('raEditBadges').innerHTML = `
+    <span class="risk-badge ${currentBand.slug}">Current: ${cl} × ${cc} = ${currentR} — ${escapeHtml(currentBand.label)}</span>
+    <span class="risk-badge ${additionalBand.slug}">With additional controls: ${al} × ${ac} = ${additionalR} — ${escapeHtml(additionalBand.label)}</span>
+  `;
+}
+
+function readRaEditForm() {
+  return {
+    title: document.getElementById('raEditTitle').value.trim(),
+    legislation: document.getElementById('raEditLegislation').value.trim(),
+    hazard: document.getElementById('raEditHazard').value.trim(),
+    peopleAffected: document.getElementById('raEditPeopleAffected').value.trim(),
+    currentControls: linesToList(document.getElementById('raEditCurrentControls').value),
+    currentL: Number(document.getElementById('raEditCurrentL').value) || 1,
+    currentC: Number(document.getElementById('raEditCurrentC').value) || 1,
+    additionalControls: linesToList(document.getElementById('raEditAdditionalControls').value),
+    additionalL: Number(document.getElementById('raEditAdditionalL').value) || 1,
+    additionalC: Number(document.getElementById('raEditAdditionalC').value) || 1,
+    ppe: linesToList(document.getElementById('raEditPpe').value),
+  };
+}
+
 function openRaModal(kind, id) {
   currentRaKind = kind;
   currentRaId = id;
@@ -2161,27 +2258,36 @@ function openRaModal(kind, id) {
     `;
     document.getElementById('raDownloadLink').href = `/api/risk-assessments/library/${ra.id}/file`;
   } else {
-    const ra = state.riskAssessments.find((r) => r.id === id);
+    const list = kind === 'custom' ? state.raCustom : state.riskAssessments;
+    const ra = list.find((r) => r.id === id);
     if (!ra) return;
     document.getElementById('raModalTitle').textContent = ra.title;
-    document.getElementById('raModalBody').innerHTML = `
-      <p class="ra-meta">
-        <span class="risk-badge ${ra.currentBand.slug}">Current: ${ra.currentL} × ${ra.currentC} = ${ra.currentR} — ${escapeHtml(ra.currentBand.label)}</span>
-        <span class="risk-badge ${ra.additionalBand.slug}">With additional controls: ${ra.additionalL} × ${ra.additionalC} = ${ra.additionalR} — ${escapeHtml(ra.additionalBand.label)}</span>
-      </p>
-      ${ra.legislation ? `<p class="ra-meta">${escapeHtml(ra.legislation)}</p>` : ''}
-      <h4>Hazard &amp; Potential Harm</h4>
-      <p>${escapeHtml(ra.hazard)}</p>
-      <h4>Who Might Be Harmed</h4>
-      <p>${escapeHtml(ra.peopleAffected)}</p>
-      <h4>Current Risk Controls</h4>
-      <ul>${ra.currentControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-      <h4>Additional Risk Controls</h4>
-      <ul>${ra.additionalControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-      <h4>PPE Required</h4>
-      <ul>${ra.ppe.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
-    `;
-    document.getElementById('raDownloadLink').href = `/api/risk-assessments/${ra.id}/download`;
+    document.getElementById('raModalBody').innerHTML = raEditFormHtml(ra);
+    document.getElementById('raDownloadLink').href = kind === 'custom'
+      ? `/api/risk-assessments/custom/${ra.id}/download`
+      : `/api/risk-assessments/${ra.id}/download`;
+    updateRaEditBadges();
+    ['raEditCurrentL', 'raEditCurrentC', 'raEditAdditionalL', 'raEditAdditionalC'].forEach((elId) => {
+      document.getElementById(elId).addEventListener('input', updateRaEditBadges);
+    });
+    document.getElementById('raSaveAsBtn').addEventListener('click', async () => {
+      const fields = readRaEditForm();
+      const name = document.getElementById('raSaveAsName').value.trim();
+      if (!name) { alert('Give the new risk assessment a name.'); return; }
+      if (!fields.currentControls.length) { alert('Add at least one current risk control.'); return; }
+      try {
+        const saved = await api('/api/risk-assessments/custom', {
+          method: 'POST',
+          body: JSON.stringify({ ...fields, title: name, basedOn: `${kind}:${ra.id}` }),
+        });
+        state.raCustom = await api('/api/risk-assessments/custom');
+        renderRiskAssessments();
+        alert('Saved — you\'ll find it in the Risk Assessments list.');
+        openRaModal('custom', saved.id);
+      } catch (err) {
+        alert(err.message);
+      }
+    });
   }
 
   const jobSelect = document.getElementById('raAttachJobSelect');
@@ -2209,9 +2315,8 @@ document.getElementById('raModalCloseBtn').addEventListener('click', closeRaModa
 document.getElementById('raAttachBtn').addEventListener('click', async () => {
   const jobId = document.getElementById('raAttachJobSelect').value;
   if (!jobId) { alert('Choose a job to attach this risk assessment to.'); return; }
-  const endpoint = currentRaKind === 'library'
-    ? `/api/jobs/${jobId}/risk-assessments/library/${currentRaId}/attach`
-    : `/api/jobs/${jobId}/risk-assessments/${currentRaId}/attach`;
+  const kindPrefix = currentRaKind === 'generic' ? '' : `${currentRaKind}/`;
+  const endpoint = `/api/jobs/${jobId}/risk-assessments/${kindPrefix}${currentRaId}/attach`;
   try {
     await api(endpoint, { method: 'POST' });
     alert('Attached — you\'ll find it in that job\'s RAMS documents.');
