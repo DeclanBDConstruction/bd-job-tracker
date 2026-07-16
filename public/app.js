@@ -390,7 +390,7 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies, signage] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
@@ -400,7 +400,6 @@ async function bootstrap() {
     api('/api/calendar'),
     api('/api/price-list'),
     api('/api/subbies'),
-    api('/api/signage'),
   ]);
   state.jobs = jobs;
   state.employees = employees;
@@ -411,7 +410,6 @@ async function bootstrap() {
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   state.subbies = subbies;
-  state.signage = signage;
   renderStatusOptions();
   renderEmployeeOptions();
   renderJobs();
@@ -421,8 +419,17 @@ async function bootstrap() {
   renderCalendar();
   renderPriceLists();
   renderSubbies();
-  renderSignage();
   renderHomeDashboard();
+
+  // Split from the Promise.all above: the `signage` table only exists once the Supabase
+  // migration has been run. Isolating it means a not-yet-migrated database degrades to
+  // "tracker empty" instead of the whole app failing to load.
+  try {
+    state.signage = await api('/api/signage');
+    renderSignage();
+  } catch (err) {
+    console.error('Signage tracker unavailable — has scripts/supabase-schema.sql been run?', err);
+  }
 
   // Split from the Promise.all above: this needs a `users.color` column that only
   // exists once the Supabase migration has been run. Isolating it means a
