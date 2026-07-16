@@ -241,6 +241,21 @@ create table if not exists quotes (
 
 create index if not exists quotes_assigned_to_idx on quotes (assigned_to);
 
+-- Fixed inventory of 10 physical site signs, shared and editable by anyone. Rows are
+-- seeded once for sign_number 1..10 (see ensureSignageSeeded in db.js) rather than
+-- added/removed by users - a sign's `location` is left blank when it's back in the yard
+-- (available) or set to wherever it currently is.
+create table if not exists signage (
+  id uuid primary key,
+  sign_number int not null unique,
+  label text not null,
+  location text,
+  notes text,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists signage_sign_number_idx on signage (sign_number);
+
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_variations_job_id_idx on job_variations (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
@@ -270,6 +285,7 @@ alter table hires enable row level security;
 alter table diary_entries enable row level security;
 alter table subbies enable row level security;
 alter table quotes enable row level security;
+alter table signage enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

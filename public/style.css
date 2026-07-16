@@ -1806,6 +1806,35 @@ button:disabled {
 .hire-edit-length input { min-width: 50px; }
 .hire-edit-length select { flex: 0 0 auto; }
 
+/* ---------- Signage Tracker ---------- */
+
+.signage-summary-banner {
+  background: var(--blue-light);
+  border: 1px solid #cfe0f5;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--blue-dark);
+  margin-bottom: 16px;
+}
+
+.signage-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.signage-status.available { background: var(--green-light); color: #4c7a1f; }
+.signage-status.out { background: var(--blue-light); color: var(--blue-dark); }
+
+#signageTable input[type="text"] {
+  width: 100%;
+  min-width: 90px;
+}
+
 /* ---------- Diary ---------- */
 
 .diary-add-form {

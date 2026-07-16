@@ -85,6 +85,7 @@
     <button class="tab-btn" data-tab="subbies">Subbies</button>
     <button class="tab-btn" data-tab="quoting">Quoting</button>
     <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
+    <button class="tab-btn" data-tab="signage">Signage Tracker</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
     <button class="tab-btn" data-tab="diary">My Diary</button>
@@ -354,6 +355,25 @@
         </table>
       </div>
       <p class="empty-state" id="hiresOffHiredEmptyState" hidden>No off-hired equipment yet.</p>
+    </div>
+  </section>
+
+  <!-- SIGNAGE TRACKER TAB -->
+  <section id="tab-signage" class="tab-panel">
+    <div class="panel-header">
+      <h2>Signage Tracker</h2>
+    </div>
+    <p class="hint">Track where each of the 10 site signs currently is. Leave the location blank when a sign is back in the yard and available.</p>
+    <div id="signageSummary"></div>
+    <div class="table-scroll">
+      <table class="data-table" id="signageTable">
+        <thead>
+          <tr>
+            <th>Sign</th><th>Location</th><th>Notes</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </section>
 

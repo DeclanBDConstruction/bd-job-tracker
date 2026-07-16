@@ -680,6 +680,18 @@ app.delete('/api/hires/:id', requireAdmin, handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Signage (shared - anyone can view/update where a sign currently is) ----------
+
+app.get('/api/signage', handle(async (req, res) => {
+  res.json(await db.listSignage());
+}));
+
+app.put('/api/signage/:id', handle(async (req, res) => {
+  const sign = await db.updateSignage(req.params.id, req.body);
+  broadcast('signage');
+  res.json(sign);
+}));
+
 // ---------- Status list ----------
 
 app.get('/api/statuses', handle(async (req, res) => {

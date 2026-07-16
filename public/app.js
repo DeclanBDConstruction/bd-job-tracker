@@ -12,6 +12,7 @@ const state = {
   subbies: [],
   quotes: [],
   hires: [],
+  signage: [],
   diaryEntries: [],
   currentUser: null,
 };
@@ -92,6 +93,7 @@ function connectLiveUpdates() {
     else if (type === 'subbies') handleLiveSubbiesChange();
     else if (type === 'quotes') handleLiveQuotesChange();
     else if (type === 'hires') handleLiveHiresChange();
+    else if (type === 'signage') handleLiveSignageChange();
     else if (type === 'diary') handleLiveDiaryChange();
   };
 }
@@ -115,6 +117,11 @@ async function handleLiveSubbiesChange() {
 
 async function handleLiveHiresChange() {
   if (activeTab() === 'hire') loadHires();
+}
+
+async function handleLiveSignageChange() {
+  state.signage = await api('/api/signage');
+  renderSignage();
 }
 
 async function handleLiveQuotesChange() {
@@ -383,7 +390,7 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies, signage] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
@@ -393,6 +400,7 @@ async function bootstrap() {
     api('/api/calendar'),
     api('/api/price-list'),
     api('/api/subbies'),
+    api('/api/signage'),
   ]);
   state.jobs = jobs;
   state.employees = employees;
@@ -403,6 +411,7 @@ async function bootstrap() {
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   state.subbies = subbies;
+  state.signage = signage;
   renderStatusOptions();
   renderEmployeeOptions();
   renderJobs();
@@ -412,6 +421,7 @@ async function bootstrap() {
   renderCalendar();
   renderPriceLists();
   renderSubbies();
+  renderSignage();
   renderHomeDashboard();
 
   // Split from the Promise.all above: this needs a `users.color` column that only
@@ -1599,6 +1609,81 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
     alert(err.message);
   }
 });
+
+// ---------- Signage Tracker ----------
+// Fixed inventory of 10 site signs, shared across everyone (no admin gate, unlike Hire).
+// Each sign's location is edited in place; a blank location means it's back in the yard
+// and available to go out again.
+
+let editingSignageId = null;
+
+function signageEditRow(s) {
+  return `
+    <tr data-id="${s.id}">
+      <td><input type="text" class="signage-edit-label" value="${escapeHtml(s.label)}"></td>
+      <td><input type="text" class="signage-edit-location" value="${escapeHtml(s.location)}" placeholder="Blank = available"></td>
+      <td><input type="text" class="signage-edit-notes" value="${escapeHtml(s.notes)}"></td>
+      <td class="row-actions">
+        <button type="button" class="primary signage-save-btn">Save</button>
+        <button type="button" class="signage-cancel-btn">Cancel</button>
+      </td>
+    </tr>
+  `;
+}
+
+function signageDisplayRow(s) {
+  const available = !s.location;
+  return `
+    <tr>
+      <td>${escapeHtml(s.label)}</td>
+      <td><span class="signage-status ${available ? 'available' : 'out'}">${available ? 'Available' : escapeHtml(s.location)}</span></td>
+      <td>${escapeHtml(s.notes || '—')}</td>
+      <td class="row-actions">
+        <button type="button" data-edit-signage="${s.id}">Edit</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderSignage() {
+  const available = state.signage.filter((s) => !s.location).length;
+  const summary = document.getElementById('signageSummary');
+  summary.innerHTML = `<p class="signage-summary-banner"><strong>${available}</strong> of <strong>${state.signage.length}</strong> signs available</p>`;
+
+  const tbody = document.querySelector('#signageTable tbody');
+  tbody.innerHTML = state.signage.map((s) => (s.id === editingSignageId ? signageEditRow(s) : signageDisplayRow(s))).join('');
+
+  tbody.querySelectorAll('[data-edit-signage]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingSignageId = btn.dataset.editSignage;
+      renderSignage();
+    });
+  });
+  tbody.querySelectorAll('.signage-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingSignageId = null;
+      renderSignage();
+    });
+  });
+  tbody.querySelectorAll('.signage-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const body = {
+        label: tr.querySelector('.signage-edit-label').value.trim(),
+        location: tr.querySelector('.signage-edit-location').value.trim(),
+        notes: tr.querySelector('.signage-edit-notes').value.trim(),
+      };
+      try {
+        await api(`/api/signage/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingSignageId = null;
+        state.signage = await api('/api/signage');
+        renderSignage();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
 
 // ---------- Diary ----------
 // Private journal, multiple timestamped entries per day - the server always scopes this

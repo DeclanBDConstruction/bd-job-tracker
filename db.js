@@ -1054,6 +1054,63 @@ async function deleteHire(id) {
   check(error);
 }
 
+// ---------- Signage ----------
+// Fixed inventory of 10 physical site signs, shared and editable by anyone. Rows are
+// seeded once for sign_number 1..10 rather than added/removed by users - a sign's
+// location is left blank when it's back in the yard (available) or set to wherever it
+// currently is.
+
+const SIGNAGE_COUNT = 10;
+
+async function ensureSignageSeeded() {
+  const { data, error } = await supabase.from('signage').select('sign_number');
+  check(error);
+  const existing = new Set(data.map((r) => r.sign_number));
+  const missing = [];
+  for (let n = 1; n <= SIGNAGE_COUNT; n++) {
+    if (!existing.has(n)) {
+      missing.push({ id: genId(), sign_number: n, label: `Sign ${n}`, location: null, notes: null, updated_at: new Date().toISOString() });
+    }
+  }
+  if (missing.length) {
+    const { error: insertError } = await supabase.from('signage').insert(missing);
+    check(insertError);
+  }
+}
+
+function rowToSignage(row) {
+  return {
+    id: row.id,
+    signNumber: row.sign_number,
+    label: row.label,
+    location: row.location || '',
+    notes: row.notes || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listSignage() {
+  await ensureSignageSeeded();
+  const { data, error } = await supabase.from('signage').select('*').order('sign_number', { ascending: true });
+  check(error);
+  return data.map(rowToSignage);
+}
+
+async function updateSignage(id, input) {
+  const label = (input.label || '').trim();
+  if (!label) throw new Error('Sign label is required');
+  const row = {
+    label,
+    location: (input.location || '').trim(),
+    notes: (input.notes || '').trim(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('signage').update(row).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Sign not found');
+  return rowToSignage(data);
+}
+
 // ---------- Diary ----------
 // Private journal, multiple timestamped entries per day. Every function here takes the
 // requesting user and either scopes the query to them (list/create) or checks ownership
@@ -1388,6 +1445,8 @@ module.exports = {
   updateHire,
   markHireReturned,
   deleteHire,
+  listSignage,
+  updateSignage,
   listDiaryEntries,
   createDiaryEntry,
   updateDiaryEntry,
