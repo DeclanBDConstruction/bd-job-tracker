@@ -27,7 +27,16 @@ alter table users add column if not exists employee_id uuid references employees
 
 -- Grants specific non-admin users the right to manage the Quoting tab (add/edit/assign/
 -- delete quote jobs) without making them a full admin. Admins can always manage quotes too.
+-- Superseded by the 'surveyor' role below (which grants quoting automatically) - column
+-- kept only so historical data isn't lost, the app no longer reads or writes it.
 alter table users add column if not exists can_manage_quotes boolean not null default false;
+
+-- role now has five values: admin, staff (general office), surveyor (office + quoting
+-- rights), installation_operative, manufacturing_operative (the last two have no office
+-- features yet - see the operative-lockout middleware in server.js). One-time migration:
+-- carry forward anyone who already had can_manage_quotes set so they don't lose quoting
+-- rights on upgrade (safe to re-run - a no-op once everyone's already 'surveyor').
+update users set role = 'surveyor' where can_manage_quotes = true and role = 'staff';
 
 -- One person per calendar colour: a partial unique index (color is nullable, so
 -- anyone who hasn't picked yet doesn't collide with everyone else's null).

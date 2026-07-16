@@ -17,7 +17,9 @@ const state = {
   currentUser: null,
 };
 
+const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
 const isAdmin = () => !!(state.currentUser && state.currentUser.role === 'admin');
+const isOperative = () => !!(state.currentUser && OPERATIVE_ROLES.includes(state.currentUser.role));
 const canManageQuotes = () => !!(state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.canManageQuotes));
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -56,16 +58,43 @@ function showApp(user) {
   document.getElementById('currentUserName').textContent = user.name;
   document.getElementById('userAvatar').textContent = (user.name || '')
     .trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
-  document.getElementById('adminTabBtn').hidden = !isAdmin();
-  document.getElementById('clientsTabBtn').hidden = !isAdmin();
-  document.getElementById('hireTabBtn').hidden = !isAdmin();
-  document.getElementById('quotingAddRow').hidden = !canManageQuotes();
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
   document.querySelector('.topbar h1 .brand-sub').classList.add('animate-in');
+
+  if (isOperative()) {
+    showOperativePlaceholder();
+    return;
+  }
+  hideOperativePlaceholder();
+
+  document.getElementById('adminTabBtn').hidden = !isAdmin();
+  document.getElementById('clientsTabBtn').hidden = !isAdmin();
+  document.getElementById('hireTabBtn').hidden = !isAdmin();
+  document.getElementById('quotingAddRow').hidden = !canManageQuotes();
   bootstrap();
   connectLiveUpdates();
+}
+
+// Installation/manufacturing operatives have no office features yet, so they get a
+// placeholder instead of the normal tab bar/content - this only hides the UI, the real
+// enforcement is server-side (see the operative-lockout middleware in server.js), since
+// this same account could otherwise still call the API directly.
+function showOperativePlaceholder() {
+  document.querySelector('.tabs').hidden = true;
+  document.getElementById('headerSearchWrap').hidden = true;
+  document.querySelector('main').hidden = true;
+  const placeholder = document.getElementById('operativePlaceholder');
+  placeholder.querySelector('.operative-name').textContent = state.currentUser.name;
+  placeholder.hidden = false;
+}
+
+function hideOperativePlaceholder() {
+  document.querySelector('.tabs').hidden = false;
+  document.getElementById('headerSearchWrap').hidden = false;
+  document.querySelector('main').hidden = false;
+  document.getElementById('operativePlaceholder').hidden = true;
 }
 
 // ---------- Live updates ----------
@@ -2876,6 +2905,14 @@ async function loadClients() {
 
 // ---------- Admin ----------
 
+const ROLE_LABELS = {
+  admin: 'Admin',
+  staff: 'Staff',
+  surveyor: 'Surveyor',
+  installation_operative: 'Installation Operative',
+  manufacturing_operative: 'Manufacturing Operative',
+};
+
 async function loadAdminUsers() {
   const users = await api('/api/users');
   const tbody = document.querySelector('#adminUsersTable tbody');
@@ -2883,43 +2920,36 @@ async function loadAdminUsers() {
     <tr>
       <td>${escapeHtml(u.name)}</td>
       <td>${escapeHtml(u.email)}</td>
-      <td><span class="role-badge ${u.role}">${escapeHtml(u.role)}</span></td>
+      <td>
+        <select class="admin-role-select" data-user="${u.id}" data-name="${escapeHtml(u.name)}" ${u.id === state.currentUser.id ? 'disabled title="You can\'t change your own role"' : ''}>
+          ${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${u.role === value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </td>
       <td>
         <select class="admin-employee-select" data-user="${u.id}">
           <option value="">— Not linked —</option>
           ${state.employees.map((e) => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
         </select>
       </td>
-      <td>${u.role === 'admin'
-        ? '<span class="hint">Admin</span>'
-        : `<button type="button" data-toggle-quoting="${u.id}" data-name="${escapeHtml(u.name)}" data-on="${u.canManageQuotes}">${u.canManageQuotes ? 'Revoke Quoting' : 'Grant Quoting'}</button>`}</td>
-      <td class="row-actions">${u.role !== 'admin' ? `<button type="button" class="primary" data-promote="${u.id}" data-name="${escapeHtml(u.name)}">Make Admin</button>` : ''}</td>
     </tr>
   `).join('');
 
-  tbody.querySelectorAll('[data-promote]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!confirm(`Make ${btn.dataset.name} an admin? They'll be able to delete jobs and manage the employee list.`)) return;
-      try {
-        await api(`/api/users/${btn.dataset.promote}/promote`, { method: 'POST' });
+  tbody.querySelectorAll('.admin-role-select').forEach((select) => {
+    select.addEventListener('change', async () => {
+      const role = select.value;
+      if (!confirm(`Set ${select.dataset.name}'s role to ${ROLE_LABELS[role]}?`)) {
         loadAdminUsers();
-      } catch (err) {
-        alert(err.message);
+        return;
       }
-    });
-  });
-
-  tbody.querySelectorAll('[data-toggle-quoting]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const grant = btn.dataset.on !== 'true';
       try {
-        await api(`/api/users/${btn.dataset.toggleQuoting}/quoting`, {
+        await api(`/api/users/${select.dataset.user}/role`, {
           method: 'PUT',
-          body: JSON.stringify({ canManageQuotes: grant }),
+          body: JSON.stringify({ role }),
         });
         loadAdminUsers();
       } catch (err) {
         alert(err.message);
+        loadAdminUsers();
       }
     });
   });

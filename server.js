@@ -150,6 +150,17 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Installation/manufacturing operatives don't have any office features yet, so block
+// every route below (jobs, quoting, calendar, everything) rather than gating each one
+// individually - the frontend shows them a placeholder instead of the normal app. Extend
+// this as operative-specific screens get built, instead of loosening it wholesale.
+app.use('/api', (req, res, next) => {
+  if (db.OPERATIVE_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Not available for your role yet' });
+  }
+  next();
+});
+
 // ---------- Live updates (SSE) ----------
 
 app.get('/api/events', (req, res) => {
@@ -171,20 +182,14 @@ app.get('/api/users', requireAdmin, handle(async (req, res) => {
   res.json(await db.listUsers());
 }));
 
-app.post('/api/users/:id/promote', requireAdmin, handle(async (req, res) => {
-  const user = await db.promoteToAdmin(req.params.id);
+app.put('/api/users/:id/role', requireAdmin, handle(async (req, res) => {
+  const user = await db.setUserRole(req.params.id, req.body.role);
   broadcast('users');
   res.json(user);
 }));
 
 app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserEmployee(req.params.id, req.body.employeeId || null);
-  broadcast('users');
-  res.json(user);
-}));
-
-app.put('/api/users/:id/quoting', requireAdmin, handle(async (req, res) => {
-  const user = await db.setUserCanManageQuotes(req.params.id, !!req.body.canManageQuotes);
   broadcast('users');
   res.json(user);
 }));

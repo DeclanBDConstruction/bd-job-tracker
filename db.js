@@ -1246,6 +1246,13 @@ async function deleteDiaryEntry(id, user) {
 
 // ---------- Auth ----------
 
+// Office roles get the full app; operative roles (see OPERATIVE_ROLES below) don't have
+// any features built for them yet, so every /api route except auth blocks them for now
+// (see the operative-lockout middleware in server.js) - extend that allowlist as
+// operative-specific screens get built instead of loosening this list.
+const ROLES = ['admin', 'staff', 'surveyor', 'installation_operative', 'manufacturing_operative'];
+const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
+
 function sanitizeUser(row) {
   if (!row) return null;
   return {
@@ -1255,14 +1262,15 @@ function sanitizeUser(row) {
     role: row.role,
     color: row.color || null,
     employeeId: row.employee_id || null,
-    canManageQuotes: !!row.can_manage_quotes,
+    // Derived from role rather than the old can_manage_quotes column - admins and
+    // surveyors can always manage quotes, nobody else can.
+    canManageQuotes: row.role === 'admin' || row.role === 'surveyor',
     createdAt: row.created_at,
   };
 }
 
-// Admins can always manage quotes; can_manage_quotes lets specific other people do so too.
 function userCanManageQuotes(user) {
-  return !!user && (user.role === 'admin' || user.canManageQuotes);
+  return !!user && (user.role === 'admin' || user.role === 'surveyor');
 }
 
 async function findUserByEmail(email) {
@@ -1352,15 +1360,9 @@ async function listUsers() {
   return data.map(sanitizeUser);
 }
 
-async function promoteToAdmin(id) {
-  const { data, error } = await supabase.from('users').update({ role: 'admin' }).eq('id', id).select().maybeSingle();
-  check(error);
-  if (!data) throw new Error('User not found');
-  return sanitizeUser(data);
-}
-
-async function setUserCanManageQuotes(id, canManage) {
-  const { data, error } = await supabase.from('users').update({ can_manage_quotes: !!canManage }).eq('id', id).select().maybeSingle();
+async function setUserRole(id, role) {
+  if (!ROLES.includes(role)) throw new Error('Invalid role');
+  const { data, error } = await supabase.from('users').update({ role }).eq('id', id).select().maybeSingle();
   check(error);
   if (!data) throw new Error('User not found');
   return sanitizeUser(data);
@@ -1411,9 +1413,10 @@ module.exports = {
   getUserBySession,
   deleteSession,
   listUsers,
-  promoteToAdmin,
+  setUserRole,
   setUserEmployee,
-  setUserCanManageQuotes,
+  ROLES,
+  OPERATIVE_ROLES,
   listUserColors,
   setUserColor,
   listEmployees,
