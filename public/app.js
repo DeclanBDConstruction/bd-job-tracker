@@ -259,11 +259,20 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 // ---------- Tabs ----------
 
+function closeTabGroups() {
+  document.querySelectorAll('.tab-group.open').forEach((g) => g.classList.remove('open'));
+}
+
 function goToTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('.tab-group-btn').forEach((b) => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-  document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+  const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  btn.classList.add('active');
+  const group = btn.closest('.tab-group');
+  if (group) group.querySelector('.tab-group-btn').classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');
+  closeTabGroups();
   if (tab === 'reports') loadReports();
   if (tab === 'clients') loadClients();
   if (tab === 'home') renderHomeDashboard();
@@ -279,6 +288,18 @@ function goToTab(tab) {
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => goToTab(btn.dataset.tab));
 });
+
+document.querySelectorAll('.tab-group-btn').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const group = btn.closest('.tab-group');
+    const wasOpen = group.classList.contains('open');
+    closeTabGroups();
+    if (!wasOpen) group.classList.add('open');
+  });
+});
+
+document.addEventListener('click', () => closeTabGroups());
 
 document.getElementById('logoHomeBtn').addEventListener('click', () => goToTab('home'));
 

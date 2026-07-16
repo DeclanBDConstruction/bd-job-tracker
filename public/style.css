@@ -321,6 +321,73 @@ body {
 
 .tab-btn.active:hover { transform: none; }
 
+.tab-group {
+  position: relative;
+}
+
+.tab-group-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.72);
+  padding: 9px 16px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.tab-group-btn:hover { color: white; background: rgba(255,255,255,0.12); transform: translateY(-1px); }
+
+.tab-group-btn.active {
+  color: var(--blue-dark);
+  background: white;
+  box-shadow: 0 3px 10px rgba(6,20,32,0.3);
+}
+
+.tab-group-btn .caret {
+  font-size: 10px;
+  margin-left: 2px;
+  opacity: 0.75;
+}
+
+.tab-group-menu {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(6,20,32,0.25);
+  padding: 6px;
+  z-index: 50;
+}
+
+.tab-group.open .tab-group-menu {
+  display: flex;
+}
+
+.tab-group-menu .tab-btn {
+  color: var(--text);
+  text-align: left;
+  padding: 8px 12px;
+}
+
+.tab-group-menu .tab-btn:hover {
+  color: var(--blue-dark);
+  background: var(--blue-light);
+  transform: none;
+}
+
+.tab-group-menu .tab-btn.active {
+  color: white;
+  background: var(--blue-dark);
+  box-shadow: none;
+}
+
 /* ---------- Auth ---------- */
 
 .auth-screen[hidden] {
@@ -2242,6 +2309,8 @@ button:disabled {
   }
   .tabs::-webkit-scrollbar { display: none; }
   .tab-btn { flex: 0 0 auto; white-space: nowrap; padding: 10px 12px; font-size: 13px; }
+  .tab-group { flex: 0 0 auto; }
+  .tab-group-btn { white-space: nowrap; padding: 10px 12px; font-size: 13px; }
 
   main { margin: 16px auto; padding: 0 12px 40px; }
 
