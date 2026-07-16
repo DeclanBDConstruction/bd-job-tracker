@@ -680,16 +680,28 @@ app.delete('/api/hires/:id', requireAdmin, handle(async (req, res) => {
   res.status(204).end();
 }));
 
-// ---------- Signage (shared - anyone can view/update where a sign currently is) ----------
+// ---------- Signage (shared - anyone can view/add/update; removing one is admin-only) ----------
 
 app.get('/api/signage', handle(async (req, res) => {
   res.json(await db.listSignage());
+}));
+
+app.post('/api/signage', handle(async (req, res) => {
+  const sign = await db.createSignage(req.body);
+  broadcast('signage');
+  res.status(201).json(sign);
 }));
 
 app.put('/api/signage/:id', handle(async (req, res) => {
   const sign = await db.updateSignage(req.params.id, req.body);
   broadcast('signage');
   res.json(sign);
+}));
+
+app.delete('/api/signage/:id', requireAdmin, handle(async (req, res) => {
+  await db.deleteSignage(req.params.id);
+  broadcast('signage');
+  res.status(204).end();
 }));
 
 // ---------- Status list ----------

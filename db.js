@@ -1055,27 +1055,24 @@ async function deleteHire(id) {
 }
 
 // ---------- Signage ----------
-// Fixed inventory of 10 physical site signs, shared and editable by anyone. Rows are
-// seeded once for sign_number 1..10 rather than added/removed by users - a sign's
-// location is left blank when it's back in the yard (available) or set to wherever it
-// currently is.
+// Inventory of physical site signs, shared and editable by anyone (removing one is
+// admin-only). Seeded once with 10 rows (sign_number 1..10) the first time the table is
+// empty; after that, sign_number just keeps counting up as people add/remove signs, it
+// isn't reused. Each sign links to the job it's currently out at - no job means it's back
+// in the yard and available.
 
-const SIGNAGE_COUNT = 10;
+const SIGNAGE_SEED_COUNT = 10;
 
 async function ensureSignageSeeded() {
-  const { data, error } = await supabase.from('signage').select('sign_number');
+  const { count, error } = await supabase.from('signage').select('id', { count: 'exact', head: true });
   check(error);
-  const existing = new Set(data.map((r) => r.sign_number));
-  const missing = [];
-  for (let n = 1; n <= SIGNAGE_COUNT; n++) {
-    if (!existing.has(n)) {
-      missing.push({ id: genId(), sign_number: n, label: `Sign ${n}`, location: null, notes: null, updated_at: new Date().toISOString() });
-    }
+  if (count > 0) return;
+  const seed = [];
+  for (let n = 1; n <= SIGNAGE_SEED_COUNT; n++) {
+    seed.push({ id: genId(), sign_number: n, label: `Sign ${n}`, job_id: null, notes: null, updated_at: new Date().toISOString() });
   }
-  if (missing.length) {
-    const { error: insertError } = await supabase.from('signage').insert(missing);
-    check(insertError);
-  }
+  const { error: insertError } = await supabase.from('signage').insert(seed);
+  check(insertError);
 }
 
 function rowToSignage(row) {
@@ -1083,7 +1080,7 @@ function rowToSignage(row) {
     id: row.id,
     signNumber: row.sign_number,
     label: row.label,
-    location: row.location || '',
+    jobId: row.job_id || '',
     notes: row.notes || '',
     updatedAt: row.updated_at,
   };
@@ -1096,12 +1093,31 @@ async function listSignage() {
   return data.map(rowToSignage);
 }
 
+async function createSignage(input) {
+  const { data: maxRow, error: maxError } = await supabase.from('signage')
+    .select('sign_number').order('sign_number', { ascending: false }).limit(1).maybeSingle();
+  check(maxError);
+  const nextNumber = (maxRow ? maxRow.sign_number : 0) + 1;
+  const label = (input.label || '').trim() || `Sign ${nextNumber}`;
+  const row = {
+    id: genId(),
+    sign_number: nextNumber,
+    label,
+    job_id: null,
+    notes: null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('signage').insert(row).select().single();
+  check(error);
+  return rowToSignage(data);
+}
+
 async function updateSignage(id, input) {
   const label = (input.label || '').trim();
   if (!label) throw new Error('Sign label is required');
   const row = {
     label,
-    location: (input.location || '').trim(),
+    job_id: input.jobId || null,
     notes: (input.notes || '').trim(),
     updated_at: new Date().toISOString(),
   };
@@ -1109,6 +1125,11 @@ async function updateSignage(id, input) {
   check(error);
   if (!data) throw new Error('Sign not found');
   return rowToSignage(data);
+}
+
+async function deleteSignage(id) {
+  const { error } = await supabase.from('signage').delete().eq('id', id);
+  check(error);
 }
 
 // ---------- Diary ----------
@@ -1446,7 +1467,9 @@ module.exports = {
   markHireReturned,
   deleteHire,
   listSignage,
+  createSignage,
   updateSignage,
+  deleteSignage,
   listDiaryEntries,
   createDiaryEntry,
   updateDiaryEntry,

@@ -363,13 +363,17 @@
     <div class="panel-header">
       <h2>Signage Tracker</h2>
     </div>
-    <p class="hint">Track where each of the 10 site signs currently is. Leave the location blank when a sign is back in the yard and available.</p>
+    <p class="hint">Track which job each sign is currently out at. Leave a sign unassigned when it's back in the yard and available.</p>
     <div id="signageSummary"></div>
+    <form id="signageAddForm" class="hire-add-form">
+      <input type="text" id="signageLabelInput" placeholder="Sign name (e.g. A-frame 1)" required>
+      <button type="submit" class="primary">+ Add Sign</button>
+    </form>
     <div class="table-scroll">
       <table class="data-table" id="signageTable">
         <thead>
           <tr>
-            <th>Sign</th><th>Location</th><th>Notes</th><th></th>
+            <th>Sign</th><th>Job</th><th>Notes</th><th></th>
           </tr>
         </thead>
         <tbody></tbody>

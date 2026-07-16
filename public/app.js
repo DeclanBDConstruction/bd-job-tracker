@@ -138,6 +138,7 @@ async function handleLiveJobsChange() {
   renderCompletedJobs();
   renderEmployees();
   renderHomeDashboard();
+  renderSignage();
   if (currentDetailJobId && !jobDetailModal.hidden) refreshJobDetail();
   if (activeTab() === 'reports') loadReports();
   if (activeTab() === 'clients') loadClients();
@@ -1618,17 +1619,34 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
 });
 
 // ---------- Signage Tracker ----------
-// Fixed inventory of 10 site signs, shared across everyone (no admin gate, unlike Hire).
-// Each sign's location is edited in place; a blank location means it's back in the yard
+// Shared inventory of site signs (no admin gate, unlike Hire, except removing a sign).
+// Each sign links to the job it's currently out at; no job means it's back in the yard
 // and available to go out again.
 
 let editingSignageId = null;
+
+function signageJobLabel(job) {
+  return `${job.jobReference || '(no ref)'} - ${job.client}`;
+}
+
+function signageJobOptions(s) {
+  return state.jobs
+    .slice()
+    .sort((a, b) => signageJobLabel(a).localeCompare(signageJobLabel(b)))
+    .map((j) => `<option value="${j.id}" ${s.jobId === j.id ? 'selected' : ''}>${escapeHtml(signageJobLabel(j))}</option>`)
+    .join('');
+}
 
 function signageEditRow(s) {
   return `
     <tr data-id="${s.id}">
       <td><input type="text" class="signage-edit-label" value="${escapeHtml(s.label)}"></td>
-      <td><input type="text" class="signage-edit-location" value="${escapeHtml(s.location)}" placeholder="Blank = available"></td>
+      <td>
+        <select class="signage-edit-job">
+          <option value="">— Available —</option>
+          ${signageJobOptions(s)}
+        </select>
+      </td>
       <td><input type="text" class="signage-edit-notes" value="${escapeHtml(s.notes)}"></td>
       <td class="row-actions">
         <button type="button" class="primary signage-save-btn">Save</button>
@@ -1639,21 +1657,23 @@ function signageEditRow(s) {
 }
 
 function signageDisplayRow(s) {
-  const available = !s.location;
+  const job = state.jobs.find((j) => j.id === s.jobId);
+  const available = !job;
   return `
     <tr>
       <td>${escapeHtml(s.label)}</td>
-      <td><span class="signage-status ${available ? 'available' : 'out'}">${available ? 'Available' : escapeHtml(s.location)}</span></td>
+      <td><span class="signage-status ${available ? 'available' : 'out'}">${available ? 'Available' : escapeHtml(signageJobLabel(job))}</span></td>
       <td>${escapeHtml(s.notes || '—')}</td>
       <td class="row-actions">
         <button type="button" data-edit-signage="${s.id}">Edit</button>
+        ${isAdmin() ? `<button type="button" class="danger" data-del-signage="${s.id}">Remove</button>` : ''}
       </td>
     </tr>
   `;
 }
 
 function renderSignage() {
-  const available = state.signage.filter((s) => !s.location).length;
+  const available = state.signage.filter((s) => !s.jobId || !state.jobs.some((j) => j.id === s.jobId)).length;
   const summary = document.getElementById('signageSummary');
   summary.innerHTML = `<p class="signage-summary-banner"><strong>${available}</strong> of <strong>${state.signage.length}</strong> signs available</p>`;
 
@@ -1677,7 +1697,7 @@ function renderSignage() {
       const tr = btn.closest('tr');
       const body = {
         label: tr.querySelector('.signage-edit-label').value.trim(),
-        location: tr.querySelector('.signage-edit-location').value.trim(),
+        jobId: tr.querySelector('.signage-edit-job').value,
         notes: tr.querySelector('.signage-edit-notes').value.trim(),
       };
       try {
@@ -1690,7 +1710,32 @@ function renderSignage() {
       }
     });
   });
+  tbody.querySelectorAll('[data-del-signage]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this sign? This cannot be undone.')) return;
+      try {
+        await api(`/api/signage/${btn.dataset.delSignage}`, { method: 'DELETE' });
+        state.signage = await api('/api/signage');
+        renderSignage();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 }
+
+document.getElementById('signageAddForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const label = document.getElementById('signageLabelInput').value.trim();
+  try {
+    await api('/api/signage', { method: 'POST', body: JSON.stringify({ label }) });
+    e.target.reset();
+    state.signage = await api('/api/signage');
+    renderSignage();
+  } catch (err) {
+    alert(err.message);
+  }
+});
 
 // ---------- Diary ----------
 // Private journal, multiple timestamped entries per day - the server always scopes this
