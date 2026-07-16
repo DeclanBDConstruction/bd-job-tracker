@@ -1401,7 +1401,7 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
 // Admin-only tracker for hired-in plant/equipment - flags a hire once it's due back
 // soon or is already overdue, computed server-side against today so it's never stale.
 
-const HIRE_STATUS_LABELS = { 'on-hire': 'On Hire', 'due-soon': 'Due Soon', overdue: 'Overdue', returned: 'Returned' };
+const HIRE_STATUS_LABELS = { 'on-hire': 'On Hire', 'due-soon': 'Due Soon', overdue: 'Overdue', returned: 'Off Hired' };
 
 let editingHireId = null;
 
@@ -1448,7 +1448,24 @@ function hireDisplayRow(h) {
       <td><span class="hire-status ${h.status}">${HIRE_STATUS_LABELS[h.status]}</span></td>
       <td class="row-actions">
         <button type="button" data-edit-hire="${h.id}">Edit</button>
-        ${h.status !== 'returned' ? `<button type="button" data-return="${h.id}">Mark Returned</button>` : ''}
+        <button type="button" data-return="${h.id}">Mark Off Hired</button>
+        <button type="button" class="danger" data-del-hire="${h.id}">Delete</button>
+      </td>
+    </tr>
+  `;
+}
+
+function hireOffHiredRow(h) {
+  return `
+    <tr>
+      <td>${escapeHtml(h.item)}</td>
+      <td>${escapeHtml(h.supplier || '—')}</td>
+      <td>${escapeHtml(h.jobNumber || '—')}</td>
+      <td>${h.hireDate}</td>
+      <td>${h.quantity}</td>
+      <td>${h.durationValue} ${h.durationUnit}</td>
+      <td>${h.returnedAt}</td>
+      <td class="row-actions">
         <button type="button" class="danger" data-del-hire="${h.id}">Delete</button>
       </td>
     </tr>
@@ -1469,13 +1486,35 @@ function renderHires() {
   const filtered = term
     ? state.hires.filter((h) => [h.item, h.supplier, h.jobNumber].some((v) => (v || '').toLowerCase().includes(term)))
     : state.hires;
+  const active = filtered.filter((h) => h.status !== 'returned');
+  const offHired = filtered.filter((h) => h.status === 'returned');
+  const activeCount = state.hires.filter((h) => h.status !== 'returned').length;
+  const offHiredCount = state.hires.filter((h) => h.status === 'returned').length;
 
   const tbody = document.querySelector('#hiresTable tbody');
-  document.getElementById('hiresEmptyState').hidden = !!filtered.length;
-  document.getElementById('hiresEmptyState').textContent = state.hires.length && term
+  document.getElementById('hiresEmptyState').hidden = !!active.length;
+  document.getElementById('hiresEmptyState').textContent = activeCount && term
     ? 'No hires match your search.'
     : 'No hires recorded yet.';
-  tbody.innerHTML = filtered.map((h) => (h.id === editingHireId ? hireEditRow(h) : hireDisplayRow(h))).join('');
+  tbody.innerHTML = active.map((h) => (h.id === editingHireId ? hireEditRow(h) : hireDisplayRow(h))).join('');
+
+  const offHiredTbody = document.querySelector('#hiresOffHiredTable tbody');
+  document.getElementById('hiresOffHiredEmptyState').hidden = !!offHired.length;
+  document.getElementById('hiresOffHiredEmptyState').textContent = offHiredCount && term
+    ? 'No off-hired equipment matches your search.'
+    : 'No off-hired equipment yet.';
+  offHiredTbody.innerHTML = offHired.map((h) => hireOffHiredRow(h)).join('');
+  offHiredTbody.querySelectorAll('[data-del-hire]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this hire record? This cannot be undone.')) return;
+      try {
+        await api(`/api/hires/${btn.dataset.delHire}`, { method: 'DELETE' });
+        loadHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 
   tbody.querySelectorAll('[data-edit-hire]').forEach((btn) => {
     btn.addEventListener('click', () => {
