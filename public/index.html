@@ -304,6 +304,10 @@
     <div class="panel-header">
       <h2>Hire</h2>
       <div class="filters">
+        <select id="hireViewSelect">
+          <option value="on-hire">On Hire</option>
+          <option value="off-hired">Off Hired</option>
+        </select>
         <input type="text" id="hireSearch" placeholder="Search item, supplier, job…">
       </div>
     </div>
@@ -322,31 +326,35 @@
       </select>
       <button type="submit" class="primary">+ Add Hire</button>
     </form>
-    <h3 class="hire-section-heading">On Hire</h3>
-    <div class="table-scroll">
-      <table class="data-table" id="hiresTable">
-        <thead>
-          <tr>
-            <th>Item</th><th>Supplier</th><th>Job No.</th><th>Hire Date</th><th>Qty</th><th>Length</th><th>Due Back</th><th>Status</th><th></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div id="hireOnHiredSection">
+      <h3 class="hire-section-heading">On Hire</h3>
+      <div class="table-scroll">
+        <table class="data-table" id="hiresTable">
+          <thead>
+            <tr>
+              <th>Item</th><th>Supplier</th><th>Job No.</th><th>Hire Date</th><th>Qty</th><th>Length</th><th>Due Back</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="hiresEmptyState" hidden>No hires recorded yet.</p>
     </div>
-    <p class="empty-state" id="hiresEmptyState" hidden>No hires recorded yet.</p>
 
-    <h3 class="hire-section-heading">Off Hired</h3>
-    <div class="table-scroll">
-      <table class="data-table" id="hiresOffHiredTable">
-        <thead>
-          <tr>
-            <th>Item</th><th>Supplier</th><th>Job No.</th><th>Hire Date</th><th>Qty</th><th>Length</th><th>Off Hire Date</th><th></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div id="hireOffHiredSection" hidden>
+      <h3 class="hire-section-heading">Off Hired</h3>
+      <div class="table-scroll">
+        <table class="data-table" id="hiresOffHiredTable">
+          <thead>
+            <tr>
+              <th>Item</th><th>Supplier</th><th>Job No.</th><th>Hire Date</th><th>Qty</th><th>Length</th><th>Off Hire Date</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="hiresOffHiredEmptyState" hidden>No off-hired equipment yet.</p>
     </div>
-    <p class="empty-state" id="hiresOffHiredEmptyState" hidden>No off-hired equipment yet.</p>
   </section>
 
   <!-- CALENDAR TAB -->

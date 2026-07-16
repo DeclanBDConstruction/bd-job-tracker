@@ -1473,6 +1473,10 @@ function hireOffHiredRow(h) {
 }
 
 function renderHires() {
+  const view = document.getElementById('hireViewSelect').value;
+  document.getElementById('hireOnHiredSection').hidden = view !== 'on-hire';
+  document.getElementById('hireOffHiredSection').hidden = view !== 'off-hired';
+
   // Summary always reflects every hire, regardless of the search box, so overdue/due-soon
   // counts stay a reliable heads-up even while someone's searching for something else.
   const overdue = state.hires.filter((h) => h.status === 'overdue').length;
@@ -1573,6 +1577,7 @@ function renderHires() {
 }
 
 document.getElementById('hireSearch').addEventListener('input', renderHires);
+document.getElementById('hireViewSelect').addEventListener('change', renderHires);
 
 document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
   e.preventDefault();
