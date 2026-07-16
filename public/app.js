@@ -1626,7 +1626,7 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
 let editingSignageId = null;
 
 function signageJobLabel(job) {
-  return `${job.jobReference || '(no ref)'} - ${job.client}`;
+  return `${job.jobReference || '(no ref)'} - ${job.location || '(no location)'}`;
 }
 
 function signageJobOptions(s) {
