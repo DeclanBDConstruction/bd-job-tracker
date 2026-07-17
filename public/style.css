@@ -938,6 +938,12 @@ button:disabled {
   margin: 0;
 }
 
+.job-detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
 .job-detail-tabs {
   display: flex;
   flex-wrap: wrap;

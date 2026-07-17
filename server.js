@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const archiver = require('archiver');
 const path = require('path');
 const db = require('./db');
 const importer = require('./import');
@@ -360,6 +361,56 @@ app.delete('/api/jobs/:id/documents/:category/:docId', validateDocumentParams, h
   await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath(req.params.id, req.params.category, doc.storedName)]);
   broadcast('jobs');
   res.status(204).end();
+}));
+
+// Everything on a job (RAMS, drawings, sign-off sheets, photos) bundled into one zip, named
+// after the job number and location, plus a short info sheet with the start date - built for
+// forwarding on to someone outside the company (e.g. attaching to an email) in one go.
+app.get('/api/jobs/:id/documents-zip', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  const job = await db.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+
+  const namePart = [job.jobReference, job.location].filter(Boolean).join(' - ') || job.client || 'Job';
+  const filename = namePart.replace(/[\\/:*?"<>|]/g, '-').trim() || 'Job';
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.zip"`);
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('Zip generation failed:', err);
+    res.destroy();
+  });
+  archive.pipe(res);
+
+  archive.append(
+    [
+      `Job Number: ${job.jobReference || '—'}`,
+      `Client: ${job.client || '—'}`,
+      `Location: ${job.location || '—'}`,
+      `Start Date: ${job.startDate || '—'}`,
+    ].join('\r\n') + '\r\n',
+    { name: 'Job Info.txt' },
+  );
+
+  for (const category of db.DOCUMENT_CATEGORIES) {
+    const docs = (job.documents || {})[category] || [];
+    for (const doc of docs) {
+      const entryName = `${db.DOCUMENT_LABELS[category]}/${doc.originalName}`;
+      try {
+        const { data, error } = await supabase.storage
+          .from(DOCUMENTS_BUCKET)
+          .download(storagePath(job.id, category, doc.storedName));
+        if (error) throw new Error(error.message);
+        archive.append(Buffer.from(await data.arrayBuffer()), { name: entryName });
+      } catch (err) {
+        archive.append(`Couldn't include this file: ${err.message}\r\n`, { name: `${entryName} - FAILED TO DOWNLOAD.txt` });
+      }
+    }
+  }
+
+  await archive.finalize();
 }));
 
 // ---------- Risk Assessments ----------

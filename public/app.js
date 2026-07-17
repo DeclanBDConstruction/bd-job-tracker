@@ -862,6 +862,7 @@ async function openJobDetail(id, section) {
   const target = section || 'info';
   document.querySelectorAll('.job-detail-tab').forEach((b) => b.classList.toggle('active', b.dataset.section === target));
   document.querySelectorAll('.job-detail-section').forEach((s) => s.classList.toggle('active', s.id === `jobDetailSection-${target}`));
+  document.getElementById('jobDetailDownloadBtn').href = `/api/jobs/${id}/documents-zip`;
   jobDetailModal.hidden = false;
   try {
     await refreshJobDetail();

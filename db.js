@@ -1408,6 +1408,7 @@ async function setUserColor(userId, color) {
 module.exports = {
   DEFAULT_STATUSES,
   DOCUMENT_CATEGORIES,
+  DOCUMENT_LABELS,
   CALENDAR_COLORS,
   registerUser,
   verifyLogin,
