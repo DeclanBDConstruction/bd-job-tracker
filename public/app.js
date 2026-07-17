@@ -2499,6 +2499,72 @@ document.getElementById('assignmentPhotoInput').addEventListener('change', async
 // POST /api/job-assignments/:id/permit route, which generates the PDF server-side from
 // these values so there's no separate download/fill-externally/upload-back step). ----------
 
+// A finger/stylus/mouse signature pad backed by a <canvas> - pointer events unify touch,
+// pen and mouse input in one listener set, which is what actually needs to work here since
+// this is signed on iPads/phones. touch-action:none on the canvas (see style.css) stops the
+// page scrolling while someone's mid-signature. Coordinates are rescaled from the canvas's
+// on-screen CSS size to its internal pixel size, since the two can differ (e.g. the pad
+// renders narrower than 495px on a phone) - without that, drawing would land in the wrong
+// place on any screen narrower than the pad's native resolution.
+function createSignaturePad(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#0c2233';
+
+  let drawing = false;
+  let hasDrawn = false;
+
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (canvas.width / rect.width),
+      y: (e.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    drawing = true;
+    hasDrawn = true;
+    const p = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  });
+
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((evt) => {
+    canvas.addEventListener(evt, () => { drawing = false; });
+  });
+
+  return {
+    clear() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      hasDrawn = false;
+    },
+    isEmpty() { return !hasDrawn; },
+    toDataUrl() { return canvas.toDataURL('image/png'); },
+  };
+}
+
+const operativeSignaturePad = createSignaturePad('permitOperativeSignatureCanvas');
+const managerSignaturePad = createSignaturePad('permitManagerSignatureCanvas');
+
+document.querySelectorAll('.signature-clear-btn').forEach((btn) => {
+  const pad = btn.dataset.target === 'permitOperativeSignatureCanvas' ? operativeSignaturePad : managerSignaturePad;
+  btn.addEventListener('click', () => pad.clear());
+});
+
 document.getElementById('assignmentPermitBtn').addEventListener('click', () => {
   const a = findMyAssignment(currentAssignmentId);
   if (!a) return;
@@ -2507,9 +2573,9 @@ document.getElementById('assignmentPermitBtn').addEventListener('click', () => {
   document.getElementById('permitDescription').value = a.task || '';
   document.getElementById('permitDate').value = todayDateStr();
   document.getElementById('permitOperativeName').value = state.currentUser.name || '';
-  document.getElementById('permitOperativeSignature').value = '';
   document.getElementById('permitManagerName').value = '';
-  document.getElementById('permitManagerSignature').value = '';
+  operativeSignaturePad.clear();
+  managerSignaturePad.clear();
   document.getElementById('permitFormModal').hidden = false;
 });
 
@@ -2522,6 +2588,10 @@ document.getElementById('permitFormCancelBtn').addEventListener('click', closePe
 
 document.getElementById('permitForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (operativeSignaturePad.isEmpty() || managerSignaturePad.isEmpty()) {
+    alert('Both the operative and manager need to sign before saving.');
+    return;
+  }
   try {
     await api(`/api/job-assignments/${currentAssignmentId}/permit`, {
       method: 'POST',
@@ -2531,9 +2601,9 @@ document.getElementById('permitForm').addEventListener('submit', async (e) => {
         description: document.getElementById('permitDescription').value,
         date: document.getElementById('permitDate').value,
         operativeName: document.getElementById('permitOperativeName').value,
-        operativeSignature: document.getElementById('permitOperativeSignature').value,
+        operativeSignatureImage: operativeSignaturePad.toDataUrl(),
         managerName: document.getElementById('permitManagerName').value,
-        managerSignature: document.getElementById('permitManagerSignature').value,
+        managerSignatureImage: managerSignaturePad.toDataUrl(),
       }),
     });
     closePermitForm();

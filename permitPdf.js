@@ -4,8 +4,8 @@
 // server.js), no separate "open a blank PDF, fill it externally, upload it back" round trip.
 // Every field is baked in as plain drawn text (not a fillable AcroForm) since by the time
 // this runs the permit is already complete - it's a record, not a template to keep editing.
-// Signatures are just typed text, not a hand-drawn signature (that would need a dedicated
-// signing pad built into the app, which this isn't).
+// Signatures are real hand-drawn images, captured via a <canvas> signature pad in app.js
+// (built for finger/stylus input on phones and tablets) and PNG-embedded here.
 
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
@@ -38,7 +38,7 @@ function wrapText(text, font, size, maxWidth) {
 
 async function generatePermitPdf({
   siteName, jobNumber, description, date,
-  operativeName, operativeSignature, managerName, managerSignature,
+  operativeName, operativeSignatureImage, managerName, managerSignatureImage,
 }) {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 841.89]); // A4
@@ -47,6 +47,8 @@ async function generatePermitPdf({
 
   const marginX = 50;
   const fieldWidth = 495.28;
+  const sigBoxWidth = 220;
+  const sigBoxHeight = 60;
   let y = 790;
 
   page.drawText(COMPANY_NAME, { x: marginX, y, size: 16, font: boldFont, color: BLUE_DARK });
@@ -77,15 +79,38 @@ async function generatePermitPdf({
   page.drawLine({ start: { x: marginX, y }, end: { x: marginX + fieldWidth, y }, thickness: 1, color: LINE_GREY });
   y -= 24;
 
-  page.drawText('Operative', { x: marginX, y, size: 12, font: boldFont, color: BLUE_DARK });
-  y -= 20;
-  labeledValue('Name', operativeName);
-  labeledValue('Signature', operativeSignature);
+  // Draws a name line plus a bordered box with the signature PNG centred inside it,
+  // scaled to fit without distorting its aspect ratio (PDFImage#scaleToFit).
+  async function labeledSignature(heading, name, signatureImageBytes) {
+    page.drawText(heading, { x: marginX, y, size: 12, font: boldFont, color: BLUE_DARK });
+    y -= 20;
+    page.drawText('Name', { x: marginX, y, size: 10, font: boldFont, color: GREY });
+    y -= 15;
+    page.drawText(name || '', { x: marginX, y, size: 12, font, color: TEXT_DARK });
+    y -= 24;
 
-  page.drawText('Manager', { x: marginX, y, size: 12, font: boldFont, color: BLUE_DARK });
-  y -= 20;
-  labeledValue('Name', managerName);
-  labeledValue('Signature', managerSignature);
+    page.drawText('Signature', { x: marginX, y, size: 10, font: boldFont, color: GREY });
+    y -= 8;
+    const boxTop = y;
+    page.drawRectangle({
+      x: marginX, y: boxTop - sigBoxHeight, width: sigBoxWidth, height: sigBoxHeight,
+      borderColor: LINE_GREY, borderWidth: 1,
+    });
+    if (signatureImageBytes) {
+      const img = await pdfDoc.embedPng(signatureImageBytes);
+      const scaled = img.scaleToFit(sigBoxWidth - 12, sigBoxHeight - 12);
+      page.drawImage(img, {
+        x: marginX + (sigBoxWidth - scaled.width) / 2,
+        y: boxTop - sigBoxHeight + (sigBoxHeight - scaled.height) / 2,
+        width: scaled.width,
+        height: scaled.height,
+      });
+    }
+    y = boxTop - sigBoxHeight - 22;
+  }
+
+  await labeledSignature('Operative', operativeName, operativeSignatureImage);
+  await labeledSignature('Manager', managerName, managerSignatureImage);
 
   return Buffer.from(await pdfDoc.save());
 }

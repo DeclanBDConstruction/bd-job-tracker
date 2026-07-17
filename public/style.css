@@ -1950,6 +1950,42 @@ button:disabled {
   font-family: inherit;
 }
 
+.signature-field {
+  margin-bottom: 14px;
+}
+
+.signature-field-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.signature-field-label .hint {
+  font-size: 12px;
+  font-weight: normal;
+  font-style: italic;
+}
+
+.signature-pad {
+  display: block;
+  width: 100%;
+  max-width: 495px;
+  height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.signature-clear-btn {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
 .diary-add-form textarea {
   width: 100%;
   resize: vertical;

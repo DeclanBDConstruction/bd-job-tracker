@@ -71,7 +71,10 @@ async function validateDocumentParams(req, res, next) {
   }
 }
 
-app.use(express.json());
+// Default 100kb is tight for a request carrying two base64 signature-pad PNGs (see the
+// Permit to Work route) - other routes already accept much larger multipart uploads via
+// multer, so this is a proportionate bump, not a new risk.
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function handle(fn) {
@@ -358,7 +361,17 @@ app.get('/api/jobs/:id/documents/:category/:docId/file', validateDocumentParams,
     .download(storagePath(req.params.id, req.params.category, doc.storedName));
   if (error) return res.status(404).json({ error: 'File not found in storage' });
   const buffer = Buffer.from(await data.arrayBuffer());
-  res.setHeader('Content-Disposition', `attachment; filename="${doc.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_')}"`);
+  const filename = doc.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
+  // Permits are generated PDFs meant to be reviewed on the spot (e.g. a surveyor checking
+  // one), not saved to disk first - inline + the real content type lets the browser render
+  // it straight away, same as clicking a PDF link anywhere else on the web. Every other
+  // document category keeps the old "always download" behaviour, unchanged.
+  if (req.params.category === 'permit') {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  } else {
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  }
   res.send(buffer);
 }));
 
@@ -493,20 +506,35 @@ app.post('/api/job-assignments/:id/photo', uploadDocument.single('file'), handle
 // own PDF viewer can't report back to the app when someone fills it in. Ownership-checked
 // the same way as the photo route above; not the generic /api/jobs/:id/documents/:category
 // route, same reasoning as that one.
+// A signature comes over the wire as a data URL from <canvas>.toDataURL('image/png') on
+// the client (see createSignaturePad in app.js) - strip the data: prefix and decode to the
+// raw PNG bytes pdf-lib's embedPng needs. Returns null for anything that isn't a plausible
+// PNG data URL, so a malformed/missing signature fails validation below rather than
+// crashing PDF generation.
+function decodePngDataUrl(dataUrl) {
+  const match = /^data:image\/png;base64,([a-zA-Z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  return match ? Buffer.from(match[1], 'base64') : null;
+}
+
 app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
   const assignment = await db.getJobAssignment(req.params.id);
   if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
   if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save a permit against your own assignment' });
 
-  const fields = ['siteName', 'jobNumber', 'description', 'date', 'operativeName', 'operativeSignature', 'managerName', 'managerSignature'];
+  const textFields = ['siteName', 'jobNumber', 'description', 'date', 'operativeName', 'managerName'];
   const FIELD_LABELS = {
     siteName: 'Site Name', jobNumber: 'Job Number', description: 'Description of Work', date: 'Date',
-    operativeName: 'Operative Name', operativeSignature: 'Operative Signature',
-    managerName: 'Manager Name', managerSignature: 'Manager Signature',
+    operativeName: 'Operative Name', managerName: 'Manager Name',
   };
-  const missing = fields.filter((f) => !String(req.body[f] || '').trim());
+  const missing = textFields.filter((f) => !String(req.body[f] || '').trim());
   if (missing.length) {
     throw new Error(`Fill in every field before saving: ${missing.map((f) => FIELD_LABELS[f]).join(', ')}`);
+  }
+
+  const operativeSignatureImage = decodePngDataUrl(req.body.operativeSignatureImage);
+  const managerSignatureImage = decodePngDataUrl(req.body.managerSignatureImage);
+  if (!operativeSignatureImage || !managerSignatureImage) {
+    throw new Error('Both the operative and manager need to sign before saving');
   }
 
   const pdfBuffer = await permitPdf.generatePermitPdf({
@@ -515,9 +543,9 @@ app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
     description: req.body.description,
     date: req.body.date,
     operativeName: req.body.operativeName,
-    operativeSignature: req.body.operativeSignature,
+    operativeSignatureImage,
     managerName: req.body.managerName,
-    managerSignature: req.body.managerSignature,
+    managerSignatureImage,
   });
   const storedName = makeStoredName('Permit to Work.pdf');
   const { error } = await supabase.storage

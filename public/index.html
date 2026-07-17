@@ -719,9 +719,17 @@
       <label>Description of Work<textarea id="permitDescription" rows="3" required></textarea></label>
       <label>Date<input type="date" id="permitDate" required></label>
       <label>Operative Name<input type="text" id="permitOperativeName" required></label>
-      <label>Operative Signature<input type="text" id="permitOperativeSignature" placeholder="Type your name to sign" required></label>
+      <div class="signature-field">
+        <span class="signature-field-label">Operative Signature <span class="hint">(sign with your finger/stylus)</span></span>
+        <canvas id="permitOperativeSignatureCanvas" class="signature-pad" width="495" height="120"></canvas>
+        <button type="button" class="link-btn signature-clear-btn" data-target="permitOperativeSignatureCanvas">Clear</button>
+      </div>
       <label>Manager Name<input type="text" id="permitManagerName" required></label>
-      <label>Manager Signature<input type="text" id="permitManagerSignature" placeholder="Manager types their name to sign" required></label>
+      <div class="signature-field">
+        <span class="signature-field-label">Manager Signature <span class="hint">(hand the device to the manager to sign)</span></span>
+        <canvas id="permitManagerSignatureCanvas" class="signature-pad" width="495" height="120"></canvas>
+        <button type="button" class="link-btn signature-clear-btn" data-target="permitManagerSignatureCanvas">Clear</button>
+      </div>
       <div class="modal-actions">
         <button type="button" id="permitFormCancelBtn">Cancel</button>
         <button type="submit" class="primary">Save Permit</button>
