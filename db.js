@@ -5,11 +5,12 @@ const { riskBand } = require('./riskAssessments');
 
 const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 'Cancelled'];
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'signoff', 'photos'];
-const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', signoff: 'Sign-off sheet', photos: 'Photos' };
-// Drawings aren't needed for every job (e.g. no design changes involved), so they're
-// still uploadable but don't block marking a job complete like the others do.
-const REQUIRED_DOCUMENT_CATEGORIES = DOCUMENT_CATEGORIES.filter((c) => c !== 'drawings');
+const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'signoff', 'photos', 'permit'];
+const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', signoff: 'Sign-off sheet', photos: 'Photos', permit: 'Permit to Work' };
+// Drawings aren't needed for every job (e.g. no design changes involved), and not every
+// job needs a Permit to Work either (that's an operative-assignment thing, not every job
+// has one), so neither blocks marking a job complete like rams/signoff/photos do.
+const REQUIRED_DOCUMENT_CATEGORIES = DOCUMENT_CATEGORIES.filter((c) => c !== 'drawings' && c !== 'permit');
 
 // Fixed 10-colour set for the calendar: chosen so every colour stays legible with white
 // text on it and any two are tell-apart-able (including colour-blind vision), verified with
@@ -126,7 +127,7 @@ function rowToJob(row, empNameById) {
     startDate: row.start_date || '',
     description: row.description || '',
     completedAt: row.completed_at || '',
-    documents: { rams: [], drawings: [], signoff: [], photos: [] },
+    documents: { rams: [], drawings: [], signoff: [], photos: [], permit: [] },
     variations: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -150,10 +151,10 @@ async function attachDocuments(jobs) {
   check(error);
   const byJob = {};
   for (const d of docs) {
-    if (!byJob[d.job_id]) byJob[d.job_id] = { rams: [], drawings: [], signoff: [], photos: [] };
+    if (!byJob[d.job_id]) byJob[d.job_id] = { rams: [], drawings: [], signoff: [], photos: [], permit: [] };
     byJob[d.job_id][d.category].push(rowToDocument(d));
   }
-  jobs.forEach((j) => { j.documents = byJob[j.id] || { rams: [], drawings: [], signoff: [], photos: [] }; });
+  jobs.forEach((j) => { j.documents = byJob[j.id] || { rams: [], drawings: [], signoff: [], photos: [], permit: [] }; });
   return jobs;
 }
 
@@ -280,7 +281,7 @@ async function deleteJob(id) {
 async function completeJob(id) {
   const { data: docs, error: docErr } = await supabase.from('job_documents').select('category').eq('job_id', id);
   check(docErr);
-  const counts = { rams: 0, drawings: 0, signoff: 0, photos: 0 };
+  const counts = { rams: 0, drawings: 0, signoff: 0, photos: 0, permit: 0 };
   docs.forEach((d) => { counts[d.category] += 1; });
   const missing = REQUIRED_DOCUMENT_CATEGORIES.filter((c) => counts[c] === 0);
   if (missing.length) {

@@ -589,6 +589,7 @@
       <button type="button" class="job-detail-tab" data-section="drawings">Drawings</button>
       <button type="button" class="job-detail-tab" data-section="signoff">Sign Off Sheets</button>
       <button type="button" class="job-detail-tab" data-section="photos">Photos</button>
+      <button type="button" class="job-detail-tab" data-section="permit">Permit to Work</button>
     </nav>
     <div class="job-detail-body">
       <div id="jobDetailSection-info" class="job-detail-section active"></div>
@@ -597,6 +598,7 @@
       <div id="jobDetailSection-drawings" class="job-detail-section"></div>
       <div id="jobDetailSection-signoff" class="job-detail-section"></div>
       <div id="jobDetailSection-photos" class="job-detail-section"></div>
+      <div id="jobDetailSection-permit" class="job-detail-section"></div>
     </div>
   </div>
 </div>
@@ -696,6 +698,8 @@
     </div>
     <dl class="detail-grid" id="assignmentDetailInfo"></dl>
     <div class="modal-actions">
+      <a href="#" id="assignmentPermitBtn" class="upload-btn" target="_blank" title="Opens a fillable Permit to Work PDF in a new tab">Permit to Work</a>
+      <label class="upload-btn">+ Upload Signed Permit<input type="file" id="assignmentPermitUploadInput" hidden accept="application/pdf"></label>
       <label class="upload-btn">+ Upload Photo<input type="file" id="assignmentPhotoInput" hidden accept="image/*"></label>
       <button type="button" id="assignmentCompleteBtn" class="primary">Mark as Done</button>
     </div>

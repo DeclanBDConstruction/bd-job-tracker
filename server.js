@@ -5,6 +5,7 @@ const path = require('path');
 const db = require('./db');
 const importer = require('./import');
 const riskAssessments = require('./riskAssessments');
+const permitPdf = require('./permitPdf');
 const { supabase, DOCUMENTS_BUCKET } = require('./supabaseClient');
 
 const app = express();
@@ -182,6 +183,8 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'GET', path: /^\/job-assignments\/mine$/ },
   { method: 'PUT', path: /^\/job-assignments\/[^/]+\/complete$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/photo$/ },
+  { method: 'GET', path: /^\/job-assignments\/[^/]+\/permit$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/permit$/ },
 ];
 
 app.use('/api', (req, res, next) => {
@@ -481,6 +484,49 @@ app.post('/api/job-assignments/:id/photo', uploadDocument.single('file'), handle
     size: req.file.size,
   });
   broadcast('jobs'); // so an admin/surveyor with the Job Detail Photos tab open sees it live
+  res.status(201).json(doc);
+}));
+
+// A fillable PDF (Site Name/Job Number/Description/Date pre-filled from the assignment,
+// Operative/Manager Name+Signature left blank to type into) - opened inline so it loads
+// straight in the browser's own PDF viewer, which supports filling text fields directly.
+// Ownership-checked the same way as the photo route above.
+app.get('/api/job-assignments/:id/permit', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only open the permit for your own assignment' });
+  const pdfBuffer = await permitPdf.generatePermitPdf({
+    siteName: assignment.jobLocation || assignment.jobClient,
+    jobNumber: assignment.jobReference,
+    description: assignment.task,
+    date: new Date().toISOString().slice(0, 10),
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename="Permit to Work.pdf"');
+  res.send(pdfBuffer);
+}));
+
+// Uploads the filled-in/signed copy back onto the job, in the 'permit' document category -
+// same narrow, ownership-checked pattern as the photo route above (not the generic
+// /api/jobs/:id/documents/:category route).
+app.post('/api/job-assignments/:id/permit', uploadDocument.single('file'), handle(async (req, res) => {
+  if (!req.file) throw new Error('No file uploaded');
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only upload a permit against your own assignment' });
+  const storedName = makeStoredName(req.file.originalname);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(storagePath(assignment.jobId, 'permit', storedName), req.file.buffer, {
+      contentType: req.file.mimetype || 'application/octet-stream',
+    });
+  if (error) throw new Error(error.message);
+  const doc = await db.addJobDocument(assignment.jobId, 'permit', {
+    originalName: req.file.originalname,
+    storedName,
+    size: req.file.size,
+  });
+  broadcast('jobs');
   res.status(201).json(doc);
 }));
 

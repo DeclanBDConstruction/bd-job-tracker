@@ -874,7 +874,7 @@ jobForm.addEventListener('submit', async (e) => {
 
 // ---------- Job Detail ----------
 
-const DOCUMENT_SECTIONS = ['rams', 'drawings', 'signoff', 'photos'];
+const DOCUMENT_SECTIONS = ['rams', 'drawings', 'signoff', 'photos', 'permit'];
 
 const jobDetailModal = document.getElementById('jobDetailModal');
 let currentDetailJobId = null;
@@ -2456,6 +2456,7 @@ function renderAssignmentDetail() {
     <div><dt>Status</dt><dd><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></dd></div>
   `;
   document.getElementById('assignmentCompleteBtn').textContent = a.completed ? 'Mark as Not Done' : 'Mark as Done';
+  document.getElementById('assignmentPermitBtn').href = `/api/job-assignments/${a.id}/permit`;
 }
 
 document.getElementById('assignmentDetailCloseBtn').addEventListener('click', () => {
@@ -2488,6 +2489,25 @@ document.getElementById('assignmentPhotoInput').addEventListener('change', async
       throw new Error(body.error || 'Upload failed');
     }
     alert('Photo uploaded.');
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    e.target.value = '';
+  }
+});
+
+document.getElementById('assignmentPermitUploadInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch(`/api/job-assignments/${currentAssignmentId}/permit`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Upload failed');
+    }
+    alert('Signed permit uploaded.');
   } catch (err) {
     alert(err.message);
   } finally {
