@@ -187,6 +187,10 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'PUT', path: /^\/job-assignments\/[^/]+\/complete$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/photo$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/permit$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/time\/clock-in$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/time\/arrived$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/time\/clock-out$/ },
+  { method: 'GET', path: /^\/job-assignments\/[^/]+\/time-logs$/ },
 ];
 
 app.use('/api', (req, res, next) => {
@@ -472,6 +476,49 @@ app.put('/api/job-assignments/:id/complete', handle(async (req, res) => {
   const assignment = await db.setJobAssignmentCompleted(req.params.id, !!req.body.completed, req.user);
   broadcast('jobAssignments');
   res.json(assignment);
+}));
+
+// Clock in/arrived/clock out - ownership-checked here (db.js's clockIn/markArrived/clockOut
+// trust the assignmentId they're given, same convention as addJobDocument etc), timestamps
+// are always server-stamped inside those functions, never taken from the request body.
+app.post('/api/job-assignments/:id/time/clock-in', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only clock in on your own assignment' });
+  const log = await db.clockIn(req.params.id);
+  broadcast('jobAssignments');
+  res.json(log);
+}));
+
+app.post('/api/job-assignments/:id/time/arrived', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only mark yourself arrived on your own assignment' });
+  const log = await db.markArrived(req.params.id);
+  broadcast('jobAssignments');
+  res.json(log);
+}));
+
+app.post('/api/job-assignments/:id/time/clock-out', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only clock out on your own assignment' });
+  const log = await db.clockOut(req.params.id);
+  broadcast('jobAssignments');
+  res.json(log);
+}));
+
+// Admin/surveyor get the same unrestricted view they already have over the rest of an
+// assignment; an operative can only ever see their own (they never reach this route for
+// someone else's assignment anyway - see OPERATIVE_ALLOWED_ROUTES - but the check stays
+// here too since admin/surveyor share this same route and aren't operatives).
+app.get('/api/job-assignments/:id/time-logs', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
+    return res.status(403).json({ error: 'You can only view time logs for your own assignment' });
+  }
+  res.json(await db.listTimeLogs(req.params.id));
 }));
 
 // Narrow, purpose-built upload: hardcoded to the 'photos' category, and verified against

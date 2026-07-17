@@ -167,9 +167,10 @@ async function handleLiveJobAssignmentsChange() {
     state.myAssignments = await api('/api/job-assignments/mine');
     renderCalendar();
     renderHomeDashboard();
-    if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) renderAssignmentDetail();
+    if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) await refreshAssignmentTimeLog();
   } else if (activeTab() === 'jobassignments') {
     loadJobAssignments();
+    if (currentTimeLogAssignmentId && !document.getElementById('timeLogModal').hidden) refreshTimeLogModal();
   }
 }
 
@@ -1558,6 +1559,7 @@ function assignmentDisplayRow(a) {
       <td><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></td>
       <td class="row-actions">
         <button type="button" class="ja-photos-btn" data-job="${a.jobId}">View Photos</button>
+        <button type="button" class="ja-timelog-btn" data-id="${a.id}">Time Log</button>
         ${isAdmin() ? `<button type="button" class="ja-edit-btn">Edit</button><button type="button" class="danger ja-delete-btn">Delete</button>` : ''}
       </td>
     </tr>`;
@@ -1592,6 +1594,9 @@ function renderJobAssignments() {
 
   tbody.querySelectorAll('.ja-photos-btn').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'photos'));
+  });
+  tbody.querySelectorAll('.ja-timelog-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openTimeLogModal(btn.dataset.id));
   });
   tbody.querySelectorAll('.ja-edit-btn').forEach((btn) => {
     btn.addEventListener('click', () => { editingAssignmentId = btn.closest('tr').dataset.id; renderJobAssignments(); });
@@ -1638,6 +1643,50 @@ async function loadJobAssignments() {
   }
   renderJobAssignments();
 }
+
+// ---------- Time Log viewer (admin/surveyor, read-only) ----------
+
+let currentTimeLogAssignmentId = null;
+
+function timeLogTimeOf(iso) {
+  return iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—';
+}
+
+function openTimeLogModal(id) {
+  currentTimeLogAssignmentId = id;
+  const a = state.jobAssignments.find((x) => x.id === id);
+  document.getElementById('timeLogModalTitle').textContent = a
+    ? `Time Log — ${a.userName} — ${a.jobReference || a.jobClient}${a.jobLocation ? ' — ' + a.jobLocation : ''}`
+    : 'Time Log';
+  document.getElementById('timeLogModal').hidden = false;
+  refreshTimeLogModal();
+}
+
+async function refreshTimeLogModal() {
+  const tbody = document.querySelector('#timeLogTable tbody');
+  try {
+    const logs = await api(`/api/job-assignments/${currentTimeLogAssignmentId}/time-logs`);
+    document.getElementById('timeLogEmptyState').hidden = !!logs.length;
+    tbody.innerHTML = logs.map((l) => `
+      <tr>
+        <td>${l.logDate}</td>
+        <td>${timeLogTimeOf(l.clockInAt)}</td>
+        <td>${timeLogTimeOf(l.arrivedAt)}</td>
+        <td>${timeLogTimeOf(l.completedAt)}</td>
+        <td>${timeLogTimeOf(l.clockOutAt)}</td>
+        <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    tbody.innerHTML = '';
+    document.getElementById('timeLogEmptyState').hidden = false;
+    document.getElementById('timeLogEmptyState').textContent = err.message;
+  }
+}
+
+document.getElementById('timeLogModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('timeLogModal').hidden = true;
+});
 
 document.getElementById('addAssignmentBtn').addEventListener('click', async () => {
   const jobSel = document.getElementById('newAssignmentJob');
@@ -2439,10 +2488,15 @@ function findMyAssignment(id) {
   return state.myAssignments.find((a) => a.id === id);
 }
 
-function openAssignmentDetail(id) {
+let currentAssignmentTimeLog = null;
+
+async function openAssignmentDetail(id) {
   currentAssignmentId = id;
+  currentAssignmentTimeLog = null; // avoid briefly showing the previously-open assignment's clock state
   renderAssignmentDetail();
+  renderAssignmentTimeLog();
   document.getElementById('assignmentDetailModal').hidden = false;
+  await refreshAssignmentTimeLog();
 }
 
 function renderAssignmentDetail() {
@@ -2455,7 +2509,80 @@ function renderAssignmentDetail() {
     <div><dt>Duration</dt><dd>${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</dd></div>
     <div><dt>Status</dt><dd><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></dd></div>
   `;
-  document.getElementById('assignmentCompleteBtn').textContent = a.completed ? 'Mark as Not Done' : 'Mark as Done';
+  const completeBtn = document.getElementById('assignmentCompleteBtn');
+  completeBtn.textContent = a.completed ? 'Mark as Not Done' : 'Mark as Done';
+  // Un-completing is always allowed (no time-log dependency); completing requires today's
+  // arrival to already be logged, since that's what makes the on-site duration meaningful -
+  // see setJobAssignmentCompleted in db.js, which enforces this server-side regardless.
+  const canComplete = a.completed || !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+  completeBtn.disabled = !canComplete;
+  completeBtn.title = canComplete ? '' : 'Clock in and mark yourself as arrived first';
+}
+
+function timeOfDay(iso) {
+  return iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
+}
+
+function renderAssignmentTimeLog() {
+  const log = currentAssignmentTimeLog;
+  const box = document.getElementById('assignmentTimeLog');
+  const clockedIn = log && log.clockInAt;
+  const arrived = log && log.arrivedAt;
+  const clockedOut = log && log.clockOutAt;
+
+  box.innerHTML = `
+    <h3>Today's Time Log</h3>
+    <div class="time-log-row">
+      <div class="time-log-step">
+        <span class="time-log-label">Clock In</span>
+        ${clockedIn
+          ? `<span class="time-log-value">${timeOfDay(log.clockInAt)}</span>`
+          : `<button type="button" id="assignmentClockInBtn">Clock In</button>`}
+      </div>
+      <div class="time-log-step">
+        <span class="time-log-label">Arrived</span>
+        ${arrived
+          ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>`
+          : `<button type="button" id="assignmentArrivedBtn" ${clockedIn ? '' : 'disabled'} title="${clockedIn ? '' : 'Clock in first'}">Mark Arrived</button>`}
+      </div>
+      <div class="time-log-step">
+        <span class="time-log-label">Clock Out</span>
+        ${clockedOut
+          ? `<span class="time-log-value">${timeOfDay(log.clockOutAt)}</span>`
+          : `<button type="button" id="assignmentClockOutBtn" ${clockedIn ? '' : 'disabled'} title="${clockedIn ? '' : 'Clock in first'}">Clock Out</button>`}
+      </div>
+    </div>
+    ${log && log.onSiteMinutes != null
+      ? `<p class="time-log-duration">On site for ${Math.floor(log.onSiteMinutes / 60)}h ${log.onSiteMinutes % 60}m</p>`
+      : ''}
+  `;
+
+  const clockInBtn = document.getElementById('assignmentClockInBtn');
+  if (clockInBtn) clockInBtn.addEventListener('click', () => runTimeLogAction('clock-in'));
+  const arrivedBtn = document.getElementById('assignmentArrivedBtn');
+  if (arrivedBtn) arrivedBtn.addEventListener('click', () => runTimeLogAction('arrived'));
+  const clockOutBtn = document.getElementById('assignmentClockOutBtn');
+  if (clockOutBtn) clockOutBtn.addEventListener('click', () => runTimeLogAction('clock-out'));
+}
+
+async function runTimeLogAction(action) {
+  try {
+    await api(`/api/job-assignments/${currentAssignmentId}/time/${action}`, { method: 'POST' });
+    await refreshAssignmentTimeLog();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function refreshAssignmentTimeLog() {
+  try {
+    const logs = await api(`/api/job-assignments/${currentAssignmentId}/time-logs`);
+    currentAssignmentTimeLog = logs.find((l) => l.logDate === todayDateStr()) || null;
+  } catch (err) {
+    currentAssignmentTimeLog = null;
+  }
+  renderAssignmentTimeLog();
+  renderAssignmentDetail();
 }
 
 document.getElementById('assignmentDetailCloseBtn').addEventListener('click', () => {
@@ -2468,7 +2595,7 @@ document.getElementById('assignmentCompleteBtn').addEventListener('click', async
   try {
     await api(`/api/job-assignments/${a.id}/complete`, { method: 'PUT', body: JSON.stringify({ completed: !a.completed }) });
     state.myAssignments = await api('/api/job-assignments/mine');
-    renderAssignmentDetail();
+    await refreshAssignmentTimeLog();
     renderCalendar();
     renderHomeDashboard();
   } catch (err) {

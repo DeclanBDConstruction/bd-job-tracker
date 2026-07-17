@@ -529,11 +529,117 @@ async function setJobAssignmentCompleted(id, completed, user) {
   check(findErr);
   if (!existing) throw new Error('Assignment not found');
   if (existing.user_id !== user.id) throw new Error('You can only update your own assignment');
+
+  // Completing requires today's time log to already show they arrived - that's what makes
+  // the "how long they were there" figure (arrivedAt -> completedAt) meaningful. Un-marking
+  // (completed: false) has no time-log side effect - it's a status flag, the time log stays
+  // as a historical record of what actually happened that day.
+  if (completed) {
+    const log = await getTodayTimeLog(id);
+    if (!log || !log.arrivedAt) throw new Error('Clock in and mark yourself as arrived before completing the job');
+    if (!log.completedAt) {
+      const now = new Date().toISOString();
+      const { error: logErr } = await supabase.from('assignment_time_logs')
+        .update({ completed_at: now, updated_at: now }).eq('id', log.id);
+      check(logErr);
+    }
+  }
+
   const { error } = await supabase.from('job_assignments')
     .update({ completed, completed_at: completed ? new Date().toISOString() : null, updated_at: new Date().toISOString() })
     .eq('id', id);
   check(error);
   return getJobAssignment(id);
+}
+
+// ---------- Assignment Time Logs ----------
+// One row per assignment per calendar day worked - see the schema comment in
+// scripts/supabase-schema.sql for the full reasoning. All four timestamps are always
+// server-stamped (new Date().toISOString()) at the moment the operative taps the relevant
+// button - never client-supplied - so these can't be backdated or edited after the fact.
+// Ownership checks (is this the assignment's own operative calling?) happen in server.js,
+// same convention as the photo/permit routes - these functions just trust the assignmentId
+// they're given.
+
+function timeLogDateStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function rowToTimeLog(row) {
+  return {
+    id: row.id,
+    assignmentId: row.assignment_id,
+    logDate: row.log_date,
+    clockInAt: row.clock_in_at,
+    arrivedAt: row.arrived_at,
+    completedAt: row.completed_at,
+    clockOutAt: row.clock_out_at,
+    // Minutes actually on site, computed at read time rather than stored - only present
+    // once both ends of the window exist.
+    onSiteMinutes: (row.arrived_at && row.completed_at)
+      ? Math.round((new Date(row.completed_at) - new Date(row.arrived_at)) / 60000)
+      : null,
+  };
+}
+
+async function getTodayTimeLog(assignmentId) {
+  const { data, error } = await supabase.from('assignment_time_logs').select('*')
+    .eq('assignment_id', assignmentId).eq('log_date', timeLogDateStr()).maybeSingle();
+  check(error);
+  return data ? rowToTimeLog(data) : null;
+}
+
+// All the daily logs for an assignment, most recent first - used for the admin/surveyor
+// Time Log view and, for a multi-day job, to show the operative their own history too.
+async function listTimeLogs(assignmentId) {
+  const { data, error } = await supabase.from('assignment_time_logs').select('*')
+    .eq('assignment_id', assignmentId).order('log_date', { ascending: false });
+  check(error);
+  return data.map(rowToTimeLog);
+}
+
+async function clockIn(assignmentId) {
+  const { data: existing, error: findErr } = await supabase.from('assignment_time_logs').select('*')
+    .eq('assignment_id', assignmentId).eq('log_date', timeLogDateStr()).maybeSingle();
+  check(findErr);
+  if (existing && existing.clock_in_at) throw new Error('Already clocked in today');
+  const now = new Date().toISOString();
+  if (existing) {
+    const { error } = await supabase.from('assignment_time_logs')
+      .update({ clock_in_at: now, updated_at: now }).eq('id', existing.id);
+    check(error);
+  } else {
+    const { error } = await supabase.from('assignment_time_logs').insert({
+      id: genId(), assignment_id: assignmentId, log_date: timeLogDateStr(),
+      clock_in_at: now, created_at: now, updated_at: now,
+    });
+    check(error);
+  }
+  return getTodayTimeLog(assignmentId);
+}
+
+async function markArrived(assignmentId) {
+  const log = await getTodayTimeLog(assignmentId);
+  if (!log || !log.clockInAt) throw new Error('Clock in before marking yourself as arrived');
+  if (log.arrivedAt) throw new Error('Already marked as arrived today');
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('assignment_time_logs')
+    .update({ arrived_at: now, updated_at: now }).eq('id', log.id);
+  check(error);
+  return getTodayTimeLog(assignmentId);
+}
+
+// Deliberately doesn't require arrivedAt - if they get called off before reaching site,
+// they should still be able to clock out for the day rather than being stuck.
+async function clockOut(assignmentId) {
+  const log = await getTodayTimeLog(assignmentId);
+  if (!log || !log.clockInAt) throw new Error('Clock in before clocking out');
+  if (log.clockOutAt) throw new Error('Already clocked out today');
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('assignment_time_logs')
+    .update({ clock_out_at: now, updated_at: now }).eq('id', log.id);
+  check(error);
+  return getTodayTimeLog(assignmentId);
 }
 
 // ---------- Saved Risk Assessments (library) ----------
@@ -1607,6 +1713,11 @@ module.exports = {
   updateJobAssignment,
   deleteJobAssignment,
   setJobAssignmentCompleted,
+  getTodayTimeLog,
+  listTimeLogs,
+  clockIn,
+  markArrived,
+  clockOut,
   listSavedRiskAssessments,
   getSavedRiskAssessment,
   addSavedRiskAssessment,

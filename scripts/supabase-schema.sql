@@ -112,6 +112,28 @@ create table if not exists job_assignments (
   updated_at timestamptz not null default now()
 );
 
+-- One row per assignment per calendar day actually worked - a job spanning several days
+-- gets a fresh row each day (clock_in_at/arrived_at/clock_out_at), so multi-day jobs keep a
+-- day-by-day record rather than one blurred-together total. completed_at is only ever set
+-- on whichever day's row the operative actually marks the assignment done on (see
+-- setJobAssignmentCompleted in db.js, which requires that day's arrived_at to already be
+-- set first) - "how long they were there" is computed as completed_at minus arrived_at, at
+-- read time, not stored. All four timestamps are server-stamped at the moment the operative
+-- taps the button (never client-supplied/editable), so the record can't be backdated.
+create table if not exists assignment_time_logs (
+  id uuid primary key,
+  assignment_id uuid not null references job_assignments(id) on delete cascade,
+  log_date text not null,
+  clock_in_at timestamptz,
+  arrived_at timestamptz,
+  completed_at timestamptz,
+  clock_out_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists assignment_time_logs_assignment_date_idx on assignment_time_logs (assignment_id, log_date);
+
 create table if not exists calendar_events (
   id uuid primary key,
   user_id uuid references users(id) on delete set null,
@@ -321,6 +343,7 @@ alter table jobs enable row level security;
 alter table job_variations enable row level security;
 alter table job_documents enable row level security;
 alter table job_assignments enable row level security;
+alter table assignment_time_logs enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;

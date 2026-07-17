@@ -697,6 +697,7 @@
       <button type="button" id="assignmentDetailCloseBtn" class="link-btn">Close</button>
     </div>
     <dl class="detail-grid" id="assignmentDetailInfo"></dl>
+    <div class="time-log-box" id="assignmentTimeLog"></div>
     <div class="modal-actions">
       <button type="button" id="assignmentPermitBtn" class="upload-btn">Permit to Work</button>
       <label class="upload-btn">+ Upload Photo<input type="file" id="assignmentPhotoInput" hidden accept="image/*"></label>
@@ -735,6 +736,21 @@
         <button type="submit" class="primary">Save Permit</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Time Log Modal (admin/surveyor, read-only) -->
+<div id="timeLogModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2 id="timeLogModalTitle">Time Log</h2>
+      <button type="button" id="timeLogModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <table class="data-table" id="timeLogTable">
+      <thead><tr><th>Date</th><th>Clock In</th><th>Arrived</th><th>Completed</th><th>Clock Out</th><th>On Site</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty-state" id="timeLogEmptyState" hidden>No time logged for this assignment yet.</p>
   </div>
 </div>
 
