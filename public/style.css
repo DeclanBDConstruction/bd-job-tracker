@@ -1483,6 +1483,23 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Job-assignment calendar entries get a fixed, distinct look (not the per-person colour
+   used for ordinary entries) so they read as "this is work assigned to you", not a diary
+   item - plus no delete button is ever rendered for these (see renderDayEvents in app.js). */
+.cal-chip-assignment {
+  background: var(--blue-dark);
+  border: 1px dashed rgba(255, 255, 255, 0.6);
+}
+
+.cal-swatch-assignment {
+  background: var(--blue-dark);
+  border: 1px dashed rgba(255, 255, 255, 0.8);
+}
+
+.cal-day-event-assignment {
+  border-left: 3px solid var(--blue-dark);
+}
+
 .cal-day-events {
   list-style: none;
   margin: 0 0 14px;

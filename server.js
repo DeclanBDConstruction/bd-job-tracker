@@ -151,23 +151,16 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// Installation/manufacturing operatives don't have any office features yet, so block
-// every route below (jobs, quoting, calendar, everything) rather than gating each one
-// individually - the frontend shows them a placeholder instead of the normal app. Extend
-// this as operative-specific screens get built, instead of loosening it wholesale.
-app.use('/api', (req, res, next) => {
-  if (db.OPERATIVE_ROLES.includes(req.user.role)) {
-    return res.status(403).json({ error: 'Not available for your role yet' });
-  }
-  next();
-});
-
-// Staff only get Home, My Calendar and My Diary - the frontend hides everything else
-// (see the staff checks in app.js), but this is the real enforcement, since a staff
-// account could otherwise still call any other route directly.
+// Staff and operatives each get a narrow allowlist instead of the full app - the frontend
+// hides everything else too (see the role checks in app.js), but this is the real
+// enforcement, since either account could otherwise still call any other route directly.
 // Paths here are relative to the '/api' mount point (Express strips it from req.path
 // inside an app.use('/api', ...) middleware), so these do NOT repeat the '/api' prefix.
-const STAFF_ALLOWED_ROUTES = [
+// Both roles share the calendar/diary routes; operatives additionally get their own
+// job-assignment routes, self-scoped in db.js (see listMyJobAssignments/
+// setJobAssignmentCompleted) rather than gated here. Admin and surveyor pass through
+// untouched by either check below.
+const CALENDAR_DIARY_ROUTES = [
   { method: 'GET', path: /^\/events$/ },
   { method: 'GET', path: /^\/calendar$/ },
   { method: 'POST', path: /^\/calendar$/ },
@@ -182,8 +175,20 @@ const STAFF_ALLOWED_ROUTES = [
   { method: 'DELETE', path: /^\/diary\/[^/]+$/ },
 ];
 
+const STAFF_ALLOWED_ROUTES = CALENDAR_DIARY_ROUTES;
+
+const OPERATIVE_ALLOWED_ROUTES = [
+  ...CALENDAR_DIARY_ROUTES,
+  { method: 'GET', path: /^\/job-assignments\/mine$/ },
+  { method: 'PUT', path: /^\/job-assignments\/[^/]+\/complete$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/photo$/ },
+];
+
 app.use('/api', (req, res, next) => {
   if (req.user.role === 'staff' && !STAFF_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
+    return res.status(403).json({ error: 'Not available for your role' });
+  }
+  if (db.OPERATIVE_ROLES.includes(req.user.role) && !OPERATIVE_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
     return res.status(403).json({ error: 'Not available for your role' });
   }
   next();
@@ -411,6 +416,72 @@ app.get('/api/jobs/:id/documents-zip', handle(async (req, res) => {
   }
 
   await archive.finalize();
+}));
+
+// ---------- Job Assignments ----------
+// Admin creates/edits/deletes who's assigned to physically do a job; surveyor gets the
+// same list read-only (nothing here stops a surveyor calling these directly - same trust
+// level as already having unrestricted access to any job's Job Detail modal). Staff never
+// reach this (not on their allowlist); operatives only reach the three self-scoped routes
+// at the bottom (see OPERATIVE_ALLOWED_ROUTES above) - ownership is re-checked in db.js too.
+
+app.get('/api/job-assignments', handle(async (req, res) => {
+  res.json(await db.listJobAssignments());
+}));
+
+app.post('/api/job-assignments', requireAdmin, handle(async (req, res) => {
+  const assignment = await db.createJobAssignment(req.body, req.user);
+  broadcast('jobAssignments');
+  res.status(201).json(assignment);
+}));
+
+app.put('/api/job-assignments/:id', requireAdmin, handle(async (req, res) => {
+  const assignment = await db.updateJobAssignment(req.params.id, req.body);
+  broadcast('jobAssignments');
+  res.json(assignment);
+}));
+
+app.delete('/api/job-assignments/:id', requireAdmin, handle(async (req, res) => {
+  await db.deleteJobAssignment(req.params.id);
+  broadcast('jobAssignments');
+  res.status(204).end();
+}));
+
+// ---- Operative-scoped (see OPERATIVE_ALLOWED_ROUTES) ----
+
+app.get('/api/job-assignments/mine', handle(async (req, res) => {
+  res.json(await db.listMyJobAssignments(req.user));
+}));
+
+app.put('/api/job-assignments/:id/complete', handle(async (req, res) => {
+  const assignment = await db.setJobAssignmentCompleted(req.params.id, !!req.body.completed, req.user);
+  broadcast('jobAssignments');
+  res.json(assignment);
+}));
+
+// Narrow, purpose-built upload: hardcoded to the 'photos' category, and verified against
+// the assignment's own job_id + user_id = req.user.id server-side - deliberately NOT the
+// generic /api/jobs/:id/documents/:category route (that one is unrestricted-by-design for
+// office roles across every category on any job, which is too broad to hand to operatives).
+app.post('/api/job-assignments/:id/photo', uploadDocument.single('file'), handle(async (req, res) => {
+  if (!req.file) throw new Error('No file uploaded');
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only upload photos against your own assignment' });
+  const storedName = makeStoredName(req.file.originalname);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(storagePath(assignment.jobId, 'photos', storedName), req.file.buffer, {
+      contentType: req.file.mimetype || 'application/octet-stream',
+    });
+  if (error) throw new Error(error.message);
+  const doc = await db.addJobDocument(assignment.jobId, 'photos', {
+    originalName: req.file.originalname,
+    storedName,
+    size: req.file.size,
+  });
+  broadcast('jobs'); // so an admin/surveyor with the Job Detail Photos tab open sees it live
+  res.status(201).json(doc);
 }));
 
 // ---------- Risk Assessments ----------

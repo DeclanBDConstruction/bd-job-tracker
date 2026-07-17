@@ -88,6 +88,30 @@ create table if not exists job_documents (
   uploaded_at timestamptz not null default now()
 );
 
+-- Who's physically doing the work on a job (installation/manufacturing operatives) - as
+-- opposed to jobs.employee_id, which is who commercially WON the job (sales credit), a
+-- separate concept entirely. One row per operative per stint of work: which job, which
+-- operative, a task description, and a start date + duration in days (same shape as
+-- calendar_events - end_date computed the same way in db.js). Each operative marks their
+-- OWN assignment done independently - entirely separate from jobs.completed_at/the office
+-- "Mark Complete" flow (db.completeJob), which stays admin/office-only. Photos an operative
+-- uploads land in the ordinary job_documents 'photos' category, not a separate table, so
+-- they show up in the normal Job Detail Photos tab unchanged.
+create table if not exists job_assignments (
+  id uuid primary key,
+  job_id uuid not null references jobs(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  assigned_by uuid references users(id) on delete set null,
+  task text not null,
+  start_date text not null,
+  duration_days numeric not null default 1,
+  end_date text not null,
+  completed boolean not null default false,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists calendar_events (
   id uuid primary key,
   user_id uuid references users(id) on delete set null,
@@ -276,6 +300,8 @@ create index if not exists signage_job_id_idx on signage (job_id);
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_variations_job_id_idx on job_variations (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
+create index if not exists job_assignments_job_id_idx on job_assignments (job_id);
+create index if not exists job_assignments_user_id_idx on job_assignments (user_id);
 create index if not exists sessions_expires_at_idx on sessions (expires_at);
 create index if not exists calendar_events_date_idx on calendar_events (date);
 create index if not exists price_list_items_kind_idx on price_list_items (kind);
@@ -294,6 +320,7 @@ alter table sessions enable row level security;
 alter table jobs enable row level security;
 alter table job_variations enable row level security;
 alter table job_documents enable row level security;
+alter table job_assignments enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;

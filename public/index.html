@@ -102,6 +102,7 @@
         <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
         <button class="tab-btn" data-tab="signage">Signage Tracker</button>
         <button class="tab-btn" data-tab="pricelist">Price List</button>
+        <button class="tab-btn" data-tab="jobassignments">Job Assignments</button>
       </div>
     </div>
 
@@ -127,10 +128,6 @@
   </nav>
 </header>
 
-<div id="operativePlaceholder" class="operative-placeholder" hidden>
-  <h2>Welcome, <span class="operative-name"></span></h2>
-  <p>Nothing's been set up for your role yet — check back soon.</p>
-</div>
 
 <main>
 
@@ -392,6 +389,27 @@
       </div>
       <p class="empty-state" id="hiresOffHiredEmptyState" hidden>No off-hired equipment yet.</p>
     </div>
+  </section>
+
+  <!-- JOB ASSIGNMENTS TAB -->
+  <section id="tab-jobassignments" class="tab-panel">
+    <div class="panel-header">
+      <h2>Job Assignments</h2>
+    </div>
+    <p class="hint">Who's assigned to physically carry out each job (installation/manufacturing operatives) — separate from who won the job. Operatives see their own assignments on My Calendar and Home, and upload photos / mark their own assignment done from there.</p>
+    <div class="import-upload" id="jobAssignmentsAddRow" hidden>
+      <select id="newAssignmentJob"><option value="">Job…</option></select>
+      <select id="newAssignmentUser"><option value="">Operative…</option></select>
+      <input type="text" id="newAssignmentTask" placeholder="Task (e.g. Install signage)">
+      <input type="date" id="newAssignmentStartDate">
+      <input type="number" id="newAssignmentDuration" placeholder="Days" min="1" step="1" value="1">
+      <button type="button" id="addAssignmentBtn" class="primary">+ Assign</button>
+    </div>
+    <table class="data-table" id="jobAssignmentsTable">
+      <thead><tr><th>Job</th><th>Operative</th><th>Task</th><th>Start</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty-state" id="jobAssignmentsEmptyState" hidden>No job assignments yet.</p>
   </section>
 
   <!-- SIGNAGE TRACKER TAB -->
@@ -666,6 +684,21 @@
         <button type="submit" class="primary">Save</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Assignment Detail Modal (operative self-service) -->
+<div id="assignmentDetailModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2 id="assignmentDetailTitle">Assignment</h2>
+      <button type="button" id="assignmentDetailCloseBtn" class="link-btn">Close</button>
+    </div>
+    <dl class="detail-grid" id="assignmentDetailInfo"></dl>
+    <div class="modal-actions">
+      <label class="upload-btn">+ Upload Photo<input type="file" id="assignmentPhotoInput" hidden accept="image/*"></label>
+      <button type="button" id="assignmentCompleteBtn" class="primary">Mark as Done</button>
+    </div>
   </div>
 </div>
 

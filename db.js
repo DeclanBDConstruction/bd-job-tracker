@@ -375,6 +375,166 @@ async function deleteJobDocument(jobId, category, docId) {
   return doc;
 }
 
+// ---------- Job Assignments ----------
+// Who's physically doing the work on a job (installation/manufacturing operatives) - see
+// the schema comment in scripts/supabase-schema.sql. Admin creates/edits/deletes; surveyor
+// gets the same list read-only; each operative only ever sees their own (listMyJobAssignments).
+// Storage (photo uploads) is handled in server.js, same convention as job documents - this
+// file only ever touches Postgres rows.
+
+function rowToJobAssignment(row) {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    userId: row.user_id,
+    assignedBy: row.assigned_by,
+    task: row.task,
+    startDate: row.start_date,
+    durationDays: Number(row.duration_days) || 1,
+    endDate: row.end_date,
+    completed: row.completed,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Joins job/operative names onto each assignment via separate queries + Promise.all, the
+// same app-code-join pattern as attachDocuments/attachVariations above (not a SQL join).
+async function attachJobAssignmentContext(assignments) {
+  if (!assignments.length) return assignments;
+  const jobIds = [...new Set(assignments.map((a) => a.jobId))];
+  const userIds = [...new Set(assignments.map((a) => a.userId))];
+  const [{ data: jobRows, error: jobErr }, { data: userRows, error: userErr }] = await Promise.all([
+    supabase.from('jobs').select('id, job_reference, client, location').in('id', jobIds),
+    supabase.from('users').select('id, name').in('id', userIds),
+  ]);
+  check(jobErr);
+  check(userErr);
+  const jobById = Object.fromEntries(jobRows.map((j) => [j.id, j]));
+  const userById = Object.fromEntries(userRows.map((u) => [u.id, u]));
+  assignments.forEach((a) => {
+    const job = jobById[a.jobId] || {};
+    const user = userById[a.userId] || {};
+    a.jobReference = job.job_reference || '';
+    a.jobClient = job.client || '';
+    a.jobLocation = job.location || '';
+    a.userName = user.name || '';
+  });
+  return assignments;
+}
+
+async function listJobAssignments() {
+  const { data, error } = await supabase.from('job_assignments').select('*')
+    .order('start_date', { ascending: false }).order('created_at', { ascending: false });
+  check(error);
+  const rows = data.map(rowToJobAssignment);
+  await attachJobAssignmentContext(rows);
+  return rows;
+}
+
+async function listMyJobAssignments(user) {
+  const { data, error } = await supabase.from('job_assignments').select('*')
+    .eq('user_id', user.id).order('start_date');
+  check(error);
+  const rows = data.map(rowToJobAssignment);
+  await attachJobAssignmentContext(rows);
+  return rows;
+}
+
+async function getJobAssignment(id) {
+  const { data, error } = await supabase.from('job_assignments').select('*').eq('id', id).maybeSingle();
+  check(error);
+  if (!data) return null;
+  const [row] = await attachJobAssignmentContext([rowToJobAssignment(data)]);
+  return row;
+}
+
+function validateJobAssignmentInput(input) {
+  const errors = [];
+  if (!input.jobId) errors.push('Job is required');
+  if (!input.userId) errors.push('Operative is required');
+  if (!input.task || !input.task.trim()) errors.push('Task description is required');
+  if (!input.startDate || !DATE_RE.test(input.startDate)) errors.push('A valid start date is required');
+  const durationDays = Number(input.durationDays);
+  if (!durationDays || isNaN(durationDays) || durationDays <= 0) errors.push('Duration must be a positive number of days');
+  return errors;
+}
+
+async function assertOperative(userId) {
+  const { data: user, error } = await supabase.from('users').select('id, role').eq('id', userId).maybeSingle();
+  check(error);
+  if (!user || !OPERATIVE_ROLES.includes(user.role)) throw new Error('Chosen user is not an installation/manufacturing operative');
+}
+
+async function createJobAssignment(input, assignedByUser) {
+  const errors = validateJobAssignmentInput(input);
+  if (errors.length) throw new Error(errors.join('; '));
+  const { data: job, error: jobErr } = await supabase.from('jobs').select('id').eq('id', input.jobId).maybeSingle();
+  check(jobErr);
+  if (!job) throw new Error('Job not found');
+  await assertOperative(input.userId);
+  const durationDays = Math.max(1, Math.ceil(Number(input.durationDays)));
+  const row = {
+    id: genId(),
+    job_id: input.jobId,
+    user_id: input.userId,
+    assigned_by: assignedByUser ? assignedByUser.id : null,
+    task: input.task.trim(),
+    start_date: input.startDate,
+    duration_days: durationDays,
+    end_date: addDaysToDateString(input.startDate, durationDays - 1),
+    completed: false,
+    completed_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('job_assignments').insert(row).select().single();
+  check(error);
+  return getJobAssignment(data.id);
+}
+
+async function updateJobAssignment(id, input) {
+  const errors = validateJobAssignmentInput(input);
+  if (errors.length) throw new Error(errors.join('; '));
+  await assertOperative(input.userId);
+  const durationDays = Math.max(1, Math.ceil(Number(input.durationDays)));
+  const { data, error } = await supabase.from('job_assignments')
+    .update({
+      job_id: input.jobId,
+      user_id: input.userId,
+      task: input.task.trim(),
+      start_date: input.startDate,
+      duration_days: durationDays,
+      end_date: addDaysToDateString(input.startDate, durationDays - 1),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Assignment not found');
+  return getJobAssignment(id);
+}
+
+async function deleteJobAssignment(id) {
+  const { error } = await supabase.from('job_assignments').delete().eq('id', id);
+  check(error);
+}
+
+// Ownership-scoped, same trust boundary as diary entries: an operative can only ever mark
+// their OWN assignment done, never someone else's - no admin override (admins correct
+// mistakes by editing/deleting the assignment itself, same reasoning as diary entries).
+async function setJobAssignmentCompleted(id, completed, user) {
+  const { data: existing, error: findErr } = await supabase.from('job_assignments').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Assignment not found');
+  if (existing.user_id !== user.id) throw new Error('You can only update your own assignment');
+  const { error } = await supabase.from('job_assignments')
+    .update({ completed, completed_at: completed ? new Date().toISOString() : null, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  check(error);
+  return getJobAssignment(id);
+}
+
 // ---------- Saved Risk Assessments (library) ----------
 // Staff-uploaded risk assessments, kept separate from any one job so the same file can be
 // attached again next time that job (or a similar one) comes up. Metadata lives here; the
@@ -643,12 +803,13 @@ function rowToEvent(row) {
 }
 
 // Returns public entries plus this user's own private ones - never another user's private
-// entries, since those only ever belong on that person's own "My Calendar". Staff don't
-// get the shared team calendar at all (see the staff allowlist in server.js), so they
-// only ever get their own entries, public or private.
+// entries, since those only ever belong on that person's own "My Calendar". Staff and
+// operatives don't get the shared team calendar at all (see the allowlists in server.js),
+// so they only ever get their own entries, public or private.
 async function listCalendarEvents(user) {
   let query = supabase.from('calendar_events').select('*');
-  query = user.role === 'staff' ? query.eq('user_id', user.id) : query.or(`is_private.eq.false,user_id.eq.${user.id}`);
+  const ownOnly = user.role === 'staff' || OPERATIVE_ROLES.includes(user.role);
+  query = ownOnly ? query.eq('user_id', user.id) : query.or(`is_private.eq.false,user_id.eq.${user.id}`);
   const { data, error } = await query.order('date').order('created_at');
   check(error);
   return data.map(rowToEvent);
@@ -1438,6 +1599,13 @@ module.exports = {
   addJobDocument,
   getJobDocument,
   deleteJobDocument,
+  listJobAssignments,
+  listMyJobAssignments,
+  getJobAssignment,
+  createJobAssignment,
+  updateJobAssignment,
+  deleteJobAssignment,
+  setJobAssignmentCompleted,
   listSavedRiskAssessments,
   getSavedRiskAssessment,
   addSavedRiskAssessment,

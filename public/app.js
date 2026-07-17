@@ -14,6 +14,9 @@ const state = {
   hires: [],
   signage: [],
   diaryEntries: [],
+  jobAssignments: [],
+  myAssignments: [],
+  operativeUsers: [],
   currentUser: null,
 };
 
@@ -64,51 +67,29 @@ function showApp(user) {
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
   document.querySelector('.topbar h1 .brand-sub').classList.add('animate-in');
 
-  if (isOperative()) {
-    showOperativePlaceholder();
-    return;
-  }
-  hideOperativePlaceholder();
-
   document.getElementById('adminTabBtn').hidden = !isAdmin();
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
+  document.getElementById('jobAssignmentsAddRow').hidden = !isAdmin();
 
-  // Staff only get Home, My Calendar and My Diary - everything else (Jobs, Team,
-  // Operations, Reports, and the shared team Calendar) is hidden here for UI purposes,
-  // but the real enforcement is server-side (see the staff allowlist in server.js).
-  const staff = isStaff();
-  document.getElementById('jobsTabGroup').hidden = staff;
-  document.getElementById('teamTabGroup').hidden = staff;
-  document.getElementById('operationsTabGroup').hidden = staff;
-  document.getElementById('reportsTabGroup').hidden = staff;
-  document.getElementById('calendarTabBtn').hidden = staff;
-  document.getElementById('headerSearchWrap').hidden = staff;
+  // Staff and operatives both only get Home, My Calendar and My Diary - everything else
+  // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
+  // purposes, but the real enforcement is server-side (see the allowlists in server.js).
+  // The new "Job Assignments" tab lives inside operationsTabGroup, so hiding that whole
+  // group for staff/operatives hides it too - it's only ever visible to admin/surveyor.
+  const restricted = isStaff() || isOperative();
+  document.getElementById('jobsTabGroup').hidden = restricted;
+  document.getElementById('teamTabGroup').hidden = restricted;
+  document.getElementById('operationsTabGroup').hidden = restricted;
+  document.getElementById('reportsTabGroup').hidden = restricted;
+  document.getElementById('calendarTabBtn').hidden = restricted;
+  document.getElementById('headerSearchWrap').hidden = restricted;
 
-  if (staff) bootstrapStaff();
+  if (isStaff()) bootstrapStaff();
+  else if (isOperative()) bootstrapOperative();
   else bootstrap();
   connectLiveUpdates();
-}
-
-// Installation/manufacturing operatives have no office features yet, so they get a
-// placeholder instead of the normal tab bar/content - this only hides the UI, the real
-// enforcement is server-side (see the operative-lockout middleware in server.js), since
-// this same account could otherwise still call the API directly.
-function showOperativePlaceholder() {
-  document.querySelector('.tabs').hidden = true;
-  document.getElementById('headerSearchWrap').hidden = true;
-  document.querySelector('main').hidden = true;
-  const placeholder = document.getElementById('operativePlaceholder');
-  placeholder.querySelector('.operative-name').textContent = state.currentUser.name;
-  placeholder.hidden = false;
-}
-
-function hideOperativePlaceholder() {
-  document.querySelector('.tabs').hidden = false;
-  document.getElementById('headerSearchWrap').hidden = false;
-  document.querySelector('main').hidden = false;
-  document.getElementById('operativePlaceholder').hidden = true;
 }
 
 // ---------- Live updates ----------
@@ -128,9 +109,11 @@ function connectLiveUpdates() {
   liveEvents = new EventSource('/api/events');
   liveEvents.onmessage = (e) => {
     const { type } = JSON.parse(e.data);
-    // Staff only load calendar/diary/user-colour data (see bootstrapStaff), so ignore
-    // pings for everything else rather than firing requests the server will 403.
+    // Staff/operatives only load a narrow slice of data (see bootstrapStaff/
+    // bootstrapOperative), so ignore pings for everything else rather than firing
+    // requests the server will 403.
     if (isStaff() && !['calendar', 'diary', 'users'].includes(type)) return;
+    if (isOperative() && !['calendar', 'diary', 'users', 'jobAssignments'].includes(type)) return;
     if (type === 'jobs') handleLiveJobsChange();
     else if (type === 'employees') handleLiveEmployeesChange();
     else if (type === 'calendar') handleLiveCalendarChange();
@@ -141,6 +124,7 @@ function connectLiveUpdates() {
     else if (type === 'hires') handleLiveHiresChange();
     else if (type === 'signage') handleLiveSignageChange();
     else if (type === 'diary') handleLiveDiaryChange();
+    else if (type === 'jobAssignments') handleLiveJobAssignmentsChange();
   };
 }
 
@@ -176,6 +160,17 @@ async function handleLiveQuotesChange() {
 
 async function handleLiveDiaryChange() {
   if (activeTab() === 'diary') loadDiary();
+}
+
+async function handleLiveJobAssignmentsChange() {
+  if (isOperative()) {
+    state.myAssignments = await api('/api/job-assignments/mine');
+    renderCalendar();
+    renderHomeDashboard();
+    if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) renderAssignmentDetail();
+  } else if (activeTab() === 'jobassignments') {
+    loadJobAssignments();
+  }
 }
 
 async function handleLiveJobsChange() {
@@ -325,6 +320,7 @@ function goToTab(tab) {
   if (tab === 'admin') loadAdminUsers();
   if (tab === 'hire') loadHires();
   if (tab === 'quoting') loadQuotes();
+  if (tab === 'jobassignments') loadJobAssignments();
   if (tab === 'diary') {
     setDiaryViewDate(todayDateStr());
     loadDiary();
@@ -523,6 +519,32 @@ async function bootstrap() {
 // (see server.js), and calling them here would break Promise.all for the whole batch.
 async function bootstrapStaff() {
   state.calendarEvents = await api('/api/calendar');
+  renderCalendar();
+  renderHomeDashboard();
+
+  try {
+    const [calendarColors, userColors] = await Promise.all([api('/api/calendar-colors'), api('/api/users/colors')]);
+    state.calendarColors = calendarColors;
+    state.userColors = userColors;
+    renderCalendar();
+    renderColorPicker();
+  } catch (err) {
+    console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
+    const container = document.getElementById('calColorPicker');
+    if (container) container.innerHTML = `<span class="color-picker-error">Couldn't load colours: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// Operatives get Home, My Calendar and My Diary, plus their own job assignments (merged
+// into My Calendar and surfaced on Home) - a trimmed bootstrap like bootstrapStaff, since
+// everything else 403s for this role (see the operative allowlist in server.js).
+async function bootstrapOperative() {
+  const [calendarEvents, myAssignments] = await Promise.all([
+    api('/api/calendar'),
+    api('/api/job-assignments/mine'),
+  ]);
+  state.calendarEvents = calendarEvents;
+  state.myAssignments = myAssignments;
   renderCalendar();
   renderHomeDashboard();
 
@@ -1504,6 +1526,149 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
   }
 });
 
+// ---------- Job Assignments ----------
+// Admin: full CRUD. Surveyor: same list, read-only (no add form, no edit/delete buttons -
+// see jobAssignmentsAddRow's admin-only hidden toggle in showApp, mirrored by isAdmin()
+// checks below). Neither staff nor operatives ever see this tab (operationsTabGroup is
+// hidden for both - see showApp).
+
+let editingAssignmentId = null;
+
+function jobOptionsHtml(selectedId) {
+  return '<option value="">Job…</option>' + state.jobs
+    .filter((j) => !j.completedAt)
+    .map((j) => `<option value="${j.id}" ${selectedId === j.id ? 'selected' : ''}>${escapeHtml(j.jobReference || j.client)}${j.location ? ' — ' + escapeHtml(j.location) : ''}</option>`)
+    .join('');
+}
+
+function operativeOptionsHtml(selectedId) {
+  return '<option value="">Operative…</option>' + state.operativeUsers
+    .map((u) => `<option value="${u.id}" ${selectedId === u.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`)
+    .join('');
+}
+
+function assignmentDisplayRow(a) {
+  return `
+    <tr data-id="${a.id}">
+      <td>${escapeHtml(a.jobReference || a.jobClient)}${a.jobLocation ? ' — ' + escapeHtml(a.jobLocation) : ''}</td>
+      <td>${escapeHtml(a.userName)}</td>
+      <td>${escapeHtml(a.task)}</td>
+      <td>${a.startDate}</td>
+      <td>${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</td>
+      <td><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></td>
+      <td class="row-actions">
+        <button type="button" class="ja-photos-btn" data-job="${a.jobId}">View Photos</button>
+        ${isAdmin() ? `<button type="button" class="ja-edit-btn">Edit</button><button type="button" class="danger ja-delete-btn">Delete</button>` : ''}
+      </td>
+    </tr>`;
+}
+
+function assignmentEditRow(a) {
+  return `
+    <tr data-id="${a.id}">
+      <td><select class="ja-edit-job">${jobOptionsHtml(a.jobId)}</select></td>
+      <td><select class="ja-edit-user">${operativeOptionsHtml(a.userId)}</select></td>
+      <td><input type="text" class="ja-edit-task" value="${escapeHtml(a.task)}"></td>
+      <td><input type="date" class="ja-edit-start" value="${a.startDate}"></td>
+      <td><input type="number" class="ja-edit-duration" min="1" step="1" value="${a.durationDays}"></td>
+      <td>—</td>
+      <td class="row-actions">
+        <button type="button" class="primary ja-save-btn">Save</button>
+        <button type="button" class="ja-cancel-btn">Cancel</button>
+      </td>
+    </tr>`;
+}
+
+function renderJobAssignments() {
+  const tbody = document.querySelector('#jobAssignmentsTable tbody');
+  const list = [...state.jobAssignments].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  document.getElementById('jobAssignmentsEmptyState').hidden = !!list.length;
+  tbody.innerHTML = list.map((a) => (a.id === editingAssignmentId ? assignmentEditRow(a) : assignmentDisplayRow(a))).join('');
+
+  if (isAdmin()) {
+    document.getElementById('newAssignmentJob').innerHTML = jobOptionsHtml('');
+    document.getElementById('newAssignmentUser').innerHTML = operativeOptionsHtml('');
+  }
+
+  tbody.querySelectorAll('.ja-photos-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'photos'));
+  });
+  tbody.querySelectorAll('.ja-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingAssignmentId = btn.closest('tr').dataset.id; renderJobAssignments(); });
+  });
+  tbody.querySelectorAll('.ja-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingAssignmentId = null; renderJobAssignments(); });
+  });
+  tbody.querySelectorAll('.ja-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const body = {
+        jobId: tr.querySelector('.ja-edit-job').value,
+        userId: tr.querySelector('.ja-edit-user').value,
+        task: tr.querySelector('.ja-edit-task').value,
+        startDate: tr.querySelector('.ja-edit-start').value,
+        durationDays: tr.querySelector('.ja-edit-duration').value,
+      };
+      try {
+        await api(`/api/job-assignments/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingAssignmentId = null;
+        loadJobAssignments();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  tbody.querySelectorAll('.ja-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this assignment?')) return;
+      try {
+        await api(`/api/job-assignments/${btn.closest('tr').dataset.id}`, { method: 'DELETE' });
+        loadJobAssignments();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+async function loadJobAssignments() {
+  state.jobAssignments = await api('/api/job-assignments');
+  if (isAdmin()) {
+    state.operativeUsers = (await api('/api/users')).filter((u) => OPERATIVE_ROLES.includes(u.role));
+  }
+  renderJobAssignments();
+}
+
+document.getElementById('addAssignmentBtn').addEventListener('click', async () => {
+  const jobSel = document.getElementById('newAssignmentJob');
+  const userSel = document.getElementById('newAssignmentUser');
+  const taskInput = document.getElementById('newAssignmentTask');
+  const startInput = document.getElementById('newAssignmentStartDate');
+  const durationInput = document.getElementById('newAssignmentDuration');
+  if (!jobSel.value || !userSel.value || !taskInput.value.trim() || !startInput.value) {
+    alert('Choose a job, an operative, and fill in the task and start date.');
+    return;
+  }
+  try {
+    await api('/api/job-assignments', {
+      method: 'POST',
+      body: JSON.stringify({
+        jobId: jobSel.value,
+        userId: userSel.value,
+        task: taskInput.value,
+        startDate: startInput.value,
+        durationDays: durationInput.value || 1,
+      }),
+    });
+    taskInput.value = '';
+    startInput.value = '';
+    durationInput.value = '1';
+    loadJobAssignments();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 // ---------- Hire ----------
 // Admin-only tracker for hired-in plant/equipment - flags a hire once it's due back
 // soon or is already overdue, computed server-side against today so it's never stale.
@@ -2018,6 +2183,26 @@ function eventsOnDate(ds) {
 
 const calToday = new Date();
 
+// Reshapes a job assignment into the same event-ish shape createCalendarView's chips/day
+// list already know how to render, flagged isAssignment so both spots can style/behave
+// differently (fixed-colour chip, no delete button, "View" opens the assignment detail
+// modal instead of a plain text row).
+function assignmentToCalEvent(a) {
+  return {
+    id: `assignment-${a.id}`,
+    assignmentId: a.id,
+    isAssignment: true,
+    userId: a.userId,
+    userName: a.userName,
+    date: a.startDate,
+    endDate: a.endDate,
+    title: `${a.jobReference ? a.jobReference + ' — ' : ''}${a.task}`,
+    isPrivate: true,
+    completed: a.completed,
+    jobId: a.jobId,
+  };
+}
+
 // Builds one calendar (month grid + day modal + add form) wired to its own set of DOM ids.
 // Used once for the shared team calendar and once for the private "My Calendar" - same
 // month-grid/day-modal behaviour, just scoped to a different slice of state.calendarEvents.
@@ -2028,14 +2213,21 @@ function createCalendarView({ scope, ids }) {
 
   // "My Calendar" is everything that's yours - your private entries plus anything you've put
   // on the shared team calendar, so your day is in one place without duplicating any rows.
+  // Operatives additionally get their job assignments merged in (read-only, see
+  // assignmentToCalEvent) - never on the shared team calendar, which operatives don't have.
   function eventsOnDate(ds) {
-    return state.calendarEvents.filter((e) => {
+    const personal = state.calendarEvents.filter((e) => {
       const include = scope === 'private'
         ? !!(state.currentUser && e.userId === state.currentUser.id)
         : !e.isPrivate;
       if (!include) return false;
       return ds >= e.date && ds <= e.endDate;
     });
+    if (scope !== 'private' || !isOperative()) return personal;
+    const assignments = state.myAssignments
+      .filter((a) => ds >= a.startDate && ds <= a.endDate)
+      .map(assignmentToCalEvent);
+    return [...personal, ...assignments];
   }
 
   function render() {
@@ -2059,9 +2251,10 @@ function createCalendarView({ scope, ids }) {
       const ds = calDateStr(viewYear, viewMonth, d);
       const dayEvents = eventsOnDate(ds);
       const isToday = ds === todayStr;
-      const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => `
-        <div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>
-      `).join('');
+      const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => e.isAssignment
+        ? `<div class="cal-chip cal-chip-assignment" title="${escapeHtml(e.title)} (${e.completed ? 'Done' : 'Pending'})">${escapeHtml(truncate(e.title, 20))}</div>`
+        : `<div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>`
+      ).join('');
       const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
       return `
         <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}">
@@ -2091,7 +2284,16 @@ function createCalendarView({ scope, ids }) {
   function renderDayEvents() {
     const events = eventsOnDate(selectedDate);
     const list = document.getElementById(ids.eventsList);
-    list.innerHTML = events.map((e) => `
+    list.innerHTML = events.map((e) => e.isAssignment ? `
+      <li class="cal-day-event-item cal-day-event-assignment">
+        <span class="cal-swatch cal-swatch-assignment"></span>
+        <div class="cal-day-event-body">
+          <div class="cal-day-event-title">${escapeHtml(e.title)}</div>
+          <div class="cal-day-event-meta">${e.date} to ${e.endDate} · <span class="status-pill ${e.completed ? 'complete' : 'in-progress'}">${e.completed ? 'Done' : 'Pending'}</span></div>
+        </div>
+        <button type="button" class="assignment-view-btn" data-assignment="${e.assignmentId}">View</button>
+      </li>
+    ` : `
       <li class="cal-day-event-item">
         <span class="cal-swatch" style="background:${userColor(e)}"></span>
         <div class="cal-day-event-body">
@@ -2102,6 +2304,10 @@ function createCalendarView({ scope, ids }) {
       </li>
     `).join('');
     document.getElementById(ids.emptyState).hidden = events.length !== 0;
+
+    list.querySelectorAll('.assignment-view-btn').forEach((btn) => {
+      btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
+    });
 
     list.querySelectorAll('.cal-day-event-delete').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -2225,6 +2431,70 @@ function renderCalendar() {
   myCalendar.render();
 }
 
+// ---------- Assignment Detail (operative self-service: view, upload photo, mark done) ----------
+
+let currentAssignmentId = null;
+
+function findMyAssignment(id) {
+  return state.myAssignments.find((a) => a.id === id);
+}
+
+function openAssignmentDetail(id) {
+  currentAssignmentId = id;
+  renderAssignmentDetail();
+  document.getElementById('assignmentDetailModal').hidden = false;
+}
+
+function renderAssignmentDetail() {
+  const a = findMyAssignment(currentAssignmentId);
+  if (!a) { document.getElementById('assignmentDetailModal').hidden = true; return; }
+  document.getElementById('assignmentDetailTitle').textContent = `${a.jobReference || a.jobClient}${a.jobLocation ? ' — ' + a.jobLocation : ''}`;
+  document.getElementById('assignmentDetailInfo').innerHTML = `
+    <div><dt>Task</dt><dd>${escapeHtml(a.task)}</dd></div>
+    <div><dt>Start Date</dt><dd>${a.startDate}</dd></div>
+    <div><dt>Duration</dt><dd>${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</dd></div>
+    <div><dt>Status</dt><dd><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></dd></div>
+  `;
+  document.getElementById('assignmentCompleteBtn').textContent = a.completed ? 'Mark as Not Done' : 'Mark as Done';
+}
+
+document.getElementById('assignmentDetailCloseBtn').addEventListener('click', () => {
+  document.getElementById('assignmentDetailModal').hidden = true;
+});
+
+document.getElementById('assignmentCompleteBtn').addEventListener('click', async () => {
+  const a = findMyAssignment(currentAssignmentId);
+  if (!a) return;
+  try {
+    await api(`/api/job-assignments/${a.id}/complete`, { method: 'PUT', body: JSON.stringify({ completed: !a.completed }) });
+    state.myAssignments = await api('/api/job-assignments/mine');
+    renderAssignmentDetail();
+    renderCalendar();
+    renderHomeDashboard();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+document.getElementById('assignmentPhotoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch(`/api/job-assignments/${currentAssignmentId}/photo`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Upload failed');
+    }
+    alert('Photo uploaded.');
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    e.target.value = '';
+  }
+});
+
 // Ten fixed colours, one person per colour (server enforces this - see
 // users_color_unique_idx). Taken-by-someone-else swatches are shown but disabled;
 // your own is checked; either way the swatch's title always names who has it, so
@@ -2292,6 +2562,10 @@ function renderHomeDashboard() {
     container.innerHTML = '';
     return;
   }
+  if (isOperative()) {
+    renderOperativeHomeDashboard(container);
+    return;
+  }
   const todayStr = todayDateStr();
   const todaysEvents = eventsOnDate(todayStr).sort((a, b) => a.userName.localeCompare(b.userName));
   const missingRams = jobsMissingRams();
@@ -2340,6 +2614,36 @@ function renderHomeDashboard() {
   container.querySelectorAll('.home-rams-btn').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
   });
+}
+
+// Operatives get one small card ("your current/upcoming assignment") instead of the
+// company-wide Today/Missing-RAMS cards, which don't apply since they can't see Jobs or
+// the shared Calendar - same reasoning as staff's empty dashboard above.
+function renderOperativeHomeDashboard(container) {
+  const todayStr = todayDateStr();
+  const upcoming = [...state.myAssignments]
+    .filter((a) => !a.completed)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+
+  container.innerHTML = `
+    <div class="dashboard-card">
+      <h3>Your Assignment</h3>
+      ${upcoming ? `
+        <ul class="home-rams-list">
+          <li>
+            <div class="home-rams-info">
+              <strong>${escapeHtml(upcoming.jobReference || upcoming.jobClient)}${upcoming.jobLocation ? ' — ' + escapeHtml(upcoming.jobLocation) : ''}</strong>
+              <span class="home-rams-date">${escapeHtml(upcoming.task)} · ${upcoming.startDate < todayStr ? 'Started ' : 'Starts '}${upcoming.startDate} · ${upcoming.durationDays} day${upcoming.durationDays === 1 ? '' : 's'}</span>
+            </div>
+            <button type="button" class="home-rams-btn" id="homeGoAssignmentBtn">View</button>
+          </li>
+        </ul>
+      ` : `<p class="empty-state">No current assignment.</p>`}
+    </div>
+  `;
+  if (upcoming) {
+    document.getElementById('homeGoAssignmentBtn').addEventListener('click', () => openAssignmentDetail(upcoming.id));
+  }
 }
 
 // ---------- Risk Assessments ----------
