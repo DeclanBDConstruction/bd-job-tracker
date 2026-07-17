@@ -2456,7 +2456,6 @@ function renderAssignmentDetail() {
     <div><dt>Status</dt><dd><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></dd></div>
   `;
   document.getElementById('assignmentCompleteBtn').textContent = a.completed ? 'Mark as Not Done' : 'Mark as Done';
-  document.getElementById('assignmentPermitBtn').href = `/api/job-assignments/${a.id}/permit`;
 }
 
 document.getElementById('assignmentDetailCloseBtn').addEventListener('click', () => {
@@ -2496,22 +2495,51 @@ document.getElementById('assignmentPhotoInput').addEventListener('change', async
   }
 });
 
-document.getElementById('assignmentPermitUploadInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append('file', file);
+// ---------- Permit to Work (filled in-app, saved straight onto the job - see the
+// POST /api/job-assignments/:id/permit route, which generates the PDF server-side from
+// these values so there's no separate download/fill-externally/upload-back step). ----------
+
+document.getElementById('assignmentPermitBtn').addEventListener('click', () => {
+  const a = findMyAssignment(currentAssignmentId);
+  if (!a) return;
+  document.getElementById('permitSiteName').value = a.jobLocation || a.jobClient || '';
+  document.getElementById('permitJobNumber').value = a.jobReference || '';
+  document.getElementById('permitDescription').value = a.task || '';
+  document.getElementById('permitDate').value = todayDateStr();
+  document.getElementById('permitOperativeName').value = state.currentUser.name || '';
+  document.getElementById('permitOperativeSignature').value = '';
+  document.getElementById('permitManagerName').value = '';
+  document.getElementById('permitManagerSignature').value = '';
+  document.getElementById('permitFormModal').hidden = false;
+});
+
+function closePermitForm() {
+  document.getElementById('permitFormModal').hidden = true;
+}
+
+document.getElementById('permitFormCloseBtn').addEventListener('click', closePermitForm);
+document.getElementById('permitFormCancelBtn').addEventListener('click', closePermitForm);
+
+document.getElementById('permitForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
   try {
-    const res = await fetch(`/api/job-assignments/${currentAssignmentId}/permit`, { method: 'POST', body: formData });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Upload failed');
-    }
-    alert('Signed permit uploaded.');
+    await api(`/api/job-assignments/${currentAssignmentId}/permit`, {
+      method: 'POST',
+      body: JSON.stringify({
+        siteName: document.getElementById('permitSiteName').value,
+        jobNumber: document.getElementById('permitJobNumber').value,
+        description: document.getElementById('permitDescription').value,
+        date: document.getElementById('permitDate').value,
+        operativeName: document.getElementById('permitOperativeName').value,
+        operativeSignature: document.getElementById('permitOperativeSignature').value,
+        managerName: document.getElementById('permitManagerName').value,
+        managerSignature: document.getElementById('permitManagerSignature').value,
+      }),
+    });
+    closePermitForm();
+    alert('Permit to Work saved.');
   } catch (err) {
     alert(err.message);
-  } finally {
-    e.target.value = '';
   }
 });
 

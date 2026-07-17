@@ -183,7 +183,6 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'GET', path: /^\/job-assignments\/mine$/ },
   { method: 'PUT', path: /^\/job-assignments\/[^/]+\/complete$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/photo$/ },
-  { method: 'GET', path: /^\/job-assignments\/[^/]+\/permit$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/permit$/ },
 ];
 
@@ -487,46 +486,50 @@ app.post('/api/job-assignments/:id/photo', uploadDocument.single('file'), handle
   res.status(201).json(doc);
 }));
 
-// A fillable PDF (Site Name/Job Number/Description/Date pre-filled from the assignment,
-// Operative/Manager Name+Signature left blank to type into) - opened inline so it loads
-// straight in the browser's own PDF viewer, which supports filling text fields directly.
-// Ownership-checked the same way as the photo route above.
-app.get('/api/job-assignments/:id/permit', handle(async (req, res) => {
+// Fills in and saves the Permit to Work in one step: the operative fills the form in-app
+// (see the Permit to Work modal in app.js), this generates the PDF from those values and
+// saves it straight onto the job's 'permit' document category server-side - no separate
+// "open a blank PDF, fill it externally, upload the file back" round trip, since a browser's
+// own PDF viewer can't report back to the app when someone fills it in. Ownership-checked
+// the same way as the photo route above; not the generic /api/jobs/:id/documents/:category
+// route, same reasoning as that one.
+app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
   const assignment = await db.getJobAssignment(req.params.id);
   if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only open the permit for your own assignment' });
-  const pdfBuffer = await permitPdf.generatePermitPdf({
-    siteName: assignment.jobLocation || assignment.jobClient,
-    jobNumber: assignment.jobReference,
-    description: assignment.task,
-    date: new Date().toISOString().slice(0, 10),
-  });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'inline; filename="Permit to Work.pdf"');
-  res.send(pdfBuffer);
-}));
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save a permit against your own assignment' });
 
-// Uploads the filled-in/signed copy back onto the job, in the 'permit' document category -
-// same narrow, ownership-checked pattern as the photo route above (not the generic
-// /api/jobs/:id/documents/:category route).
-app.post('/api/job-assignments/:id/permit', uploadDocument.single('file'), handle(async (req, res) => {
-  if (!req.file) throw new Error('No file uploaded');
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only upload a permit against your own assignment' });
-  const storedName = makeStoredName(req.file.originalname);
+  const fields = ['siteName', 'jobNumber', 'description', 'date', 'operativeName', 'operativeSignature', 'managerName', 'managerSignature'];
+  const FIELD_LABELS = {
+    siteName: 'Site Name', jobNumber: 'Job Number', description: 'Description of Work', date: 'Date',
+    operativeName: 'Operative Name', operativeSignature: 'Operative Signature',
+    managerName: 'Manager Name', managerSignature: 'Manager Signature',
+  };
+  const missing = fields.filter((f) => !String(req.body[f] || '').trim());
+  if (missing.length) {
+    throw new Error(`Fill in every field before saving: ${missing.map((f) => FIELD_LABELS[f]).join(', ')}`);
+  }
+
+  const pdfBuffer = await permitPdf.generatePermitPdf({
+    siteName: req.body.siteName,
+    jobNumber: req.body.jobNumber,
+    description: req.body.description,
+    date: req.body.date,
+    operativeName: req.body.operativeName,
+    operativeSignature: req.body.operativeSignature,
+    managerName: req.body.managerName,
+    managerSignature: req.body.managerSignature,
+  });
+  const storedName = makeStoredName('Permit to Work.pdf');
   const { error } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
-    .upload(storagePath(assignment.jobId, 'permit', storedName), req.file.buffer, {
-      contentType: req.file.mimetype || 'application/octet-stream',
-    });
+    .upload(storagePath(assignment.jobId, 'permit', storedName), pdfBuffer, { contentType: 'application/pdf' });
   if (error) throw new Error(error.message);
   const doc = await db.addJobDocument(assignment.jobId, 'permit', {
-    originalName: req.file.originalname,
+    originalName: 'Permit to Work.pdf',
     storedName,
-    size: req.file.size,
+    size: pdfBuffer.length,
   });
-  broadcast('jobs');
+  broadcast('jobs'); // so an admin/surveyor with the Job Detail Permit to Work tab open sees it live
   res.status(201).json(doc);
 }));
 

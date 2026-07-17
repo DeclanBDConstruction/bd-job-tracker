@@ -698,11 +698,35 @@
     </div>
     <dl class="detail-grid" id="assignmentDetailInfo"></dl>
     <div class="modal-actions">
-      <a href="#" id="assignmentPermitBtn" class="upload-btn" target="_blank" title="Opens a fillable Permit to Work PDF in a new tab">Permit to Work</a>
-      <label class="upload-btn">+ Upload Signed Permit<input type="file" id="assignmentPermitUploadInput" hidden accept="application/pdf"></label>
+      <button type="button" id="assignmentPermitBtn" class="upload-btn">Permit to Work</button>
       <label class="upload-btn">+ Upload Photo<input type="file" id="assignmentPhotoInput" hidden accept="image/*"></label>
       <button type="button" id="assignmentCompleteBtn" class="primary">Mark as Done</button>
     </div>
+  </div>
+</div>
+
+<!-- Permit to Work Form Modal (operative self-service) -->
+<div id="permitFormModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2>Permit to Work</h2>
+      <button type="button" id="permitFormCloseBtn" class="link-btn">Close</button>
+    </div>
+    <p class="hint">Fill in every field and save - it's generated as a PDF and saved straight onto the job, no need to download or upload anything.</p>
+    <form id="permitForm" class="detail-form">
+      <label>Site Name<input type="text" id="permitSiteName" required></label>
+      <label>Job Number<input type="text" id="permitJobNumber" required></label>
+      <label>Description of Work<textarea id="permitDescription" rows="3" required></textarea></label>
+      <label>Date<input type="date" id="permitDate" required></label>
+      <label>Operative Name<input type="text" id="permitOperativeName" required></label>
+      <label>Operative Signature<input type="text" id="permitOperativeSignature" placeholder="Type your name to sign" required></label>
+      <label>Manager Name<input type="text" id="permitManagerName" required></label>
+      <label>Manager Signature<input type="text" id="permitManagerSignature" placeholder="Manager types their name to sign" required></label>
+      <div class="modal-actions">
+        <button type="button" id="permitFormCancelBtn">Cancel</button>
+        <button type="submit" class="primary">Save Permit</button>
+      </div>
+    </form>
   </div>
 </div>
 
