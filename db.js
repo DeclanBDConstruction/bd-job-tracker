@@ -643,11 +643,13 @@ function rowToEvent(row) {
 }
 
 // Returns public entries plus this user's own private ones - never another user's private
-// entries, since those only ever belong on that person's own "My Calendar".
+// entries, since those only ever belong on that person's own "My Calendar". Staff don't
+// get the shared team calendar at all (see the staff allowlist in server.js), so they
+// only ever get their own entries, public or private.
 async function listCalendarEvents(user) {
-  const { data, error } = await supabase.from('calendar_events').select('*')
-    .or(`is_private.eq.false,user_id.eq.${user.id}`)
-    .order('date').order('created_at');
+  let query = supabase.from('calendar_events').select('*');
+  query = user.role === 'staff' ? query.eq('user_id', user.id) : query.or(`is_private.eq.false,user_id.eq.${user.id}`);
+  const { data, error } = await query.order('date').order('created_at');
   check(error);
   return data.map(rowToEvent);
 }

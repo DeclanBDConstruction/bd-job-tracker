@@ -20,6 +20,7 @@ const state = {
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
 const isAdmin = () => !!(state.currentUser && state.currentUser.role === 'admin');
 const isOperative = () => !!(state.currentUser && OPERATIVE_ROLES.includes(state.currentUser.role));
+const isStaff = () => !!(state.currentUser && state.currentUser.role === 'staff');
 const canManageQuotes = () => !!(state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.canManageQuotes));
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -73,7 +74,20 @@ function showApp(user) {
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
-  bootstrap();
+
+  // Staff only get Home, My Calendar and My Diary - everything else (Jobs, Team,
+  // Operations, Reports, and the shared team Calendar) is hidden here for UI purposes,
+  // but the real enforcement is server-side (see the staff allowlist in server.js).
+  const staff = isStaff();
+  document.getElementById('jobsTabGroup').hidden = staff;
+  document.getElementById('teamTabGroup').hidden = staff;
+  document.getElementById('operationsTabGroup').hidden = staff;
+  document.getElementById('reportsTabGroup').hidden = staff;
+  document.getElementById('calendarTabBtn').hidden = staff;
+  document.getElementById('headerSearchWrap').hidden = staff;
+
+  if (staff) bootstrapStaff();
+  else bootstrap();
   connectLiveUpdates();
 }
 
@@ -114,6 +128,9 @@ function connectLiveUpdates() {
   liveEvents = new EventSource('/api/events');
   liveEvents.onmessage = (e) => {
     const { type } = JSON.parse(e.data);
+    // Staff only load calendar/diary/user-colour data (see bootstrapStaff), so ignore
+    // pings for everything else rather than firing requests the server will 403.
+    if (isStaff() && !['calendar', 'diary', 'users'].includes(type)) return;
     if (type === 'jobs') handleLiveJobsChange();
     else if (type === 'employees') handleLiveEmployeesChange();
     else if (type === 'calendar') handleLiveCalendarChange();
@@ -494,6 +511,27 @@ async function bootstrap() {
     renderColorPicker();
     renderHomeDashboard();
     renderQuoting();
+  } catch (err) {
+    console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
+    const container = document.getElementById('calColorPicker');
+    if (container) container.innerHTML = `<span class="color-picker-error">Couldn't load colours: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// Staff only see Home, My Calendar and My Diary, so this loads just the calendar/diary
+// slice instead of the full bootstrap() - the other endpoints are 403'd for staff anyway
+// (see server.js), and calling them here would break Promise.all for the whole batch.
+async function bootstrapStaff() {
+  state.calendarEvents = await api('/api/calendar');
+  renderCalendar();
+  renderHomeDashboard();
+
+  try {
+    const [calendarColors, userColors] = await Promise.all([api('/api/calendar-colors'), api('/api/users/colors')]);
+    state.calendarColors = calendarColors;
+    state.userColors = userColors;
+    renderCalendar();
+    renderColorPicker();
   } catch (err) {
     console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
     const container = document.getElementById('calColorPicker');
@@ -2246,6 +2284,13 @@ function jobsMissingRams() {
 function renderHomeDashboard() {
   const container = document.getElementById('homeDashboard');
   if (!container) return;
+  // Staff don't have access to Jobs or the shared Calendar, so the dashboard cards that
+  // surface company-wide job/RAMS and everyone's-today data don't apply to them - just
+  // leave it empty and let the welcome hero/slideshow below carry the page.
+  if (isStaff()) {
+    container.innerHTML = '';
+    return;
+  }
   const todayStr = todayDateStr();
   const todaysEvents = eventsOnDate(todayStr).sort((a, b) => a.userName.localeCompare(b.userName));
   const missingRams = jobsMissingRams();

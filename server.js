@@ -161,6 +161,33 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Staff only get Home, My Calendar and My Diary - the frontend hides everything else
+// (see the staff checks in app.js), but this is the real enforcement, since a staff
+// account could otherwise still call any other route directly.
+// Paths here are relative to the '/api' mount point (Express strips it from req.path
+// inside an app.use('/api', ...) middleware), so these do NOT repeat the '/api' prefix.
+const STAFF_ALLOWED_ROUTES = [
+  { method: 'GET', path: /^\/events$/ },
+  { method: 'GET', path: /^\/calendar$/ },
+  { method: 'POST', path: /^\/calendar$/ },
+  { method: 'DELETE', path: /^\/calendar\/[^/]+$/ },
+  { method: 'GET', path: /^\/calendar-colors$/ },
+  { method: 'GET', path: /^\/users\/colors$/ },
+  { method: 'PUT', path: /^\/users\/me\/color$/ },
+  { method: 'GET', path: /^\/diary$/ },
+  { method: 'POST', path: /^\/diary$/ },
+  { method: 'PUT', path: /^\/diary\/[^/]+\/complete$/ },
+  { method: 'PUT', path: /^\/diary\/[^/]+$/ },
+  { method: 'DELETE', path: /^\/diary\/[^/]+$/ },
+];
+
+app.use('/api', (req, res, next) => {
+  if (req.user.role === 'staff' && !STAFF_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
+    return res.status(403).json({ error: 'Not available for your role' });
+  }
+  next();
+});
+
 // ---------- Live updates (SSE) ----------
 
 app.get('/api/events', (req, res) => {
