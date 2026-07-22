@@ -194,6 +194,7 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'GET', path: /^\/risk-assessments$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/rams$/ },
   { method: 'GET', path: /^\/job-assignments\/[^/]+\/rams$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/rams\/attach-to-job$/ },
 ];
 
 app.use('/api', (req, res, next) => {
@@ -671,11 +672,14 @@ app.get('/api/job-assignments/:id/rams', handle(async (req, res) => {
 
 // Manual re-sync for RAMS submitted before this auto-attach behaviour existed (or if the upload
 // step ever fails at submit time) - regenerates the HTML snapshot from the existing structured
-// record and files it under the job's documents, same as the automatic path above. Admin-only,
-// since it's a data-mutating retry action, not a read.
-app.post('/api/job-assignments/:id/rams/attach-to-job', requireAdmin, handle(async (req, res) => {
+// record and files it under the job's documents, same as the automatic path above. Same
+// ownership rule as the GET route below: the assignment's own operative, or admin/surveyor.
+app.post('/api/job-assignments/:id/rams/attach-to-job', handle(async (req, res) => {
   const assignment = await db.getJobAssignment(req.params.id);
   if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
+    return res.status(403).json({ error: 'You can only attach RAMS for your own assignment' });
+  }
   const rams = await db.getJobAssignmentRams(req.params.id);
   if (!rams) return res.status(404).json({ error: 'No RAMS submitted for this assignment yet' });
 

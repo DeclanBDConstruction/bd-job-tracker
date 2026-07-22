@@ -2931,7 +2931,21 @@ function renderAssignmentRamsStatus() {
   const box = document.getElementById('assignmentRamsStatus');
   const locked = !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
   if (currentAssignmentRams) {
-    box.innerHTML = `<span class="status-pill complete">RAMS submitted ${new Date(currentAssignmentRams.createdAt).toLocaleDateString('en-GB')}${locked ? ' (locked)' : ''}</span>`;
+    // "Attach to Job Documents" is a manual retry in case the automatic upload (on save) ever
+    // missed - lets the operative fix it themselves rather than needing an admin, same action
+    // as ramsAttachToJobBtn in the admin RAMS viewer.
+    box.innerHTML = `
+      <span class="status-pill complete">RAMS submitted ${new Date(currentAssignmentRams.createdAt).toLocaleDateString('en-GB')}${locked ? ' (locked)' : ''}</span>
+      <button type="button" id="assignmentRamsAttachBtn" class="link-btn">Attach to Job Documents</button>
+    `;
+    document.getElementById('assignmentRamsAttachBtn').addEventListener('click', async () => {
+      try {
+        await api(`/api/job-assignments/${currentAssignmentId}/rams/attach-to-job`, { method: 'POST' });
+        alert('Attached to the job\'s documents.');
+      } catch (err) {
+        alert(err.message);
+      }
+    });
   } else {
     box.innerHTML = `<span class="status-pill in-progress">RAMS required before Mark Arrived</span>`;
   }
