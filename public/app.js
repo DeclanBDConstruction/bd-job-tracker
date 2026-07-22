@@ -1955,7 +1955,6 @@ function vehicleHireEditRow(v) {
       <td><input type="text" class="vh-edit-make" value="${escapeHtml(v.make)}"></td>
       <td><input type="text" class="vh-edit-model" value="${escapeHtml(v.model)}"></td>
       <td><input type="text" class="vh-edit-signedin" value="${escapeHtml(v.signedIn)}"></td>
-      <td><input type="text" class="vh-edit-signedout" value="${escapeHtml(v.signedOut)}"></td>
       <td><span class="hire-status on-hire">On Hire</span></td>
       <td class="row-actions">
         <button type="button" class="primary vh-save-btn">Save</button>
@@ -1968,9 +1967,10 @@ function vehicleHireEditRow(v) {
 function vehicleHireOffHiringRow(v) {
   return `
     <tr data-id="${v.id}">
-      <td colspan="9">
+      <td colspan="8">
         <div class="vh-offhire-confirm">
           <strong>${escapeHtml(v.registration)} — ${escapeHtml(v.make)} ${escapeHtml(v.model)}</strong>
+          <input type="text" class="vh-offhire-signedout" placeholder="Signed out (name)">
           <textarea class="vh-offhire-comments" placeholder="Any new damage to note? (optional)"></textarea>
           <div class="vh-offhire-actions">
             <button type="button" class="primary vh-confirm-offhire-btn">Confirm Off Hire</button>
@@ -1991,7 +1991,6 @@ function vehicleHireDisplayRow(v) {
       <td>${escapeHtml(v.make || '—')}</td>
       <td>${escapeHtml(v.model || '—')}</td>
       <td>${escapeHtml(v.signedIn || '—')}</td>
-      <td>${escapeHtml(v.signedOut || '—')}</td>
       <td>
         <select class="vh-status-select" data-vh-status="${v.id}">
           <option value="on-hire" selected>On Hire</option>
@@ -2091,7 +2090,6 @@ function renderVehicleHires() {
         make: tr.querySelector('.vh-edit-make').value.trim(),
         model: tr.querySelector('.vh-edit-model').value.trim(),
         signedIn: tr.querySelector('.vh-edit-signedin').value.trim(),
-        signedOut: tr.querySelector('.vh-edit-signedout').value.trim(),
       };
       try {
         await api(`/api/vehicle-hires/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -2121,8 +2119,9 @@ function renderVehicleHires() {
     btn.addEventListener('click', async () => {
       const tr = btn.closest('tr');
       const comments = tr.querySelector('.vh-offhire-comments').value.trim();
+      const signedOut = tr.querySelector('.vh-offhire-signedout').value.trim();
       try {
-        await api(`/api/vehicle-hires/${tr.dataset.id}/off-hire`, { method: 'POST', body: JSON.stringify({ comments }) });
+        await api(`/api/vehicle-hires/${tr.dataset.id}/off-hire`, { method: 'POST', body: JSON.stringify({ comments, signedOut }) });
         offHiringVehicleHireId = null;
         loadVehicleHires();
       } catch (err) {
@@ -2144,7 +2143,6 @@ document.getElementById('vehicleHireAddForm').addEventListener('submit', async (
     make: document.getElementById('vehicleHireMakeInput').value.trim(),
     model: document.getElementById('vehicleHireModelInput').value.trim(),
     signedIn: document.getElementById('vehicleHireSignedInInput').value.trim(),
-    signedOut: document.getElementById('vehicleHireSignedOutInput').value.trim(),
   };
   try {
     await api('/api/vehicle-hires', { method: 'POST', body: JSON.stringify(body) });

@@ -1898,6 +1898,11 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.vh-offhire-signedout {
+  flex: 0 1 180px;
+  min-width: 140px;
+}
+
 .vh-offhire-comments {
   flex: 1 1 260px;
   min-width: 200px;

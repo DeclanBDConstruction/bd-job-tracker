@@ -1327,7 +1327,9 @@ async function deleteHire(id) {
 // ---------- Vehicle Hire ----------
 // Admin-only tracker for hired-in vehicles. Unlike plant Hire, there's no due-back date -
 // a vehicle just sits "on-hire" until someone off-hires it (one-way, via markVehicleHireOffHired),
-// at which point the off-hire date and any damage comments get recorded.
+// at which point the off-hire date, who signed it back out, and any damage comments get
+// recorded - signed_out only ever makes sense at the point a vehicle goes off hire, so it's
+// not collected on create/update, only in markVehicleHireOffHired below.
 
 function rowToVehicleHire(row) {
   return {
@@ -1364,7 +1366,6 @@ function validateVehicleHireInput(input) {
     make: (input.make || '').trim(),
     model: (input.model || '').trim(),
     signed_in: (input.signedIn || '').trim(),
-    signed_out: (input.signedOut || '').trim(),
   };
 }
 
@@ -1372,6 +1373,7 @@ async function createVehicleHire(input) {
   const row = {
     id: genId(),
     ...validateVehicleHireInput(input),
+    signed_out: null,
     off_hire_date: null,
     damage_comments: null,
     created_at: new Date().toISOString(),
@@ -1390,9 +1392,10 @@ async function updateVehicleHire(id, input) {
   return rowToVehicleHire(data);
 }
 
-async function markVehicleHireOffHired(id, comments) {
+async function markVehicleHireOffHired(id, signedOut, comments) {
   const { data, error } = await supabase.from('vehicle_hires')
     .update({
+      signed_out: (signedOut || '').trim() || null,
       off_hire_date: new Date().toISOString().slice(0, 10),
       damage_comments: (comments || '').trim() || null,
       updated_at: new Date().toISOString(),

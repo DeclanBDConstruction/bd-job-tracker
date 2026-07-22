@@ -977,7 +977,7 @@ app.put('/api/vehicle-hires/:id', requireAdmin, handle(async (req, res) => {
 }));
 
 app.post('/api/vehicle-hires/:id/off-hire', requireAdmin, handle(async (req, res) => {
-  const vehicleHire = await db.markVehicleHireOffHired(req.params.id, req.body.comments);
+  const vehicleHire = await db.markVehicleHireOffHired(req.params.id, req.body.signedOut, req.body.comments);
   broadcast('vehicleHires');
   res.json(vehicleHire);
 }));
