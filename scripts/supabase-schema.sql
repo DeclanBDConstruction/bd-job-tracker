@@ -196,6 +196,28 @@ create table if not exists hires (
 alter table hires add column if not exists job_number text;
 alter table hires add column if not exists job_description text;
 
+-- Hired-in vehicles, admin-only. Unlike `hires` above there's no due-back date - a
+-- vehicle just stays on-hire until someone off-hires it, which is one-way (see
+-- markVehicleHireOffHired in db.js) and stamps off_hire_date + any damage_comments at
+-- that point.
+create table if not exists vehicle_hires (
+  id uuid primary key,
+  supplier text,
+  hire_date text not null,
+  registration text not null,
+  make text,
+  model text,
+  signed_in text,
+  signed_out text,
+  off_hire_date text,
+  damage_comments text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists vehicle_hires_hire_date_idx on vehicle_hires (hire_date);
+create index if not exists vehicle_hires_registration_idx on vehicle_hires (registration);
+
 -- Risk assessments staff upload themselves (as opposed to the generic in-code templates),
 -- kept separate from any one job so the same file can be attached again next time that job
 -- or a similar one comes up. The file bytes live in the same Storage bucket as job
@@ -349,6 +371,7 @@ alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
 alter table custom_risk_assessments enable row level security;
 alter table hires enable row level security;
+alter table vehicle_hires enable row level security;
 alter table diary_entries enable row level security;
 alter table subbies enable row level security;
 alter table quotes enable row level security;

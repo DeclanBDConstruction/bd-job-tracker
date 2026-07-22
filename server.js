@@ -958,6 +958,36 @@ app.delete('/api/hires/:id', requireAdmin, handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Vehicle Hire (admin only) ----------
+
+app.get('/api/vehicle-hires', requireAdmin, handle(async (req, res) => {
+  res.json(await db.listVehicleHires());
+}));
+
+app.post('/api/vehicle-hires', requireAdmin, handle(async (req, res) => {
+  const vehicleHire = await db.createVehicleHire(req.body);
+  broadcast('vehicleHires');
+  res.status(201).json(vehicleHire);
+}));
+
+app.put('/api/vehicle-hires/:id', requireAdmin, handle(async (req, res) => {
+  const vehicleHire = await db.updateVehicleHire(req.params.id, req.body);
+  broadcast('vehicleHires');
+  res.json(vehicleHire);
+}));
+
+app.post('/api/vehicle-hires/:id/off-hire', requireAdmin, handle(async (req, res) => {
+  const vehicleHire = await db.markVehicleHireOffHired(req.params.id, req.body.comments);
+  broadcast('vehicleHires');
+  res.json(vehicleHire);
+}));
+
+app.delete('/api/vehicle-hires/:id', requireAdmin, handle(async (req, res) => {
+  await db.deleteVehicleHire(req.params.id);
+  broadcast('vehicleHires');
+  res.status(204).end();
+}));
+
 // ---------- Signage (shared - anyone can view/add/update; removing one is admin-only) ----------
 
 app.get('/api/signage', handle(async (req, res) => {

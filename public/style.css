@@ -1881,6 +1881,38 @@ button:disabled {
   min-width: 90px;
 }
 
+#vehicleHiresTable input[type="text"], #vehicleHiresTable input[type="date"], #vehicleHiresTable select {
+  width: 100%;
+  min-width: 90px;
+}
+
+.vh-offhire-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.vh-offhire-confirm strong {
+  flex: 0 0 auto;
+}
+
+.vh-offhire-comments {
+  flex: 1 1 260px;
+  min-width: 200px;
+  min-height: 36px;
+  resize: vertical;
+  font: inherit;
+  padding: 6px 8px;
+}
+
+.vh-offhire-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 #quotingTable input[type="text"], #quotingTable input[type="date"], #quotingTable select {
   width: 100%;
   min-width: 90px;

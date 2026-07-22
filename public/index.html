@@ -101,6 +101,7 @@
         <button class="tab-btn" data-tab="subbies">Subbies</button>
         <button class="tab-btn" data-tab="quoting">Quoting</button>
         <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
+        <button class="tab-btn" data-tab="vehiclehire" id="vehicleHireTabBtn" hidden>Vehicle Hire</button>
         <button class="tab-btn" data-tab="signage">Signage Tracker</button>
         <button class="tab-btn" data-tab="pricelist">Price List</button>
         <button class="tab-btn" data-tab="jobassignments">Job Assignments</button>
@@ -406,6 +407,56 @@
         </table>
       </div>
       <p class="empty-state" id="hiresOffHiredEmptyState" hidden>No off-hired equipment yet.</p>
+    </div>
+  </section>
+
+  <!-- VEHICLE HIRE TAB -->
+  <section id="tab-vehiclehire" class="tab-panel">
+    <div class="panel-header">
+      <h2>Vehicle Hire</h2>
+      <div class="filters">
+        <input type="text" id="vehicleHireSearch" placeholder="Search supplier, registration, make, model…">
+      </div>
+    </div>
+    <p class="hint">Track hired-in vehicles — supplier, registration and who's currently signed out with it. Switching a vehicle to "Off Hire" lets you note any new damage before it moves to the off-hired list.</p>
+    <form id="vehicleHireAddForm" class="hire-add-form">
+      <input type="text" id="vehicleHireSupplierInput" placeholder="Supplier" required>
+      <input type="date" id="vehicleHireDateInput" required>
+      <input type="text" id="vehicleHireRegistrationInput" placeholder="Registration" required>
+      <input type="text" id="vehicleHireMakeInput" placeholder="Make">
+      <input type="text" id="vehicleHireModelInput" placeholder="Model">
+      <input type="text" id="vehicleHireSignedInInput" placeholder="Signed in (name)">
+      <input type="text" id="vehicleHireSignedOutInput" placeholder="Signed out (name)">
+      <button type="submit" class="primary">+ Add Vehicle</button>
+    </form>
+    <div id="vehicleHireOnHireSection">
+      <h3 class="hire-section-heading">On Hire</h3>
+      <div class="table-scroll">
+        <table class="data-table" id="vehicleHiresTable">
+          <thead>
+            <tr>
+              <th>Supplier</th><th>Date</th><th>Registration</th><th>Make</th><th>Model</th><th>Signed In</th><th>Signed Out</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="vehicleHiresEmptyState" hidden>No vehicles on hire yet.</p>
+    </div>
+
+    <div id="vehicleHireOffHireSection">
+      <h3 class="hire-section-heading">Off Hire</h3>
+      <div class="table-scroll">
+        <table class="data-table" id="vehicleHiresOffHireTable">
+          <thead>
+            <tr>
+              <th>Supplier</th><th>Date</th><th>Registration</th><th>Make</th><th>Model</th><th>Signed In</th><th>Signed Out</th><th>Off Hire Date</th><th>Comments</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="vehicleHiresOffHireEmptyState" hidden>No off-hired vehicles yet.</p>
     </div>
   </section>
 

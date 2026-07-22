@@ -1324,6 +1324,90 @@ async function deleteHire(id) {
   check(error);
 }
 
+// ---------- Vehicle Hire ----------
+// Admin-only tracker for hired-in vehicles. Unlike plant Hire, there's no due-back date -
+// a vehicle just sits "on-hire" until someone off-hires it (one-way, via markVehicleHireOffHired),
+// at which point the off-hire date and any damage comments get recorded.
+
+function rowToVehicleHire(row) {
+  return {
+    id: row.id,
+    supplier: row.supplier || '',
+    hireDate: row.hire_date,
+    registration: row.registration,
+    make: row.make || '',
+    model: row.model || '',
+    signedIn: row.signed_in || '',
+    signedOut: row.signed_out || '',
+    offHireDate: row.off_hire_date || '',
+    damageComments: row.damage_comments || '',
+    status: row.off_hire_date ? 'off-hire' : 'on-hire',
+    createdAt: row.created_at,
+  };
+}
+
+async function listVehicleHires() {
+  const { data, error } = await supabase.from('vehicle_hires').select('*').order('hire_date', { ascending: false });
+  check(error);
+  return data.map((r) => rowToVehicleHire(r));
+}
+
+function validateVehicleHireInput(input) {
+  const registration = (input.registration || '').trim();
+  if (!registration) throw new Error('Registration is required');
+  const hireDate = input.hireDate;
+  if (!hireDate || !DATE_RE.test(hireDate)) throw new Error('A valid hire date is required');
+  return {
+    supplier: (input.supplier || '').trim(),
+    hire_date: hireDate,
+    registration,
+    make: (input.make || '').trim(),
+    model: (input.model || '').trim(),
+    signed_in: (input.signedIn || '').trim(),
+    signed_out: (input.signedOut || '').trim(),
+  };
+}
+
+async function createVehicleHire(input) {
+  const row = {
+    id: genId(),
+    ...validateVehicleHireInput(input),
+    off_hire_date: null,
+    damage_comments: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('vehicle_hires').insert(row).select().single();
+  check(error);
+  return rowToVehicleHire(data);
+}
+
+async function updateVehicleHire(id, input) {
+  const row = { ...validateVehicleHireInput(input), updated_at: new Date().toISOString() };
+  const { data, error } = await supabase.from('vehicle_hires').update(row).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Vehicle hire not found');
+  return rowToVehicleHire(data);
+}
+
+async function markVehicleHireOffHired(id, comments) {
+  const { data, error } = await supabase.from('vehicle_hires')
+    .update({
+      off_hire_date: new Date().toISOString().slice(0, 10),
+      damage_comments: (comments || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Vehicle hire not found');
+  return rowToVehicleHire(data);
+}
+
+async function deleteVehicleHire(id) {
+  const { error } = await supabase.from('vehicle_hires').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Signage ----------
 // Inventory of physical site signs, shared and editable by anyone (removing one is
 // admin-only). Seeded once with 10 rows (sign_number 1..10) the first time the table is
@@ -1752,6 +1836,11 @@ module.exports = {
   updateHire,
   markHireReturned,
   deleteHire,
+  listVehicleHires,
+  createVehicleHire,
+  updateVehicleHire,
+  markVehicleHireOffHired,
+  deleteVehicleHire,
   listSignage,
   createSignage,
   updateSignage,

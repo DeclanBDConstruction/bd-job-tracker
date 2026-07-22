@@ -12,6 +12,7 @@ const state = {
   subbies: [],
   quotes: [],
   hires: [],
+  vehicleHires: [],
   signage: [],
   diaryEntries: [],
   jobAssignments: [],
@@ -70,6 +71,7 @@ function showApp(user) {
   document.getElementById('adminTabBtn').hidden = !isAdmin();
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
+  document.getElementById('vehicleHireTabBtn').hidden = !isAdmin();
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
   document.getElementById('jobAssignmentsAddRow').hidden = !isAdmin();
   document.getElementById('assignmentsTabBtn').hidden = !isOperative();
@@ -123,6 +125,7 @@ function connectLiveUpdates() {
     else if (type === 'subbies') handleLiveSubbiesChange();
     else if (type === 'quotes') handleLiveQuotesChange();
     else if (type === 'hires') handleLiveHiresChange();
+    else if (type === 'vehicleHires') handleLiveVehicleHiresChange();
     else if (type === 'signage') handleLiveSignageChange();
     else if (type === 'diary') handleLiveDiaryChange();
     else if (type === 'jobAssignments') handleLiveJobAssignmentsChange();
@@ -148,6 +151,10 @@ async function handleLiveSubbiesChange() {
 
 async function handleLiveHiresChange() {
   if (activeTab() === 'hire') loadHires();
+}
+
+async function handleLiveVehicleHiresChange() {
+  if (activeTab() === 'vehiclehire') loadVehicleHires();
 }
 
 async function handleLiveSignageChange() {
@@ -322,6 +329,7 @@ function goToTab(tab) {
   if (tab === 'home') renderHomeDashboard();
   if (tab === 'admin') loadAdminUsers();
   if (tab === 'hire') loadHires();
+  if (tab === 'vehiclehire') loadVehicleHires();
   if (tab === 'quoting') loadQuotes();
   if (tab === 'jobassignments') loadJobAssignments();
   if (tab === 'assignments') renderMyAssignmentsTab();
@@ -1920,6 +1928,223 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
     e.target.reset();
     document.getElementById('hireQuantityInput').value = 1;
     loadHires();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ---------- Vehicle Hire ----------
+// Admin-only tracker for hired-in vehicles. A vehicle only ever moves from on-hire to
+// off-hire (never back) via the per-row status dropdown, which pops an inline comments
+// box for noting any new damage before the move is confirmed.
+
+let editingVehicleHireId = null;
+let offHiringVehicleHireId = null;
+
+async function loadVehicleHires() {
+  state.vehicleHires = await api('/api/vehicle-hires');
+  renderVehicleHires();
+}
+
+function vehicleHireEditRow(v) {
+  return `
+    <tr data-id="${v.id}">
+      <td><input type="text" class="vh-edit-supplier" value="${escapeHtml(v.supplier)}"></td>
+      <td><input type="date" class="vh-edit-date" value="${v.hireDate}"></td>
+      <td><input type="text" class="vh-edit-registration" value="${escapeHtml(v.registration)}"></td>
+      <td><input type="text" class="vh-edit-make" value="${escapeHtml(v.make)}"></td>
+      <td><input type="text" class="vh-edit-model" value="${escapeHtml(v.model)}"></td>
+      <td><input type="text" class="vh-edit-signedin" value="${escapeHtml(v.signedIn)}"></td>
+      <td><input type="text" class="vh-edit-signedout" value="${escapeHtml(v.signedOut)}"></td>
+      <td><span class="hire-status on-hire">On Hire</span></td>
+      <td class="row-actions">
+        <button type="button" class="primary vh-save-btn">Save</button>
+        <button type="button" class="vh-cancel-btn">Cancel</button>
+      </td>
+    </tr>
+  `;
+}
+
+function vehicleHireOffHiringRow(v) {
+  return `
+    <tr data-id="${v.id}">
+      <td colspan="9">
+        <div class="vh-offhire-confirm">
+          <strong>${escapeHtml(v.registration)} — ${escapeHtml(v.make)} ${escapeHtml(v.model)}</strong>
+          <textarea class="vh-offhire-comments" placeholder="Any new damage to note? (optional)"></textarea>
+          <div class="vh-offhire-actions">
+            <button type="button" class="primary vh-confirm-offhire-btn">Confirm Off Hire</button>
+            <button type="button" class="vh-cancel-offhire-btn">Cancel</button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function vehicleHireDisplayRow(v) {
+  return `
+    <tr>
+      <td>${escapeHtml(v.supplier || '—')}</td>
+      <td>${v.hireDate}</td>
+      <td>${escapeHtml(v.registration)}</td>
+      <td>${escapeHtml(v.make || '—')}</td>
+      <td>${escapeHtml(v.model || '—')}</td>
+      <td>${escapeHtml(v.signedIn || '—')}</td>
+      <td>${escapeHtml(v.signedOut || '—')}</td>
+      <td>
+        <select class="vh-status-select" data-vh-status="${v.id}">
+          <option value="on-hire" selected>On Hire</option>
+          <option value="off-hire">Off Hire</option>
+        </select>
+      </td>
+      <td class="row-actions">
+        <button type="button" data-edit-vh="${v.id}">Edit</button>
+        <button type="button" class="danger" data-del-vh="${v.id}">Delete</button>
+      </td>
+    </tr>
+  `;
+}
+
+function vehicleHireOffHiredRow(v) {
+  return `
+    <tr>
+      <td>${escapeHtml(v.supplier || '—')}</td>
+      <td>${v.hireDate}</td>
+      <td>${escapeHtml(v.registration)}</td>
+      <td>${escapeHtml(v.make || '—')}</td>
+      <td>${escapeHtml(v.model || '—')}</td>
+      <td>${escapeHtml(v.signedIn || '—')}</td>
+      <td>${escapeHtml(v.signedOut || '—')}</td>
+      <td>${v.offHireDate}</td>
+      <td>${escapeHtml(v.damageComments || '—')}</td>
+      <td class="row-actions">
+        <button type="button" class="danger" data-del-vh="${v.id}">Delete</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderVehicleHires() {
+  const term = document.getElementById('vehicleHireSearch').value.trim().toLowerCase();
+  const filtered = term
+    ? state.vehicleHires.filter((v) => [v.supplier, v.registration, v.make, v.model].some((f) => (f || '').toLowerCase().includes(term)))
+    : state.vehicleHires;
+  const onHire = filtered.filter((v) => v.status !== 'off-hire');
+  const offHire = filtered.filter((v) => v.status === 'off-hire');
+  const onHireCount = state.vehicleHires.filter((v) => v.status !== 'off-hire').length;
+  const offHireCount = state.vehicleHires.filter((v) => v.status === 'off-hire').length;
+
+  const tbody = document.querySelector('#vehicleHiresTable tbody');
+  document.getElementById('vehicleHiresEmptyState').hidden = !!onHire.length;
+  document.getElementById('vehicleHiresEmptyState').textContent = onHireCount && term
+    ? 'No vehicles on hire match your search.'
+    : 'No vehicles on hire yet.';
+  tbody.innerHTML = onHire.map((v) => {
+    if (v.id === offHiringVehicleHireId) return vehicleHireOffHiringRow(v);
+    if (v.id === editingVehicleHireId) return vehicleHireEditRow(v);
+    return vehicleHireDisplayRow(v);
+  }).join('');
+
+  const offHireTbody = document.querySelector('#vehicleHiresOffHireTable tbody');
+  document.getElementById('vehicleHiresOffHireEmptyState').hidden = !!offHire.length;
+  document.getElementById('vehicleHiresOffHireEmptyState').textContent = offHireCount && term
+    ? 'No off-hired vehicles match your search.'
+    : 'No off-hired vehicles yet.';
+  offHireTbody.innerHTML = offHire.map((v) => vehicleHireOffHiredRow(v)).join('');
+
+  document.querySelectorAll('#vehicleHiresTable [data-del-vh], #vehicleHiresOffHireTable [data-del-vh]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this vehicle hire record? This cannot be undone.')) return;
+      try {
+        await api(`/api/vehicle-hires/${btn.dataset.delVh}`, { method: 'DELETE' });
+        loadVehicleHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  tbody.querySelectorAll('[data-edit-vh]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingVehicleHireId = btn.dataset.editVh;
+      renderVehicleHires();
+    });
+  });
+  tbody.querySelectorAll('.vh-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingVehicleHireId = null;
+      renderVehicleHires();
+    });
+  });
+  tbody.querySelectorAll('.vh-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const body = {
+        supplier: tr.querySelector('.vh-edit-supplier').value.trim(),
+        hireDate: tr.querySelector('.vh-edit-date').value,
+        registration: tr.querySelector('.vh-edit-registration').value.trim(),
+        make: tr.querySelector('.vh-edit-make').value.trim(),
+        model: tr.querySelector('.vh-edit-model').value.trim(),
+        signedIn: tr.querySelector('.vh-edit-signedin').value.trim(),
+        signedOut: tr.querySelector('.vh-edit-signedout').value.trim(),
+      };
+      try {
+        await api(`/api/vehicle-hires/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingVehicleHireId = null;
+        loadVehicleHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.vh-status-select').forEach((select) => {
+    select.addEventListener('change', () => {
+      if (select.value === 'off-hire') {
+        offHiringVehicleHireId = select.dataset.vhStatus;
+        renderVehicleHires();
+      }
+    });
+  });
+  tbody.querySelectorAll('.vh-cancel-offhire-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      offHiringVehicleHireId = null;
+      renderVehicleHires();
+    });
+  });
+  tbody.querySelectorAll('.vh-confirm-offhire-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const comments = tr.querySelector('.vh-offhire-comments').value.trim();
+      try {
+        await api(`/api/vehicle-hires/${tr.dataset.id}/off-hire`, { method: 'POST', body: JSON.stringify({ comments }) });
+        offHiringVehicleHireId = null;
+        loadVehicleHires();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('vehicleHireSearch').addEventListener('input', renderVehicleHires);
+
+document.getElementById('vehicleHireAddForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    supplier: document.getElementById('vehicleHireSupplierInput').value.trim(),
+    hireDate: document.getElementById('vehicleHireDateInput').value,
+    registration: document.getElementById('vehicleHireRegistrationInput').value.trim(),
+    make: document.getElementById('vehicleHireMakeInput').value.trim(),
+    model: document.getElementById('vehicleHireModelInput').value.trim(),
+    signedIn: document.getElementById('vehicleHireSignedInInput').value.trim(),
+    signedOut: document.getElementById('vehicleHireSignedOutInput').value.trim(),
+  };
+  try {
+    await api('/api/vehicle-hires', { method: 'POST', body: JSON.stringify(body) });
+    e.target.reset();
+    loadVehicleHires();
   } catch (err) {
     alert(err.message);
   }
