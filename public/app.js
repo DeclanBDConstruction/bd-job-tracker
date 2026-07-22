@@ -892,7 +892,7 @@ jobForm.addEventListener('submit', async (e) => {
 
 // ---------- Job Detail ----------
 
-const DOCUMENT_SECTIONS = ['rams', 'drawings', 'signoff', 'photos', 'permit'];
+const DOCUMENT_SECTIONS = ['rams', 'drawings', 'photos', 'permit'];
 
 const jobDetailModal = document.getElementById('jobDetailModal');
 let currentDetailJobId = null;

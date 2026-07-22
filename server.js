@@ -31,7 +31,7 @@ setInterval(() => {
   for (const res of sseClients) res.write(': ping\n\n');
 }, 20000);
 
-// ---------- Job documents (RAMS, drawings, sign-off sheets, photos) ----------
+// ---------- Job documents (RAMS, drawings, permits, photos) ----------
 // Files live in Supabase Storage under `${jobId}/${category}/${storedName}`; only
 // job_documents rows (metadata) live in Postgres.
 
@@ -388,12 +388,13 @@ app.get('/api/jobs/:id/documents/:category/:docId/file', validateDocumentParams,
   if (error) return res.status(404).json({ error: 'File not found in storage' });
   const buffer = Buffer.from(await data.arrayBuffer());
   const filename = doc.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
-  // Permits are generated PDFs meant to be reviewed on the spot (e.g. a surveyor checking
-  // one), not saved to disk first - inline + the real content type lets the browser render
-  // it straight away, same as clicking a PDF link anywhere else on the web. Every other
-  // document category keeps the old "always download" behaviour, unchanged.
-  if (req.params.category === 'permit') {
-    res.setHeader('Content-Type', 'application/pdf');
+  // RAMS, photos and permits are meant to be reviewed on the spot (e.g. an operative or
+  // surveyor checking one on their phone), not saved to disk first - inline + the real
+  // content type lets the browser render it straight away (Chrome/Edge's built-in PDF and
+  // image viewers), same as clicking a PDF/image link anywhere else on the web. Drawings
+  // keep the old "always download" behaviour, unchanged.
+  if (['rams', 'photos', 'permit'].includes(req.params.category)) {
+    res.setHeader('Content-Type', data.type || 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
   } else {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -409,7 +410,7 @@ app.delete('/api/jobs/:id/documents/:category/:docId', validateDocumentParams, h
   res.status(204).end();
 }));
 
-// Everything on a job (RAMS, drawings, sign-off sheets, photos) bundled into one zip, named
+// Everything on a job (RAMS, drawings, permits, photos) bundled into one zip, named
 // after the job number and location, plus a short info sheet with the start date - built for
 // forwarding on to someone outside the company (e.g. attaching to an email) in one go.
 app.get('/api/jobs/:id/documents-zip', handle(async (req, res) => {
