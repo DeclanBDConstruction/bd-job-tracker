@@ -1762,9 +1762,11 @@ async function refreshRamsViewModal() {
   try {
     const rams = await api(`/api/job-assignments/${currentRamsViewAssignmentId}/rams`);
     document.getElementById('ramsViewEmptyState').hidden = !!rams;
+    document.getElementById('ramsViewModalActions').hidden = !rams;
     body.innerHTML = rams ? ramsViewHtml(rams) : '';
   } catch (err) {
     body.innerHTML = '';
+    document.getElementById('ramsViewModalActions').hidden = true;
     document.getElementById('ramsViewEmptyState').hidden = false;
     document.getElementById('ramsViewEmptyState').textContent = err.message;
   }
@@ -1772,6 +1774,18 @@ async function refreshRamsViewModal() {
 
 document.getElementById('ramsViewModalCloseBtn').addEventListener('click', () => {
   document.getElementById('ramsViewModal').hidden = true;
+});
+
+// Backfills/re-syncs the job's document list for a RAMS that was submitted before the
+// auto-attach behaviour existed (or if the upload step ever failed at submit time) - see the
+// matching /rams/attach-to-job route in server.js.
+document.getElementById('ramsAttachToJobBtn').addEventListener('click', async () => {
+  try {
+    await api(`/api/job-assignments/${currentRamsViewAssignmentId}/rams/attach-to-job`, { method: 'POST' });
+    alert('Attached to the job\'s documents - check the Jobs tab.');
+  } catch (err) {
+    alert(err.message);
+  }
 });
 
 document.getElementById('addAssignmentBtn').addEventListener('click', async () => {

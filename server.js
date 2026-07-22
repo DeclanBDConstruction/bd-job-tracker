@@ -622,15 +622,7 @@ app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
 // snapshot rather than replacing the old one - a running history of what changed is preferable
 // to silently overwriting a HSE-relevant record.
 
-app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save RAMS against your own assignment' });
-
-  if (!decodePngDataUrl(req.body.signatureImage)) throw new Error('Sign before saving');
-
-  const rams = await db.createJobAssignmentRams(req.params.id, req.body);
-
+async function attachRamsToJobDocuments(assignment, rams) {
   const html = riskAssessments.renderRamsHtml({
     methodStatement: rams.methodStatement,
     hazards: rams.hazards,
@@ -646,11 +638,22 @@ app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
     .from(DOCUMENTS_BUCKET)
     .upload(storagePath(assignment.jobId, 'rams', storedName), Buffer.from(html, 'utf8'), { contentType: 'text/html' });
   if (error) throw new Error(error.message);
-  await db.addJobDocument(assignment.jobId, 'rams', {
+  return db.addJobDocument(assignment.jobId, 'rams', {
     originalName,
     storedName,
     size: Buffer.byteLength(html, 'utf8'),
   });
+}
+
+app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save RAMS against your own assignment' });
+
+  if (!decodePngDataUrl(req.body.signatureImage)) throw new Error('Sign before saving');
+
+  const rams = await db.createJobAssignmentRams(req.params.id, req.body);
+  await attachRamsToJobDocuments(assignment, rams);
 
   broadcast('jobAssignments');
   broadcast('jobs'); // so an admin/surveyor with the Job Detail RAMS tab open sees it live
@@ -664,6 +667,21 @@ app.get('/api/job-assignments/:id/rams', handle(async (req, res) => {
     return res.status(403).json({ error: 'You can only view RAMS for your own assignment' });
   }
   res.json(await db.getJobAssignmentRams(req.params.id));
+}));
+
+// Manual re-sync for RAMS submitted before this auto-attach behaviour existed (or if the upload
+// step ever fails at submit time) - regenerates the HTML snapshot from the existing structured
+// record and files it under the job's documents, same as the automatic path above. Admin-only,
+// since it's a data-mutating retry action, not a read.
+app.post('/api/job-assignments/:id/rams/attach-to-job', requireAdmin, handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  const rams = await db.getJobAssignmentRams(req.params.id);
+  if (!rams) return res.status(404).json({ error: 'No RAMS submitted for this assignment yet' });
+
+  const doc = await attachRamsToJobDocuments(assignment, rams);
+  broadcast('jobs');
+  res.status(201).json(doc);
 }));
 
 // ---------- Risk Assessments ----------
