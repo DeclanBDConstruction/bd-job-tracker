@@ -472,10 +472,10 @@
     <div class="panel-header">
       <h2>Job Assignments</h2>
     </div>
-    <p class="hint">Who's assigned to physically carry out each job (installation/manufacturing operatives) — separate from who won the job. Operatives see their own assignments on My Calendar and Home, and upload photos / mark their own assignment done from there.</p>
+    <p class="hint">Who's assigned to physically carry out each job — any employee, not just Installation/Manufacturing Operatives — separate from who won the job. Operatives see their own assignments on My Calendar and Home, and upload photos / mark their own assignment done from there.</p>
     <div class="import-upload" id="jobAssignmentsAddRow" hidden>
       <select id="newAssignmentJob"><option value="">Job…</option></select>
-      <select id="newAssignmentUser"><option value="">Operative…</option></select>
+      <select id="newAssignmentUser"><option value="">Employee…</option></select>
       <input type="text" id="newAssignmentTask" placeholder="Task (e.g. Install signage)">
       <input type="date" id="newAssignmentStartDate">
       <input type="number" id="newAssignmentDuration" placeholder="Days" min="1" step="1" value="1">
@@ -483,7 +483,7 @@
     </div>
     <div class="table-scroll">
       <table class="data-table" id="jobAssignmentsTable">
-        <thead><tr><th>Job</th><th>Operative</th><th>Task</th><th>Start</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Job</th><th>Employee</th><th>Task</th><th>Start</th><th>Duration</th><th>Status</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>

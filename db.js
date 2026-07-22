@@ -474,10 +474,10 @@ function validateJobAssignmentInput(input) {
   return errors;
 }
 
-async function assertOperative(userId) {
-  const { data: user, error } = await supabase.from('users').select('id, role').eq('id', userId).maybeSingle();
+async function assertAssignableUser(userId) {
+  const { data: user, error } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
   check(error);
-  if (!user || !OPERATIVE_ROLES.includes(user.role)) throw new Error('Chosen user is not an installation/manufacturing operative');
+  if (!user) throw new Error('Chosen user does not exist');
 }
 
 async function createJobAssignment(input, assignedByUser) {
@@ -486,7 +486,7 @@ async function createJobAssignment(input, assignedByUser) {
   const { data: job, error: jobErr } = await supabase.from('jobs').select('id').eq('id', input.jobId).maybeSingle();
   check(jobErr);
   if (!job) throw new Error('Job not found');
-  await assertOperative(input.userId);
+  await assertAssignableUser(input.userId);
   const durationDays = Math.max(1, Math.ceil(Number(input.durationDays)));
   const row = {
     id: genId(),
@@ -510,7 +510,7 @@ async function createJobAssignment(input, assignedByUser) {
 async function updateJobAssignment(id, input) {
   const errors = validateJobAssignmentInput(input);
   if (errors.length) throw new Error(errors.join('; '));
-  await assertOperative(input.userId);
+  await assertAssignableUser(input.userId);
   const durationDays = Math.max(1, Math.ceil(Number(input.durationDays)));
   const { data, error } = await supabase.from('job_assignments')
     .update({

@@ -1596,7 +1596,7 @@ function jobOptionsHtml(selectedId) {
 }
 
 function operativeOptionsHtml(selectedId) {
-  return '<option value="">Operative…</option>' + state.operativeUsers
+  return '<option value="">Employee…</option>' + state.operativeUsers
     .map((u) => `<option value="${u.id}" ${selectedId === u.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`)
     .join('');
 }
@@ -1695,8 +1695,11 @@ function renderJobAssignments() {
 
 async function loadJobAssignments() {
   state.jobAssignments = await api('/api/job-assignments');
+  // Any employee with a login can be assigned to physically carry out a job, not just
+  // those with an Installation/Manufacturing Operative role - office staff sometimes help
+  // out on site too.
   if (isAdmin()) {
-    state.operativeUsers = (await api('/api/users')).filter((u) => OPERATIVE_ROLES.includes(u.role));
+    state.operativeUsers = await api('/api/users');
   }
   renderJobAssignments();
 }
