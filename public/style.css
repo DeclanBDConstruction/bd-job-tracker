@@ -1847,6 +1847,16 @@ button:disabled {
   font-size: 14px;
 }
 
+.rams-hazard-block-header-actions {
+  display: flex;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.rams-hazard-block.collapsed .rams-hazard-block-body {
+  display: none;
+}
+
 .rams-status {
   margin: 12px 0;
 }

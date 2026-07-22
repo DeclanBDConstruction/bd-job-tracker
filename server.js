@@ -612,10 +612,15 @@ app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
 }));
 
 // ---------- Job Assignment RAMS ----------
-// One RAMS submission per assignment (see the schema comment on job_assignment_rams). Unlike
-// the Permit to Work above, this stays structured data rather than a generated PDF - it's a
-// gate on markArrived (db.js), not a document to hand someone, so the signature is kept as the
-// raw data URL string rather than decoded/embedded into anything.
+// One RAMS submission per assignment (see the schema comment on job_assignment_rams) - the
+// structured record (used for the markArrived gate and the operative's own edit/view) lives in
+// job_assignment_rams, kept as-is (signature stored as the raw data URL, not decoded/embedded).
+// On every save this ALSO renders an HTML snapshot (riskAssessments.renderRamsHtml) and drops it
+// into the job's 'rams' document category, same as attaching a generic/library/custom risk
+// assessment - so surveyors/admins reviewing everything on a job (not just the Job Assignments
+// tab) see it there too. Saving again before Arrived (see the lock in db.js) adds another
+// snapshot rather than replacing the old one - a running history of what changed is preferable
+// to silently overwriting a HSE-relevant record.
 
 app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
   const assignment = await db.getJobAssignment(req.params.id);
@@ -625,7 +630,30 @@ app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
   if (!decodePngDataUrl(req.body.signatureImage)) throw new Error('Sign before saving');
 
   const rams = await db.createJobAssignmentRams(req.params.id, req.body);
+
+  const html = riskAssessments.renderRamsHtml({
+    methodStatement: rams.methodStatement,
+    hazards: rams.hazards,
+    operativeName: rams.operativeName,
+    signatureImage: rams.signatureImage,
+    createdAt: rams.createdAt,
+    jobReference: assignment.jobReference || assignment.jobClient,
+    task: assignment.task,
+  });
+  const originalName = `RAMS - ${rams.operativeName} - ${new Date(rams.createdAt).toLocaleDateString('en-GB')}.html`;
+  const storedName = makeStoredName(originalName);
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(storagePath(assignment.jobId, 'rams', storedName), Buffer.from(html, 'utf8'), { contentType: 'text/html' });
+  if (error) throw new Error(error.message);
+  await db.addJobDocument(assignment.jobId, 'rams', {
+    originalName,
+    storedName,
+    size: Buffer.byteLength(html, 'utf8'),
+  });
+
   broadcast('jobAssignments');
+  broadcast('jobs'); // so an admin/surveyor with the Job Detail RAMS tab open sees it live
   res.status(201).json(rams);
 }));
 

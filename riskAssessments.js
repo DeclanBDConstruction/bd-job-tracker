@@ -440,4 +440,113 @@ function renderHtml(ra) {
 `;
 }
 
-module.exports = { listRiskAssessments, getRiskAssessment, renderHtml, riskBand };
+// Renders a self-contained HTML snapshot of an operative's submitted RAMS (method statement +
+// every hazard they picked/adjusted + their signature), in the same visual style as renderHtml
+// above, so it saves straight into the job's RAMS document category (see the
+// /api/job-assignments/:id/rams route in server.js) and surveyors/admins see it alongside every
+// other RAMS attached to that job, not just from the Job Assignments tab.
+function renderRamsHtml({ methodStatement, hazards, operativeName, signatureImage, createdAt, jobReference, task }) {
+  const submittedDate = new Date(createdAt).toLocaleDateString('en-GB');
+  const list = (items) => `<ul>${(items || []).map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`;
+  const keyRows = RISK_KEY_ROWS.map(([l, c, r, slug], i) => `
+    <tr>
+      ${i === 0 ? `<td rowspan="${RISK_KEY_ROWS.length}" class="company-cell"><span class="company-name">${escapeHtml(COMPANY_NAME)}</span><br><span class="company-address">${escapeHtml(COMPANY_ADDRESS)}</span></td>` : ''}
+      <td>${escapeHtml(l)}</td><td>${escapeHtml(c)}</td><td class="key-band ${slug}">${escapeHtml(r)}</td>
+    </tr>
+  `).join('');
+
+  const hazardBlocks = (hazards || []).map((h) => {
+    const currentR = h.currentL * h.currentC;
+    const additionalR = h.additionalL * h.additionalC;
+    const currentBand = riskBand(currentR);
+    const additionalBand = riskBand(additionalR);
+    return `
+      <table style="margin-top:14px">
+        <tr>
+          <th class="hazard-table" style="width:20%">Hazard &amp; Potential Harm</th>
+          <th class="hazard-table" style="width:28%">Current Risk Controls</th>
+          <th class="hazard-table" style="width:4%">L</th>
+          <th class="hazard-table" style="width:4%">C</th>
+          <th class="hazard-table" style="width:4%">R</th>
+          <th class="hazard-table" style="width:28%">Additional Risk Controls</th>
+          <th class="hazard-table" style="width:4%">L</th>
+          <th class="hazard-table" style="width:4%">C</th>
+          <th class="hazard-table" style="width:4%">R</th>
+        </tr>
+        <tr>
+          <td><div class="hazard-title">${escapeHtml(h.title)}</div>${escapeHtml(h.hazard || '')}</td>
+          <td>${list(h.currentControls)}</td>
+          <td class="lc-cell">${h.currentL}</td>
+          <td class="lc-cell">${h.currentC}</td>
+          <td class="r-cell key-band ${currentBand.slug}">${currentR}</td>
+          <td>${list(h.additionalControls)}</td>
+          <td class="lc-cell">${h.additionalL}</td>
+          <td class="lc-cell">${h.additionalC}</td>
+          <td class="r-cell key-band ${additionalBand.slug}">${additionalR}</td>
+        </tr>
+        ${(h.ppe && h.ppe.length) ? `<tr><td class="section-title">PPE Required</td><td colspan="8">${escapeHtml(h.ppe.join(', '))}</td></tr>` : ''}
+      </table>
+    `;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAMS — ${escapeHtml(jobReference || '')}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #1e2733; max-width: 900px; margin: 24px auto; padding: 0 20px; line-height: 1.4; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .logo { height: 70px; }
+  .company-name { font-weight: 700; font-size: 14px; }
+  .company-address { font-size: 12px; color: #444; }
+  .key-table th { background: #6d2f5f; color: #fff; font-size: 11px; }
+  .key-band { font-weight: 700; text-align: center; }
+  .key-band.no-action { background: #b6d95a; }
+  .key-band.monitor { background: #d7e79b; }
+  .key-band.action { background: #ffe066; }
+  .key-band.urgent-action { background: #f4a13a; }
+  .key-band.stop { background: #e5514f; color: #fff; }
+  .section-title { background: #6d2f5f; color: #fff; font-weight: 700; padding: 6px 8px; font-size: 12px; }
+  .hazard-table th { background: #6d2f5f; color: #fff; font-size: 11px; }
+  .hazard-title { font-weight: 700; margin-bottom: 6px; }
+  .r-cell { font-weight: 700; text-align: center; }
+  .lc-cell { text-align: center; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  .method-statement { white-space: pre-wrap; }
+  .footer-table td { font-weight: 700; background: #6d2f5f; color: #fff; width: 180px; }
+  .footer-table .value { background: #fff; color: #1e2733; font-weight: 400; }
+  .signature-img { max-width: 300px; border: 1px solid #999; border-radius: 4px; }
+</style>
+</head>
+<body>
+  ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="${escapeHtml(COMPANY_NAME)}">` : ''}
+
+  <table class="key-table">
+    <tr><th style="width:24%">Company</th><th style="width:24%">Likelihood</th><th style="width:24%">Consequences</th><th style="width:28%">Current Risk Rating</th></tr>
+    ${keyRows}
+  </table>
+
+  <table style="margin-top:14px">
+    <tr><td class="section-title" style="width:20%">Job</td><td colspan="3">${escapeHtml(jobReference || '')}</td></tr>
+    <tr><td class="section-title">Task</td><td colspan="3">${escapeHtml(task || '')}</td></tr>
+  </table>
+
+  <table style="margin-top:14px">
+    <tr><td class="section-title" style="width:20%">Method Statement</td><td colspan="3" class="method-statement">${escapeHtml(methodStatement)}</td></tr>
+  </table>
+
+  ${hazardBlocks}
+
+  <table class="footer-table" style="margin-top:20px">
+    <tr><td>Signed</td><td class="value">${escapeHtml(operativeName)}</td></tr>
+    <tr><td>Date</td><td class="value">${submittedDate}</td></tr>
+    <tr><td>Signature</td><td class="value">${signatureImage ? `<img class="signature-img" src="${signatureImage}" alt="Signature">` : ''}</td></tr>
+  </table>
+</body>
+</html>
+`;
+}
+
+module.exports = { listRiskAssessments, getRiskAssessment, renderHtml, renderRamsHtml, riskBand };

@@ -3103,23 +3103,28 @@ function ramsHazardBlockHtml(h) {
     <div class="rams-hazard-block" data-local-id="${h.localId}">
       <div class="rams-hazard-block-header">
         <h4>${escapeHtml(h.title)}</h4>
-        ${ramsFormLocked ? '' : `<button type="button" class="link-btn rams-remove-hazard-btn" data-local-id="${h.localId}">Remove</button>`}
+        <div class="rams-hazard-block-header-actions">
+          <button type="button" class="link-btn rams-minimise-hazard-btn">Minimise</button>
+          ${ramsFormLocked ? '' : `<button type="button" class="link-btn rams-remove-hazard-btn" data-local-id="${h.localId}">Remove</button>`}
+        </div>
       </div>
-      ${h.legislation ? `<p class="hint">${escapeHtml(h.legislation)}</p>` : ''}
-      <div class="ra-edit-badges rams-hazard-badges"></div>
-      <label>Hazard &amp; Potential Harm<textarea class="rams-hazard-hazard" rows="2" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml(h.hazard || '')}</textarea></label>
-      <label>Who Might Be Harmed<input type="text" class="rams-hazard-peopleaffected" value="${escapeHtml(h.peopleAffected || '')}" ${ramsFormLocked ? 'disabled' : ''}></label>
-      <div class="ra-edit-grid">
-        <label>Current Risk Controls (one per line)<textarea class="rams-hazard-currentcontrols" rows="4" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.currentControls || []).join('\n'))}</textarea></label>
-        <label>Additional Risk Controls (one per line)<textarea class="rams-hazard-additionalcontrols" rows="4" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.additionalControls || []).join('\n'))}</textarea></label>
+      <div class="rams-hazard-block-body">
+        ${h.legislation ? `<p class="hint">${escapeHtml(h.legislation)}</p>` : ''}
+        <div class="ra-edit-badges rams-hazard-badges"></div>
+        <label>Hazard &amp; Potential Harm<textarea class="rams-hazard-hazard" rows="2" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml(h.hazard || '')}</textarea></label>
+        <label>Who Might Be Harmed<input type="text" class="rams-hazard-peopleaffected" value="${escapeHtml(h.peopleAffected || '')}" ${ramsFormLocked ? 'disabled' : ''}></label>
+        <div class="ra-edit-grid">
+          <label>Current Risk Controls (one per line)<textarea class="rams-hazard-currentcontrols" rows="4" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.currentControls || []).join('\n'))}</textarea></label>
+          <label>Additional Risk Controls (one per line)<textarea class="rams-hazard-additionalcontrols" rows="4" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.additionalControls || []).join('\n'))}</textarea></label>
+        </div>
+        <div class="ra-edit-grid ra-edit-lc">
+          <label>Current L<input type="number" class="rams-hazard-currentl" min="1" max="5" value="${h.currentL}" ${ramsFormLocked ? 'disabled' : ''}></label>
+          <label>Current C<input type="number" class="rams-hazard-currentc" min="1" max="5" value="${h.currentC}" ${ramsFormLocked ? 'disabled' : ''}></label>
+          <label>Additional L<input type="number" class="rams-hazard-additionall" min="1" max="5" value="${h.additionalL}" ${ramsFormLocked ? 'disabled' : ''}></label>
+          <label>Additional C<input type="number" class="rams-hazard-additionalc" min="1" max="5" value="${h.additionalC}" ${ramsFormLocked ? 'disabled' : ''}></label>
+        </div>
+        <label>PPE Required (one per line)<textarea class="rams-hazard-ppe" rows="3" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.ppe || []).join('\n'))}</textarea></label>
       </div>
-      <div class="ra-edit-grid ra-edit-lc">
-        <label>Current L<input type="number" class="rams-hazard-currentl" min="1" max="5" value="${h.currentL}" ${ramsFormLocked ? 'disabled' : ''}></label>
-        <label>Current C<input type="number" class="rams-hazard-currentc" min="1" max="5" value="${h.currentC}" ${ramsFormLocked ? 'disabled' : ''}></label>
-        <label>Additional L<input type="number" class="rams-hazard-additionall" min="1" max="5" value="${h.additionalL}" ${ramsFormLocked ? 'disabled' : ''}></label>
-        <label>Additional C<input type="number" class="rams-hazard-additionalc" min="1" max="5" value="${h.additionalC}" ${ramsFormLocked ? 'disabled' : ''}></label>
-      </div>
-      <label>PPE Required (one per line)<textarea class="rams-hazard-ppe" rows="3" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.ppe || []).join('\n'))}</textarea></label>
     </div>
   `;
 }
@@ -3152,6 +3157,17 @@ function renderRamsHazardBlocks() {
     btn.addEventListener('click', () => {
       ramsHazardBlocks = ramsHazardBlocks.filter((h) => h.localId !== btn.dataset.localId);
       renderRamsHazardBlocks();
+    });
+  });
+  // Pure DOM toggle, deliberately not a re-render - re-rendering would rebuild every block's
+  // HTML from ramsHazardBlocks, which only holds each hazard's starting values, wiping out
+  // whatever the operative has typed into other blocks that hasn't been read back yet (that
+  // only happens at submit time, see readRamsHazardBlocks).
+  container.querySelectorAll('.rams-minimise-hazard-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const block = btn.closest('.rams-hazard-block');
+      const collapsed = block.classList.toggle('collapsed');
+      btn.textContent = collapsed ? 'Expand' : 'Minimise';
     });
   });
 }
