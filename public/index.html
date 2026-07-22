@@ -77,6 +77,7 @@
   </div>
   <nav class="tabs">
     <button class="tab-btn active" data-tab="home">Home</button>
+    <button class="tab-btn" data-tab="assignments" id="assignmentsTabBtn" hidden>Assignments</button>
 
     <div class="tab-group" id="jobsTabGroup">
       <button type="button" class="tab-group-btn">Jobs <span class="caret">▾</span></button>
@@ -166,6 +167,23 @@
       <button type="button" class="slideshow-nav slideshow-next" aria-label="Next slide">&#8250;</button>
       <div class="slideshow-dots"></div>
     </div>
+  </section>
+
+  <!-- ASSIGNMENTS TAB (operative self-service: your own jobs, current + past) -->
+  <section id="tab-assignments" class="tab-panel">
+    <div class="panel-header">
+      <h2>My Assignments</h2>
+      <div class="filters">
+        <select id="assignmentsViewSelect">
+          <option value="current">Current Assignments</option>
+          <option value="past">Past Jobs</option>
+        </select>
+      </div>
+    </div>
+    <ul class="home-rams-list" id="myAssignmentsCurrentList"></ul>
+    <p class="empty-state" id="myAssignmentsCurrentEmpty" hidden>No current assignments.</p>
+    <ul class="home-rams-list" id="myAssignmentsPastList" hidden></ul>
+    <p class="empty-state" id="myAssignmentsPastEmpty" hidden>No completed jobs yet.</p>
   </section>
 
   <!-- JOBS TAB -->

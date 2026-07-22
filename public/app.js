@@ -72,6 +72,7 @@ function showApp(user) {
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
   document.getElementById('jobAssignmentsAddRow').hidden = !isAdmin();
+  document.getElementById('assignmentsTabBtn').hidden = !isOperative();
 
   // Staff and operatives both only get Home, My Calendar and My Diary - everything else
   // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
@@ -167,6 +168,7 @@ async function handleLiveJobAssignmentsChange() {
     state.myAssignments = await api('/api/job-assignments/mine');
     renderCalendar();
     renderHomeDashboard();
+    renderMyAssignmentsTab();
     if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) await refreshAssignmentTimeLog();
   } else if (activeTab() === 'jobassignments') {
     loadJobAssignments();
@@ -322,6 +324,7 @@ function goToTab(tab) {
   if (tab === 'hire') loadHires();
   if (tab === 'quoting') loadQuotes();
   if (tab === 'jobassignments') loadJobAssignments();
+  if (tab === 'assignments') renderMyAssignmentsTab();
   if (tab === 'diary') {
     setDiaryViewDate(todayDateStr());
     loadDiary();
@@ -548,6 +551,7 @@ async function bootstrapOperative() {
   state.myAssignments = myAssignments;
   renderCalendar();
   renderHomeDashboard();
+  renderMyAssignmentsTab();
 
   try {
     const [calendarColors, userColors] = await Promise.all([api('/api/calendar-colors'), api('/api/users/colors')]);
@@ -2598,6 +2602,7 @@ document.getElementById('assignmentCompleteBtn').addEventListener('click', async
     await refreshAssignmentTimeLog();
     renderCalendar();
     renderHomeDashboard();
+    renderMyAssignmentsTab();
   } catch (err) {
     alert(err.message);
   }
@@ -2890,6 +2895,51 @@ function renderOperativeHomeDashboard(container) {
     document.getElementById('homeGoAssignmentBtn').addEventListener('click', () => openAssignmentDetail(upcoming.id));
   }
 }
+
+// ---------- My Assignments (operative-only tab) ----------
+// Full list of an operative's own assignments, split into "Current" (not yet marked done)
+// and a "Past Jobs" dropdown (completed) - a job moves from one to the other as soon as
+// they mark it done via the assignment detail modal (see assignmentCompleteBtn above).
+
+function assignmentRowHtml(a, todayStr) {
+  return `
+    <li>
+      <div class="home-rams-info">
+        <strong>${escapeHtml(a.jobReference || a.jobClient)}${a.jobLocation ? ' — ' + escapeHtml(a.jobLocation) : ''}</strong>
+        <span class="home-rams-date">${escapeHtml(a.task)} · ${a.startDate < todayStr ? 'Started ' : 'Starts '}${a.startDate} · ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span>
+      </div>
+      <button type="button" class="home-rams-btn" data-assignment="${a.id}">View</button>
+    </li>
+  `;
+}
+
+function renderMyAssignmentsTab() {
+  const select = document.getElementById('assignmentsViewSelect');
+  if (!select) return;
+  const view = select.value;
+  const currentList = document.getElementById('myAssignmentsCurrentList');
+  const pastList = document.getElementById('myAssignmentsPastList');
+  currentList.hidden = view !== 'current';
+  pastList.hidden = view !== 'past';
+
+  const todayStr = todayDateStr();
+  const current = state.myAssignments.filter((a) => !a.completed).sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const past = state.myAssignments.filter((a) => a.completed).sort((a, b) => b.startDate.localeCompare(a.startDate));
+
+  document.getElementById('myAssignmentsCurrentEmpty').hidden = view !== 'current' || !!current.length;
+  document.getElementById('myAssignmentsPastEmpty').hidden = view !== 'past' || !!past.length;
+
+  currentList.innerHTML = current.map((a) => assignmentRowHtml(a, todayStr)).join('');
+  pastList.innerHTML = past.map((a) => assignmentRowHtml(a, todayStr)).join('');
+
+  [currentList, pastList].forEach((list) => {
+    list.querySelectorAll('[data-assignment]').forEach((btn) => {
+      btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
+    });
+  });
+}
+
+document.getElementById('assignmentsViewSelect').addEventListener('change', renderMyAssignmentsTab);
 
 // ---------- Risk Assessments ----------
 // Three kinds of card in the same grid, distinguished by data-kind on their "View & Attach
