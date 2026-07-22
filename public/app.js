@@ -176,7 +176,10 @@ async function handleLiveJobAssignmentsChange() {
     renderCalendar();
     renderHomeDashboard();
     renderMyAssignmentsTab();
-    if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) await refreshAssignmentTimeLog();
+    if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) {
+      await refreshAssignmentTimeLog();
+      await refreshAssignmentRams();
+    }
   } else if (activeTab() === 'jobassignments') {
     loadJobAssignments();
     if (currentTimeLogAssignmentId && !document.getElementById('timeLogModal').hidden) refreshTimeLogModal();
@@ -551,12 +554,14 @@ async function bootstrapStaff() {
 // into My Calendar and surfaced on Home) - a trimmed bootstrap like bootstrapStaff, since
 // everything else 403s for this role (see the operative allowlist in server.js).
 async function bootstrapOperative() {
-  const [calendarEvents, myAssignments] = await Promise.all([
+  const [calendarEvents, myAssignments, riskAssessmentsList] = await Promise.all([
     api('/api/calendar'),
     api('/api/job-assignments/mine'),
+    api('/api/risk-assessments'),
   ]);
   state.calendarEvents = calendarEvents;
   state.myAssignments = myAssignments;
+  state.riskAssessments = riskAssessmentsList;
   renderCalendar();
   renderHomeDashboard();
   renderMyAssignmentsTab();
@@ -1572,6 +1577,7 @@ function assignmentDisplayRow(a) {
       <td class="row-actions">
         <button type="button" class="ja-photos-btn" data-job="${a.jobId}">View Photos</button>
         <button type="button" class="ja-timelog-btn" data-id="${a.id}">Time Log</button>
+        <button type="button" class="ja-rams-btn" data-id="${a.id}">RAMS</button>
         ${isAdmin() ? `<button type="button" class="ja-edit-btn">Edit</button><button type="button" class="danger ja-delete-btn">Delete</button>` : ''}
       </td>
     </tr>`;
@@ -1609,6 +1615,9 @@ function renderJobAssignments() {
   });
   tbody.querySelectorAll('.ja-timelog-btn').forEach((btn) => {
     btn.addEventListener('click', () => openTimeLogModal(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.ja-rams-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openRamsViewModal(btn.dataset.id));
   });
   tbody.querySelectorAll('.ja-edit-btn').forEach((btn) => {
     btn.addEventListener('click', () => { editingAssignmentId = btn.closest('tr').dataset.id; renderJobAssignments(); });
@@ -1698,6 +1707,71 @@ async function refreshTimeLogModal() {
 
 document.getElementById('timeLogModalCloseBtn').addEventListener('click', () => {
   document.getElementById('timeLogModal').hidden = true;
+});
+
+// ---------- RAMS viewer (admin/surveyor, read-only) ----------
+
+let currentRamsViewAssignmentId = null;
+
+function openRamsViewModal(id) {
+  currentRamsViewAssignmentId = id;
+  const a = state.jobAssignments.find((x) => x.id === id);
+  document.getElementById('ramsViewModalTitle').textContent = a
+    ? `RAMS — ${a.userName} — ${a.jobReference || a.jobClient}${a.jobLocation ? ' — ' + a.jobLocation : ''}`
+    : 'RAMS';
+  document.getElementById('ramsViewModal').hidden = false;
+  refreshRamsViewModal();
+}
+
+function ramsHazardCardHtml(h) {
+  const currentBand = raBandClient(h.currentL * h.currentC);
+  const additionalBand = raBandClient(h.additionalL * h.additionalC);
+  return `
+    <div class="ra-card">
+      <div class="ra-card-top">
+        <h3>${escapeHtml(h.title)}</h3>
+        <span class="risk-badge ${currentBand.slug}">${escapeHtml(currentBand.label)}</span>
+      </div>
+      ${h.legislation ? `<p class="ra-card-summary">${escapeHtml(h.legislation)}</p>` : ''}
+      ${h.hazard ? `<p>${escapeHtml(h.hazard)}</p>` : ''}
+      ${h.peopleAffected ? `<p><strong>Who might be harmed:</strong> ${escapeHtml(h.peopleAffected)}</p>` : ''}
+      <p><strong>Current controls:</strong></p>
+      <ul>${(h.currentControls || []).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+      <p class="risk-badge ${currentBand.slug}">Current: ${h.currentL} × ${h.currentC} = ${h.currentL * h.currentC} — ${escapeHtml(currentBand.label)}</p>
+      ${(h.additionalControls || []).length ? `<p><strong>Additional controls:</strong></p><ul>${h.additionalControls.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>` : ''}
+      <p class="risk-badge ${additionalBand.slug}">With additional controls: ${h.additionalL} × ${h.additionalC} = ${h.additionalL * h.additionalC} — ${escapeHtml(additionalBand.label)}</p>
+      ${(h.ppe || []).length ? `<p><strong>PPE required:</strong> ${h.ppe.map(escapeHtml).join(', ')}</p>` : ''}
+    </div>
+  `;
+}
+
+function ramsViewHtml(rams) {
+  return `
+    <h3>Method Statement</h3>
+    <p>${escapeHtml(rams.methodStatement).replace(/\n/g, '<br>')}</p>
+    <h3>Risk Assessment</h3>
+    <div class="ra-grid">${(rams.hazards || []).map(ramsHazardCardHtml).join('')}</div>
+    <h3>Signed</h3>
+    <p>${escapeHtml(rams.operativeName)} — ${new Date(rams.createdAt).toLocaleString('en-GB')}</p>
+    <img class="rams-signature-view" src="${rams.signatureImage}" alt="Signature">
+  `;
+}
+
+async function refreshRamsViewModal() {
+  const body = document.getElementById('ramsViewModalBody');
+  try {
+    const rams = await api(`/api/job-assignments/${currentRamsViewAssignmentId}/rams`);
+    document.getElementById('ramsViewEmptyState').hidden = !!rams;
+    body.innerHTML = rams ? ramsViewHtml(rams) : '';
+  } catch (err) {
+    body.innerHTML = '';
+    document.getElementById('ramsViewEmptyState').hidden = false;
+    document.getElementById('ramsViewEmptyState').textContent = err.message;
+  }
+}
+
+document.getElementById('ramsViewModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('ramsViewModal').hidden = true;
 });
 
 document.getElementById('addAssignmentBtn').addEventListener('click', async () => {
@@ -2721,14 +2795,18 @@ function findMyAssignment(id) {
 }
 
 let currentAssignmentTimeLog = null;
+let currentAssignmentRams = null;
 
 async function openAssignmentDetail(id) {
   currentAssignmentId = id;
   currentAssignmentTimeLog = null; // avoid briefly showing the previously-open assignment's clock state
+  currentAssignmentRams = null;
   renderAssignmentDetail();
   renderAssignmentTimeLog();
+  renderAssignmentRamsStatus();
   document.getElementById('assignmentDetailModal').hidden = false;
   await refreshAssignmentTimeLog();
+  await refreshAssignmentRams();
 }
 
 function renderAssignmentDetail() {
@@ -2775,7 +2853,12 @@ function renderAssignmentTimeLog() {
         <span class="time-log-label">Arrived</span>
         ${arrived
           ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>`
-          : `<button type="button" id="assignmentArrivedBtn" ${clockedIn ? '' : 'disabled'} title="${clockedIn ? '' : 'Clock in first'}">Mark Arrived</button>`}
+          : (() => {
+              const ramsDone = !!currentAssignmentRams;
+              const canMarkArrived = clockedIn && ramsDone;
+              const title = !clockedIn ? 'Clock in first' : !ramsDone ? 'Submit your RAMS first' : '';
+              return `<button type="button" id="assignmentArrivedBtn" ${canMarkArrived ? '' : 'disabled'} title="${title}">Mark Arrived</button>`;
+            })()}
       </div>
       <div class="time-log-step">
         <span class="time-log-label">Clock Out</span>
@@ -2815,6 +2898,31 @@ async function refreshAssignmentTimeLog() {
   }
   renderAssignmentTimeLog();
   renderAssignmentDetail();
+}
+
+async function refreshAssignmentRams() {
+  try {
+    currentAssignmentRams = await api(`/api/job-assignments/${currentAssignmentId}/rams`);
+  } catch (err) {
+    currentAssignmentRams = null;
+  }
+  renderAssignmentRamsStatus();
+  renderAssignmentTimeLog(); // the Arrived button's disabled state depends on currentAssignmentRams too
+}
+
+// RAMS locks once the operative has actually marked themselves arrived (see the matching
+// server-side check in db.js createJobAssignmentRams) - after that the button just opens a
+// read-only view rather than the editable form.
+function renderAssignmentRamsStatus() {
+  const box = document.getElementById('assignmentRamsStatus');
+  const locked = !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+  if (currentAssignmentRams) {
+    box.innerHTML = `<span class="status-pill complete">RAMS submitted ${new Date(currentAssignmentRams.createdAt).toLocaleDateString('en-GB')}${locked ? ' (locked)' : ''}</span>`;
+  } else {
+    box.innerHTML = `<span class="status-pill in-progress">RAMS required before Mark Arrived</span>`;
+  }
+  const btn = document.getElementById('assignmentRamsBtn');
+  btn.textContent = currentAssignmentRams ? (locked ? 'View RAMS' : 'View / Edit RAMS') : 'RAMS (required)';
 }
 
 document.getElementById('assignmentDetailCloseBtn').addEventListener('click', () => {
@@ -2919,9 +3027,15 @@ function createSignaturePad(canvasId) {
 
 const operativeSignaturePad = createSignaturePad('permitOperativeSignatureCanvas');
 const managerSignaturePad = createSignaturePad('permitManagerSignatureCanvas');
+const ramsSignaturePad = createSignaturePad('ramsSignatureCanvas');
+const signaturePadsByCanvasId = {
+  permitOperativeSignatureCanvas: operativeSignaturePad,
+  permitManagerSignatureCanvas: managerSignaturePad,
+  ramsSignatureCanvas: ramsSignaturePad,
+};
 
 document.querySelectorAll('.signature-clear-btn').forEach((btn) => {
-  const pad = btn.dataset.target === 'permitOperativeSignatureCanvas' ? operativeSignaturePad : managerSignaturePad;
+  const pad = signaturePadsByCanvasId[btn.dataset.target];
   btn.addEventListener('click', () => pad.clear());
 });
 
@@ -2968,6 +3082,188 @@ document.getElementById('permitForm').addEventListener('submit', async (e) => {
     });
     closePermitForm();
     alert('Permit to Work saved.');
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ---------- RAMS form (operative self-service) ----------
+// One RAMS per assignment - the operative picks hazards from the generic templates
+// (state.riskAssessments, same list the admin Risk Assessments tab uses) and adjusts them for
+// today, same editable-fields shape as raEditFormHtml but repeatable per hazard. Locks once
+// they've marked themselves arrived (see renderAssignmentRamsStatus) - the form still opens but
+// read-only past that point, same reasoning as the server-side lock in db.js.
+
+let ramsHazardBlocks = [];
+let ramsLocalIdSeq = 0;
+let ramsFormLocked = false;
+
+function ramsHazardBlockHtml(h) {
+  return `
+    <div class="rams-hazard-block" data-local-id="${h.localId}">
+      <div class="rams-hazard-block-header">
+        <h4>${escapeHtml(h.title)}</h4>
+        ${ramsFormLocked ? '' : `<button type="button" class="link-btn rams-remove-hazard-btn" data-local-id="${h.localId}">Remove</button>`}
+      </div>
+      ${h.legislation ? `<p class="hint">${escapeHtml(h.legislation)}</p>` : ''}
+      <div class="ra-edit-badges rams-hazard-badges"></div>
+      <label>Hazard &amp; Potential Harm<textarea class="rams-hazard-hazard" rows="2" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml(h.hazard || '')}</textarea></label>
+      <label>Who Might Be Harmed<input type="text" class="rams-hazard-peopleaffected" value="${escapeHtml(h.peopleAffected || '')}" ${ramsFormLocked ? 'disabled' : ''}></label>
+      <div class="ra-edit-grid">
+        <label>Current Risk Controls (one per line)<textarea class="rams-hazard-currentcontrols" rows="4" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.currentControls || []).join('\n'))}</textarea></label>
+        <label>Additional Risk Controls (one per line)<textarea class="rams-hazard-additionalcontrols" rows="4" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.additionalControls || []).join('\n'))}</textarea></label>
+      </div>
+      <div class="ra-edit-grid ra-edit-lc">
+        <label>Current L<input type="number" class="rams-hazard-currentl" min="1" max="5" value="${h.currentL}" ${ramsFormLocked ? 'disabled' : ''}></label>
+        <label>Current C<input type="number" class="rams-hazard-currentc" min="1" max="5" value="${h.currentC}" ${ramsFormLocked ? 'disabled' : ''}></label>
+        <label>Additional L<input type="number" class="rams-hazard-additionall" min="1" max="5" value="${h.additionalL}" ${ramsFormLocked ? 'disabled' : ''}></label>
+        <label>Additional C<input type="number" class="rams-hazard-additionalc" min="1" max="5" value="${h.additionalC}" ${ramsFormLocked ? 'disabled' : ''}></label>
+      </div>
+      <label>PPE Required (one per line)<textarea class="rams-hazard-ppe" rows="3" ${ramsFormLocked ? 'disabled' : ''}>${escapeHtml((h.ppe || []).join('\n'))}</textarea></label>
+    </div>
+  `;
+}
+
+function updateRamsHazardBadge(block) {
+  const cl = Number(block.querySelector('.rams-hazard-currentl').value) || 1;
+  const cc = Number(block.querySelector('.rams-hazard-currentc').value) || 1;
+  const al = Number(block.querySelector('.rams-hazard-additionall').value) || 1;
+  const ac = Number(block.querySelector('.rams-hazard-additionalc').value) || 1;
+  const currentR = cl * cc;
+  const additionalR = al * ac;
+  const currentBand = raBandClient(currentR);
+  const additionalBand = raBandClient(additionalR);
+  block.querySelector('.rams-hazard-badges').innerHTML = `
+    <span class="risk-badge ${currentBand.slug}">Current: ${cl} × ${cc} = ${currentR} — ${escapeHtml(currentBand.label)}</span>
+    <span class="risk-badge ${additionalBand.slug}">With additional controls: ${al} × ${ac} = ${additionalR} — ${escapeHtml(additionalBand.label)}</span>
+  `;
+}
+
+function renderRamsHazardBlocks() {
+  const container = document.getElementById('ramsHazardBlocks');
+  document.getElementById('ramsHazardsEmptyState').hidden = !!ramsHazardBlocks.length;
+  container.innerHTML = ramsHazardBlocks.map(ramsHazardBlockHtml).join('');
+  container.querySelectorAll('.rams-hazard-block').forEach((block) => {
+    updateRamsHazardBadge(block);
+    block.querySelectorAll('.rams-hazard-currentl, .rams-hazard-currentc, .rams-hazard-additionall, .rams-hazard-additionalc')
+      .forEach((input) => input.addEventListener('input', () => updateRamsHazardBadge(block)));
+  });
+  container.querySelectorAll('.rams-remove-hazard-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ramsHazardBlocks = ramsHazardBlocks.filter((h) => h.localId !== btn.dataset.localId);
+      renderRamsHazardBlocks();
+    });
+  });
+}
+
+function readRamsHazardBlocks() {
+  return [...document.querySelectorAll('#ramsHazardBlocks .rams-hazard-block')].map((block) => {
+    const source = ramsHazardBlocks.find((h) => h.localId === block.dataset.localId) || {};
+    return {
+      id: source.id || null,
+      title: source.title || '',
+      legislation: source.legislation || '',
+      hazard: block.querySelector('.rams-hazard-hazard').value.trim(),
+      peopleAffected: block.querySelector('.rams-hazard-peopleaffected').value.trim(),
+      currentControls: linesToList(block.querySelector('.rams-hazard-currentcontrols').value),
+      currentL: Number(block.querySelector('.rams-hazard-currentl').value) || 1,
+      currentC: Number(block.querySelector('.rams-hazard-currentc').value) || 1,
+      additionalControls: linesToList(block.querySelector('.rams-hazard-additionalcontrols').value),
+      additionalL: Number(block.querySelector('.rams-hazard-additionall').value) || 1,
+      additionalC: Number(block.querySelector('.rams-hazard-additionalc').value) || 1,
+      ppe: linesToList(block.querySelector('.rams-hazard-ppe').value),
+    };
+  });
+}
+
+document.getElementById('ramsAddHazardBtn').addEventListener('click', () => {
+  const picker = document.getElementById('ramsHazardPicker');
+  const raId = picker.value;
+  if (!raId) return;
+  if (ramsHazardBlocks.some((h) => h.id === raId)) { picker.value = ''; return; }
+  const ra = state.riskAssessments.find((r) => r.id === raId);
+  if (!ra) return;
+  ramsHazardBlocks.push({
+    localId: String(ramsLocalIdSeq++),
+    id: ra.id,
+    title: ra.title,
+    legislation: ra.legislation || '',
+    hazard: ra.hazard || '',
+    peopleAffected: ra.peopleAffected || '',
+    currentControls: ra.currentControls || [],
+    currentL: ra.currentL,
+    currentC: ra.currentC,
+    additionalControls: ra.additionalControls || [],
+    additionalL: ra.additionalL,
+    additionalC: ra.additionalC,
+    ppe: ra.ppe || [],
+  });
+  picker.value = '';
+  renderRamsHazardBlocks();
+});
+
+document.getElementById('assignmentRamsBtn').addEventListener('click', () => {
+  const a = findMyAssignment(currentAssignmentId);
+  if (!a) return;
+  ramsFormLocked = !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+
+  document.getElementById('ramsHazardPicker').innerHTML = '<option value="">Add a hazard…</option>'
+    + state.riskAssessments.map((ra) => `<option value="${ra.id}">${escapeHtml(ra.title)}</option>`).join('');
+
+  if (currentAssignmentRams) {
+    document.getElementById('ramsMethodStatement').value = currentAssignmentRams.methodStatement;
+    document.getElementById('ramsOperativeName').value = currentAssignmentRams.operativeName;
+    ramsHazardBlocks = currentAssignmentRams.hazards.map((h) => ({ localId: String(ramsLocalIdSeq++), ...h }));
+  } else {
+    document.getElementById('ramsMethodStatement').value = '';
+    document.getElementById('ramsOperativeName').value = state.currentUser.name || '';
+    ramsHazardBlocks = [];
+  }
+  renderRamsHazardBlocks();
+  ramsSignaturePad.clear();
+
+  document.getElementById('ramsMethodStatement').disabled = ramsFormLocked;
+  document.getElementById('ramsOperativeName').disabled = ramsFormLocked;
+  document.getElementById('ramsHazardPicker').disabled = ramsFormLocked;
+  document.getElementById('ramsAddHazardBtn').disabled = ramsFormLocked;
+  document.querySelector('#ramsForm button[type="submit"]').hidden = ramsFormLocked;
+  document.querySelector('#ramsFormModal .hint').textContent = ramsFormLocked
+    ? "RAMS is locked once you've marked yourself arrived - this is a read-only record. Ask an admin if it needs changing."
+    : 'Complete this before marking yourself as arrived on site. Pick every hazard that applies to this job and adjust the controls/likelihood/consequence for today if needed.';
+
+  document.getElementById('ramsFormModal').hidden = false;
+});
+
+function closeRamsForm() {
+  document.getElementById('ramsFormModal').hidden = true;
+}
+
+document.getElementById('ramsFormCloseBtn').addEventListener('click', closeRamsForm);
+document.getElementById('ramsFormCancelBtn').addEventListener('click', closeRamsForm);
+
+document.getElementById('ramsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (ramsFormLocked) return;
+  const methodStatement = document.getElementById('ramsMethodStatement').value.trim();
+  if (!methodStatement) { alert('Fill in the method statement.'); return; }
+  const hazards = readRamsHazardBlocks();
+  if (!hazards.length) { alert('Add at least one hazard.'); return; }
+  const operativeName = document.getElementById('ramsOperativeName').value.trim();
+  if (!operativeName) { alert('Fill in your name.'); return; }
+  if (ramsSignaturePad.isEmpty()) { alert('Sign before saving.'); return; }
+  try {
+    await api(`/api/job-assignments/${currentAssignmentId}/rams`, {
+      method: 'POST',
+      body: JSON.stringify({
+        methodStatement,
+        hazards,
+        operativeName,
+        signatureImage: ramsSignaturePad.toDataUrl(),
+      }),
+    });
+    closeRamsForm();
+    await refreshAssignmentRams();
+    alert('RAMS saved.');
   } catch (err) {
     alert(err.message);
   }

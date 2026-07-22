@@ -619,6 +619,8 @@ async function clockIn(assignmentId) {
 }
 
 async function markArrived(assignmentId) {
+  const rams = await getJobAssignmentRams(assignmentId);
+  if (!rams) throw new Error('Submit your RAMS for this job before marking yourself as arrived');
   const log = await getTodayTimeLog(assignmentId);
   if (!log || !log.clockInAt) throw new Error('Clock in before marking yourself as arrived');
   if (log.arrivedAt) throw new Error('Already marked as arrived today');
@@ -640,6 +642,104 @@ async function clockOut(assignmentId) {
     .update({ clock_out_at: now, updated_at: now }).eq('id', log.id);
   check(error);
   return getTodayTimeLog(assignmentId);
+}
+
+// ---------- Job Assignment RAMS ----------
+// One RAMS (Risk Assessment & Method Statement) submission per job_assignment, not per day -
+// the operative reviews/adjusts risk controls and hazards once for the whole assignment stint
+// before starting work. Required before markArrived (see the gate above). Locks once they've
+// actually marked themselves arrived on any day, so it stays a stable record of what they
+// agreed to before starting - an admin editing/deleting the assignment is the only way to
+// change it after that point.
+
+function rowToJobAssignmentRams(row) {
+  return {
+    id: row.id,
+    assignmentId: row.assignment_id,
+    methodStatement: row.method_statement,
+    hazards: row.hazards || [],
+    operativeName: row.operative_name,
+    signatureImage: row.signature_image,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function getJobAssignmentRams(assignmentId) {
+  const { data, error } = await supabase.from('job_assignment_rams').select('*')
+    .eq('assignment_id', assignmentId).maybeSingle();
+  check(error);
+  return data ? rowToJobAssignmentRams(data) : null;
+}
+
+function sanitizeRamsHazards(hazards) {
+  return (Array.isArray(hazards) ? hazards : []).map((h) => ({
+    id: h && h.id ? String(h.id).slice(0, 100) : null,
+    title: String((h && h.title) || '').trim(),
+    legislation: String((h && h.legislation) || '').trim(),
+    hazard: String((h && h.hazard) || '').trim(),
+    peopleAffected: String((h && h.peopleAffected) || '').trim(),
+    currentControls: sanitizeRaList(h && h.currentControls),
+    currentL: sanitizeRaRating(h && h.currentL),
+    currentC: sanitizeRaRating(h && h.currentC),
+    additionalControls: sanitizeRaList(h && h.additionalControls),
+    additionalL: sanitizeRaRating(h && h.additionalL),
+    additionalC: sanitizeRaRating(h && h.additionalC),
+    ppe: sanitizeRaList(h && h.ppe),
+  }));
+}
+
+function validateJobAssignmentRamsInput(input) {
+  const errors = [];
+  const methodStatement = (input.methodStatement || '').trim();
+  if (!methodStatement) errors.push('A method statement is required');
+  const hazards = sanitizeRamsHazards(input.hazards);
+  if (!hazards.length) errors.push('At least one hazard is required');
+  hazards.forEach((h, i) => {
+    if (!h.title) errors.push(`Hazard ${i + 1}: a title is required`);
+    if (!h.currentControls.length) errors.push(`Hazard ${i + 1}: at least one current risk control is required`);
+  });
+  const operativeName = (input.operativeName || '').trim();
+  if (!operativeName) errors.push('Your name is required');
+  if (errors.length) throw new Error(errors.join('. '));
+  return { methodStatement, hazards, operativeName };
+}
+
+async function createJobAssignmentRams(assignmentId, input) {
+  const { methodStatement, hazards, operativeName } = validateJobAssignmentRamsInput(input);
+  const signatureImage = String(input.signatureImage || '');
+  if (!signatureImage) throw new Error('Sign before saving');
+
+  const existing = await getJobAssignmentRams(assignmentId);
+  if (existing) {
+    const log = await getTodayTimeLog(assignmentId);
+    if (log && log.arrivedAt) throw new Error("RAMS is locked once you've marked yourself arrived - ask an admin to make changes");
+    const { data, error } = await supabase.from('job_assignment_rams')
+      .update({
+        method_statement: methodStatement,
+        hazards,
+        operative_name: operativeName,
+        signature_image: signatureImage,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id).select().maybeSingle();
+    check(error);
+    return rowToJobAssignmentRams(data);
+  }
+
+  const row = {
+    id: genId(),
+    assignment_id: assignmentId,
+    method_statement: methodStatement,
+    hazards,
+    operative_name: operativeName,
+    signature_image: signatureImage,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('job_assignment_rams').insert(row).select().single();
+  check(error);
+  return rowToJobAssignmentRams(data);
 }
 
 // ---------- Saved Risk Assessments (library) ----------
@@ -1805,6 +1905,8 @@ module.exports = {
   clockIn,
   markArrived,
   clockOut,
+  getJobAssignmentRams,
+  createJobAssignmentRams,
   listSavedRiskAssessments,
   getSavedRiskAssessment,
   addSavedRiskAssessment,

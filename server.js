@@ -191,6 +191,9 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/time\/arrived$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/time\/clock-out$/ },
   { method: 'GET', path: /^\/job-assignments\/[^/]+\/time-logs$/ },
+  { method: 'GET', path: /^\/risk-assessments$/ },
+  { method: 'POST', path: /^\/job-assignments\/[^/]+\/rams$/ },
+  { method: 'GET', path: /^\/job-assignments\/[^/]+\/rams$/ },
 ];
 
 app.use('/api', (req, res, next) => {
@@ -606,6 +609,33 @@ app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
   });
   broadcast('jobs'); // so an admin/surveyor with the Job Detail Permit to Work tab open sees it live
   res.status(201).json(doc);
+}));
+
+// ---------- Job Assignment RAMS ----------
+// One RAMS submission per assignment (see the schema comment on job_assignment_rams). Unlike
+// the Permit to Work above, this stays structured data rather than a generated PDF - it's a
+// gate on markArrived (db.js), not a document to hand someone, so the signature is kept as the
+// raw data URL string rather than decoded/embedded into anything.
+
+app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save RAMS against your own assignment' });
+
+  if (!decodePngDataUrl(req.body.signatureImage)) throw new Error('Sign before saving');
+
+  const rams = await db.createJobAssignmentRams(req.params.id, req.body);
+  broadcast('jobAssignments');
+  res.status(201).json(rams);
+}));
+
+app.get('/api/job-assignments/:id/rams', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
+    return res.status(403).json({ error: 'You can only view RAMS for your own assignment' });
+  }
+  res.json(await db.getJobAssignmentRams(req.params.id));
 }));
 
 // ---------- Risk Assessments ----------

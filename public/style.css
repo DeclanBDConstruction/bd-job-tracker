@@ -1813,6 +1813,53 @@ button:disabled {
   flex: 1 1 auto;
 }
 
+/* ---------- RAMS (operative fill-in) ---------- */
+
+.ra-picker-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ra-picker-row select {
+  flex: 1 1 240px;
+}
+
+.rams-hazard-block {
+  background: var(--blue-light);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.rams-hazard-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.rams-hazard-block-header h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.rams-status {
+  margin: 12px 0;
+}
+
+.rams-signature-view {
+  display: block;
+  max-width: 495px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
 /* ---------- Hire ---------- */
 
 .hire-section-heading {

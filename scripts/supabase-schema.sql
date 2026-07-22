@@ -134,6 +134,29 @@ create table if not exists assignment_time_logs (
 
 create unique index if not exists assignment_time_logs_assignment_date_idx on assignment_time_logs (assignment_id, log_date);
 
+-- One RAMS (Risk Assessment & Method Statement) submission per job_assignment (not per day) -
+-- operative reviews/adjusts risk controls and hazards before starting work, once for the whole
+-- assignment stint. Submitting this is a prerequisite for marking Arrived (see the gate in
+-- db.js markArrived). Locks once arrived_at is set on that day's time log - see
+-- createJobAssignmentRams in db.js.
+-- hazards is a jsonb array; each element is a full editable copy of one selected generic
+-- risk-assessment template (title/legislation/hazard/peopleAffected/currentControls/
+-- currentL/currentC/additionalControls/additionalL/additionalC/ppe - same shape as
+-- riskAssessments.js's templates), so both the original content and the operative's edits are
+-- preserved together, independent of the in-code template changing later.
+create table if not exists job_assignment_rams (
+  id uuid primary key,
+  assignment_id uuid not null references job_assignments(id) on delete cascade,
+  method_statement text not null,
+  hazards jsonb not null default '[]'::jsonb,
+  operative_name text not null,
+  signature_image text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists job_assignment_rams_assignment_idx on job_assignment_rams (assignment_id);
+
 create table if not exists calendar_events (
   id uuid primary key,
   user_id uuid references users(id) on delete set null,
@@ -372,6 +395,7 @@ alter table saved_risk_assessments enable row level security;
 alter table custom_risk_assessments enable row level security;
 alter table hires enable row level security;
 alter table vehicle_hires enable row level security;
+alter table job_assignment_rams enable row level security;
 alter table diary_entries enable row level security;
 alter table subbies enable row level security;
 alter table quotes enable row level security;

@@ -769,12 +769,48 @@
       <button type="button" id="assignmentDetailCloseBtn" class="link-btn">Close</button>
     </div>
     <dl class="detail-grid" id="assignmentDetailInfo"></dl>
+    <div class="rams-status" id="assignmentRamsStatus"></div>
     <div class="time-log-box" id="assignmentTimeLog"></div>
     <div class="modal-actions">
+      <button type="button" id="assignmentRamsBtn" class="upload-btn">RAMS</button>
       <button type="button" id="assignmentPermitBtn" class="upload-btn">Permit to Work</button>
       <label class="upload-btn">+ Upload Photo<input type="file" id="assignmentPhotoInput" hidden accept="image/*"></label>
       <button type="button" id="assignmentCompleteBtn" class="primary">Mark as Done</button>
     </div>
+  </div>
+</div>
+
+<!-- RAMS Form Modal (operative self-service) -->
+<div id="ramsFormModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2>RAMS — Risk Assessment &amp; Method Statement</h2>
+      <button type="button" id="ramsFormCloseBtn" class="link-btn">Close</button>
+    </div>
+    <p class="hint">Complete this before marking yourself as arrived on site. Pick every hazard that applies to this job and adjust the controls/likelihood/consequence for today if needed.</p>
+    <form id="ramsForm" class="detail-form">
+      <label>Method Statement <span class="hint">(describe what you'll be doing)</span>
+        <textarea id="ramsMethodStatement" rows="4" required></textarea>
+      </label>
+
+      <div class="ra-picker-row">
+        <select id="ramsHazardPicker"><option value="">Add a hazard…</option></select>
+        <button type="button" id="ramsAddHazardBtn" class="upload-btn">+ Add Hazard</button>
+      </div>
+      <div id="ramsHazardBlocks"></div>
+      <p class="empty-state" id="ramsHazardsEmptyState">No hazards added yet — add at least one above.</p>
+
+      <label>Your Name<input type="text" id="ramsOperativeName" required></label>
+      <div class="signature-field">
+        <span class="signature-field-label">Your Signature <span class="hint">(sign with your finger/stylus)</span></span>
+        <canvas id="ramsSignatureCanvas" class="signature-pad" width="495" height="120"></canvas>
+        <button type="button" class="link-btn signature-clear-btn" data-target="ramsSignatureCanvas">Clear</button>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="ramsFormCancelBtn">Cancel</button>
+        <button type="submit" class="primary">Save RAMS</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -823,6 +859,18 @@
       <tbody></tbody>
     </table>
     <p class="empty-state" id="timeLogEmptyState" hidden>No time logged for this assignment yet.</p>
+  </div>
+</div>
+
+<!-- RAMS View Modal (admin/surveyor, read-only) -->
+<div id="ramsViewModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2 id="ramsViewModalTitle">RAMS</h2>
+      <button type="button" id="ramsViewModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <div id="ramsViewModalBody"></div>
+    <p class="empty-state" id="ramsViewEmptyState" hidden>No RAMS submitted for this assignment yet.</p>
   </div>
 </div>
 
