@@ -2026,6 +2026,10 @@ function vehicleHireOffHiredRow(v) {
 }
 
 function renderVehicleHires() {
+  const view = document.getElementById('vehicleHireViewSelect').value;
+  document.getElementById('vehicleHireOnHireSection').hidden = view !== 'on-hire';
+  document.getElementById('vehicleHireOffHireSection').hidden = view !== 'off-hire';
+
   const term = document.getElementById('vehicleHireSearch').value.trim().toLowerCase();
   const filtered = term
     ? state.vehicleHires.filter((v) => [v.supplier, v.registration, v.make, v.model].some((f) => (f || '').toLowerCase().includes(term)))
@@ -2129,6 +2133,7 @@ function renderVehicleHires() {
 }
 
 document.getElementById('vehicleHireSearch').addEventListener('input', renderVehicleHires);
+document.getElementById('vehicleHireViewSelect').addEventListener('change', renderVehicleHires);
 
 document.getElementById('vehicleHireAddForm').addEventListener('submit', async (e) => {
   e.preventDefault();
