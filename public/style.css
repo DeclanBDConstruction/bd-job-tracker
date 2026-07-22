@@ -982,6 +982,15 @@ button:disabled {
   display: block;
 }
 
+.job-clocktimes-assignment {
+  margin-bottom: 24px;
+}
+
+.job-clocktimes-assignment h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

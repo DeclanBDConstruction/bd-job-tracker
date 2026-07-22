@@ -919,6 +919,40 @@ async function refreshJobDetail() {
   renderJobDetailInfo(job);
   DOCUMENT_SECTIONS.forEach((category) => renderDocumentSection(category, (job.documents || {})[category]));
   renderVariationsSection(job.variations || []);
+  renderJobClockTimesSection(await api(`/api/jobs/${currentDetailJobId}/time-logs`));
+}
+
+// Every operative assigned to this job, each with their own small time-log table - lets an
+// admin/surveyor see everyone's clock-in/arrived/completed/clock-out from the Jobs tab, rather
+// than needing the separate Job Assignments tab (which is scoped one assignment at a time).
+function renderJobClockTimesSection(assignments) {
+  const container = document.getElementById('jobDetailSection-clocktimes');
+  if (!assignments.length) {
+    container.innerHTML = '<p class="empty-state">No operatives assigned to this job yet.</p>';
+    return;
+  }
+  container.innerHTML = assignments.map((a) => `
+    <div class="job-clocktimes-assignment">
+      <h4>${escapeHtml(a.userName)} <span class="hint">— ${escapeHtml(a.task)}, ${a.startDate}, ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span></h4>
+      ${a.timeLogs.length ? `
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Clock In</th><th>Arrived</th><th>Completed</th><th>Clock Out</th><th>On Site</th></tr></thead>
+          <tbody>
+            ${a.timeLogs.map((l) => `
+              <tr>
+                <td>${l.logDate}</td>
+                <td>${timeLogTimeOf(l.clockInAt)}</td>
+                <td>${timeLogTimeOf(l.arrivedAt)}</td>
+                <td>${timeLogTimeOf(l.completedAt)}</td>
+                <td>${timeLogTimeOf(l.clockOutAt)}</td>
+                <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="empty-state">No time logged yet.</p>'}
+    </div>
+  `).join('');
 }
 
 function variationsTotal(variations) {

@@ -443,6 +443,18 @@ async function listMyJobAssignments(user) {
   return rows;
 }
 
+// Every assignment against one job, regardless of which operative - used by the Jobs tab's
+// Clock Times section so admins/surveyors can see every operative's time log for a job without
+// going through the separate Job Assignments tab.
+async function listJobAssignmentsForJob(jobId) {
+  const { data, error } = await supabase.from('job_assignments').select('*')
+    .eq('job_id', jobId).order('start_date');
+  check(error);
+  const rows = data.map(rowToJobAssignment);
+  await attachJobAssignmentContext(rows);
+  return rows;
+}
+
 async function getJobAssignment(id) {
   const { data, error } = await supabase.from('job_assignments').select('*').eq('id', id).maybeSingle();
   check(error);
@@ -1895,6 +1907,7 @@ module.exports = {
   deleteJobDocument,
   listJobAssignments,
   listMyJobAssignments,
+  listJobAssignmentsForJob,
   getJobAssignment,
   createJobAssignment,
   updateJobAssignment,
