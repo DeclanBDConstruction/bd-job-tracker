@@ -322,10 +322,12 @@
       <span id="newSubbyFormName" class="ra-library-filename"></span>
       <button type="button" id="addSubbyBtn" class="primary">+ Add</button>
     </div>
-    <table class="data-table" id="subbiesTable">
-      <thead><tr><th>Company</th><th>Name</th><th>Phone</th><th>Trade</th><th>Form</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="data-table" id="subbiesTable">
+        <thead><tr><th>Company</th><th>Name</th><th>Phone</th><th>Trade</th><th>Form</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 
   <!-- QUOTING TAB -->
@@ -345,10 +347,12 @@
       <select id="newQuoteAssignedTo"><option value="">Unassigned</option></select>
       <button type="button" id="addQuoteBtn" class="primary">+ Add</button>
     </div>
-    <table class="data-table" id="quotingTable">
-      <thead><tr><th>Client</th><th>Site Address</th><th>Description</th><th>Due Date</th><th>Assigned To</th><th>Status</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="data-table" id="quotingTable">
+        <thead><tr><th>Client</th><th>Site Address</th><th>Description</th><th>Due Date</th><th>Assigned To</th><th>Status</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p class="empty-state" id="quotingEmptyState" hidden>No quotes yet.</p>
   </section>
 
@@ -477,10 +481,12 @@
       <input type="number" id="newAssignmentDuration" placeholder="Days" min="1" step="1" value="1">
       <button type="button" id="addAssignmentBtn" class="primary">+ Assign</button>
     </div>
-    <table class="data-table" id="jobAssignmentsTable">
-      <thead><tr><th>Job</th><th>Operative</th><th>Task</th><th>Start</th><th>Duration</th><th>Status</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="data-table" id="jobAssignmentsTable">
+        <thead><tr><th>Job</th><th>Operative</th><th>Task</th><th>Start</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p class="empty-state" id="jobAssignmentsEmptyState" hidden>No job assignments yet.</p>
   </section>
 
@@ -854,10 +860,12 @@
       <h2 id="timeLogModalTitle">Time Log</h2>
       <button type="button" id="timeLogModalCloseBtn" class="link-btn">Close</button>
     </div>
-    <table class="data-table" id="timeLogTable">
-      <thead><tr><th>Date</th><th>Clock In</th><th>Arrived</th><th>Completed</th><th>Clock Out</th><th>On Site</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-scroll">
+      <table class="data-table" id="timeLogTable">
+        <thead><tr><th>Date</th><th>Clock In</th><th>Arrived</th><th>Completed</th><th>Clock Out</th><th>On Site</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p class="empty-state" id="timeLogEmptyState" hidden>No time logged for this assignment yet.</p>
   </div>
 </div>
