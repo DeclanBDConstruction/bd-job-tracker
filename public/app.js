@@ -79,8 +79,8 @@ function showApp(user) {
   // Staff and operatives both only get Home, My Calendar and My Diary - everything else
   // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
   // purposes, but the real enforcement is server-side (see the allowlists in server.js).
-  // The new "Job Assignments" tab lives inside operationsTabGroup, so hiding that whole
-  // group for staff/operatives hides it too - it's only ever visible to admin/surveyor.
+  // "Job Assignments" lives inside teamTabGroup, so hiding that whole group for
+  // staff/operatives hides it too - it's only ever visible to admin/surveyor.
   const restricted = isStaff() || isOperative();
   document.getElementById('jobsTabGroup').hidden = restricted;
   document.getElementById('teamTabGroup').hidden = restricted;
@@ -314,7 +314,29 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 // ---------- Tabs ----------
 
 function closeTabGroups() {
-  document.querySelectorAll('.tab-group.open').forEach((g) => g.classList.remove('open'));
+  document.querySelectorAll('.tab-group.open').forEach((g) => {
+    g.classList.remove('open');
+    const menu = g.querySelector('.tab-group-menu');
+    menu.style.position = '';
+    menu.style.top = '';
+    menu.style.left = '';
+  });
+}
+
+// On phones the tab bar scrolls horizontally instead of wrapping (see the 720px media
+// query in style.css), which means it has to clip vertical overflow too - a dropdown
+// menu opening below it would otherwise get cut off and look like it did nothing. So
+// on narrow screens we switch the menu to viewport-fixed positioning, computed from
+// the button's on-screen location, which escapes that clipping entirely.
+function positionTabGroupMenu(group) {
+  const menu = group.querySelector('.tab-group-menu');
+  if (window.innerWidth > 720) return;
+  const rect = group.querySelector('.tab-group-btn').getBoundingClientRect();
+  const menuWidth = Math.max(menu.offsetWidth, 180);
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+  menu.style.position = 'fixed';
+  menu.style.top = (rect.bottom + 6) + 'px';
+  menu.style.left = left + 'px';
 }
 
 function goToTab(tab) {
@@ -352,7 +374,10 @@ document.querySelectorAll('.tab-group-btn').forEach((btn) => {
     const group = btn.closest('.tab-group');
     const wasOpen = group.classList.contains('open');
     closeTabGroups();
-    if (!wasOpen) group.classList.add('open');
+    if (!wasOpen) {
+      group.classList.add('open');
+      positionTabGroupMenu(group);
+    }
   });
 });
 
@@ -1583,7 +1608,7 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
 // ---------- Job Assignments ----------
 // Admin: full CRUD. Surveyor: same list, read-only (no add form, no edit/delete buttons -
 // see jobAssignmentsAddRow's admin-only hidden toggle in showApp, mirrored by isAdmin()
-// checks below). Neither staff nor operatives ever see this tab (operationsTabGroup is
+// checks below). Neither staff nor operatives ever see this tab (teamTabGroup is
 // hidden for both - see showApp).
 
 let editingAssignmentId = null;
