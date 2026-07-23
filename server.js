@@ -75,7 +75,13 @@ async function validateDocumentParams(req, res, next) {
 // Permit to Work route) - other routes already accept much larger multipart uploads via
 // multer, so this is a proportionate bump, not a new risk.
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// Phones (and some carrier/office networks) cache static JS/HTML far more aggressively
+// than "max-age=0" implies in practice, so people were stuck on stale nav markup/JS
+// after a deploy even after a manual refresh. no-store forces every request to fetch
+// the current file instead of trusting a cached copy.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res) => res.set('Cache-Control', 'no-store'),
+}));
 
 function handle(fn) {
   return async (req, res) => {
