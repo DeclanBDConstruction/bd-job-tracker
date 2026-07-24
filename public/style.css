@@ -991,6 +991,77 @@ button:disabled {
   font-size: 14px;
 }
 
+.job-team-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.job-team-row-header h4 {
+  margin: 0;
+}
+
+.job-team-edit-fields {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.job-team-add-row {
+  margin-bottom: 24px;
+}
+
+/* ---------- Assign the Team (Job form) ---------- */
+
+.assign-team-section {
+  border-top: 1px solid var(--border, #e2e2e2);
+  margin-top: 8px;
+  padding-top: 16px;
+}
+
+.assign-team-section h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.assign-team-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.assign-team-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0;
+  font-weight: normal;
+}
+
+.assign-team-checkbox-item input {
+  width: auto;
+}
+
+.assign-team-shared-fields {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.assign-team-shared-fields label {
+  flex: 1 1 140px;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -87,13 +87,7 @@
       </div>
     </div>
 
-    <div class="tab-group" id="teamTabGroup">
-      <button type="button" class="tab-group-btn">Team <span class="caret">▾</span></button>
-      <div class="tab-group-menu">
-        <button class="tab-btn" data-tab="employees">Employees</button>
-        <button class="tab-btn" data-tab="jobassignments">Job Assignments</button>
-      </div>
-    </div>
+    <button class="tab-btn" data-tab="employees" id="employeesTabBtn">Employees</button>
 
     <div class="tab-group" id="operationsTabGroup">
       <button type="button" class="tab-group-btn">Operations <span class="caret">▾</span></button>
@@ -467,29 +461,6 @@
     </div>
   </section>
 
-  <!-- JOB ASSIGNMENTS TAB -->
-  <section id="tab-jobassignments" class="tab-panel">
-    <div class="panel-header">
-      <h2>Job Assignments</h2>
-    </div>
-    <p class="hint">Who's assigned to physically carry out each job — any employee, not just Installation/Manufacturing Operatives — separate from who won the job. Operatives see their own assignments on My Calendar and Home, and upload photos / mark their own assignment done from there.</p>
-    <div class="import-upload" id="jobAssignmentsAddRow" hidden>
-      <select id="newAssignmentJob"><option value="">Job…</option></select>
-      <select id="newAssignmentUser"><option value="">Employee…</option></select>
-      <input type="text" id="newAssignmentTask" placeholder="Task (e.g. Install signage)">
-      <input type="date" id="newAssignmentStartDate">
-      <input type="number" id="newAssignmentDuration" placeholder="Days" min="1" step="1" value="1">
-      <button type="button" id="addAssignmentBtn" class="primary">+ Assign</button>
-    </div>
-    <div class="table-scroll">
-      <table class="data-table" id="jobAssignmentsTable">
-        <thead><tr><th>Job</th><th>Employee</th><th>Task</th><th>Start</th><th>Duration</th><th>Status</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="empty-state" id="jobAssignmentsEmptyState" hidden>No job assignments yet.</p>
-  </section>
-
   <!-- SIGNAGE TRACKER TAB -->
   <section id="tab-signage" class="tab-panel">
     <div class="panel-header">
@@ -642,6 +613,19 @@
         <select id="fStatus"></select>
       </label>
       <label>Notes / Description<textarea id="fDescription" rows="3"></textarea></label>
+
+      <div id="fAssignTeamSection" class="assign-team-section" hidden>
+        <h3>Assign the Team</h3>
+        <p class="hint">Who's assigned to physically carry out this job — any employee, not just Installation/Manufacturing Operatives — separate from who won it above. Tick everyone going on it; they'll all get the same task/dates below. Operatives see their own assignments on My Calendar and Home, and upload photos / mark their own assignment done from there.</p>
+        <div class="assign-team-checklist" id="fAssignTeamChecklist"></div>
+        <p class="hint" id="fAssignTeamExistingNote" hidden>Already-assigned lads are ticked and locked here — manage or remove them from this job's Team tab instead.</p>
+        <div class="assign-team-shared-fields">
+          <label>Task<input type="text" id="fAssignTask" placeholder="e.g. Install signage"></label>
+          <label>Start Date<input type="date" id="fAssignStartDate"></label>
+          <label>Duration (days)<input type="number" id="fAssignDuration" min="1" step="1" value="1"></label>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button type="button" id="jobCancelBtn">Cancel</button>
         <button type="submit" class="primary">Save Job</button>
@@ -667,7 +651,7 @@
       <button type="button" class="job-detail-tab" data-section="drawings">Drawings</button>
       <button type="button" class="job-detail-tab" data-section="photos">Photos</button>
       <button type="button" class="job-detail-tab" data-section="permit">Permit to Work</button>
-      <button type="button" class="job-detail-tab" data-section="clocktimes">Clock Times</button>
+      <button type="button" class="job-detail-tab" data-section="clocktimes">Team</button>
     </nav>
     <div class="job-detail-body">
       <div id="jobDetailSection-info" class="job-detail-section active"></div>

@@ -73,17 +73,14 @@ function showApp(user) {
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('vehicleHireTabBtn').hidden = !isAdmin();
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
-  document.getElementById('jobAssignmentsAddRow').hidden = !isAdmin();
   document.getElementById('assignmentsTabBtn').hidden = !isOperative();
 
   // Staff and operatives both only get Home, My Calendar and My Diary - everything else
   // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
   // purposes, but the real enforcement is server-side (see the allowlists in server.js).
-  // "Job Assignments" lives inside teamTabGroup, so hiding that whole group for
-  // staff/operatives hides it too - it's only ever visible to admin/surveyor.
   const restricted = isStaff() || isOperative();
   document.getElementById('jobsTabGroup').hidden = restricted;
-  document.getElementById('teamTabGroup').hidden = restricted;
+  document.getElementById('employeesTabBtn').hidden = restricted;
   document.getElementById('operationsTabGroup').hidden = restricted;
   document.getElementById('reportsTabGroup').hidden = restricted;
   document.getElementById('calendarTabBtn').hidden = restricted;
@@ -180,8 +177,8 @@ async function handleLiveJobAssignmentsChange() {
       await refreshAssignmentTimeLog();
       await refreshAssignmentRams();
     }
-  } else if (activeTab() === 'jobassignments') {
-    loadJobAssignments();
+  } else if (currentDetailJobId && !jobDetailModal.hidden) {
+    refreshJobDetail();
     if (currentTimeLogAssignmentId && !document.getElementById('timeLogModal').hidden) refreshTimeLogModal();
   }
 }
@@ -356,7 +353,6 @@ function goToTab(tab) {
   if (tab === 'hire') loadHires();
   if (tab === 'vehiclehire') loadVehicleHires();
   if (tab === 'quoting') loadQuotes();
-  if (tab === 'jobassignments') loadJobAssignments();
   if (tab === 'assignments') renderMyAssignmentsTab();
   if (tab === 'diary') {
     setDiaryViewDate(todayDateStr());
@@ -514,6 +510,10 @@ async function bootstrap() {
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   state.subbies = subbies;
+  // Needed for the Job form's "Assign the Team" checklist and the Job Detail Team tab's
+  // "+ Assign" row - GET /api/users is admin-only, so surveyors don't get this (fine, since
+  // assigning is admin-only too - surveyors only ever view assignments read-only).
+  if (isAdmin()) state.operativeUsers = await api('/api/users');
   renderStatusOptions();
   renderEmployeeOptions();
   renderJobs();
@@ -826,6 +826,24 @@ document.getElementById('importJobSheetFile').addEventListener('change', async (
 });
 document.getElementById('jobCancelBtn').addEventListener('click', closeJobModal);
 
+// Checkbox per employee for the Job form's "Assign the Team" block. Already-assigned lads
+// (edit mode only) come in checked+disabled so this form can only ever add assignments, never
+// silently remove one via an unticked box - removal happens deliberately from the job's Team tab.
+function renderAssignTeamChecklist(existingAssignments) {
+  const assignedUserIds = new Set((existingAssignments || []).map((a) => a.userId));
+  document.getElementById('fAssignTeamChecklist').innerHTML = state.operativeUsers.map((u) => `
+    <label class="assign-team-checkbox-item">
+      <input type="checkbox" value="${u.id}" ${assignedUserIds.has(u.id) ? 'checked disabled' : ''}>
+      ${escapeHtml(u.name)}
+    </label>`).join('');
+  document.getElementById('fAssignTeamExistingNote').hidden = !assignedUserIds.size;
+}
+
+async function loadAssignTeamChecklist(id) {
+  const existing = id ? await api(`/api/jobs/${id}/time-logs`).catch(() => []) : [];
+  renderAssignTeamChecklist(existing);
+}
+
 function openJobModal(id, prefill) {
   jobForm.reset();
   document.getElementById('jobId').value = id || '';
@@ -875,6 +893,14 @@ function openJobModal(id, prefill) {
     note.hidden = true;
   }
 
+  document.getElementById('fAssignTeamSection').hidden = !isAdmin();
+  document.getElementById('fAssignTask').value = '';
+  document.getElementById('fAssignStartDate').value = '';
+  document.getElementById('fAssignDuration').value = '1';
+  document.getElementById('fAssignTeamChecklist').innerHTML = '';
+  document.getElementById('fAssignTeamExistingNote').hidden = true;
+  if (isAdmin()) loadAssignTeamChecklist(id);
+
   jobModal.hidden = false;
 }
 
@@ -897,11 +923,38 @@ jobForm.addEventListener('submit', async (e) => {
     status: document.getElementById('fStatus').value,
     description: document.getElementById('fDescription').value,
   };
+
+  // Newly-ticked (not already-assigned/disabled) lads to assign once the job itself is saved.
+  const newlyCheckedTeam = isAdmin()
+    ? [...document.querySelectorAll('#fAssignTeamChecklist input[type="checkbox"]:checked:not(:disabled)')]
+    : [];
+  const assignTask = document.getElementById('fAssignTask').value.trim();
+  const assignStartDate = document.getElementById('fAssignStartDate').value;
+  const assignDuration = document.getElementById('fAssignDuration').value || 1;
+  if (newlyCheckedTeam.length && (!assignTask || !assignStartDate)) {
+    alert('Fill in a Task and Start Date to assign the team, or untick everyone under Assign the Team.');
+    return;
+  }
+
   try {
+    let jobId = id;
     if (id) {
       await api(`/api/jobs/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
     } else {
-      await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload) });
+      const created = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload) });
+      jobId = created.id;
+    }
+    if (newlyCheckedTeam.length) {
+      await Promise.all(newlyCheckedTeam.map((cb) => api('/api/job-assignments', {
+        method: 'POST',
+        body: JSON.stringify({
+          jobId,
+          userId: cb.value,
+          task: assignTask,
+          startDate: assignStartDate,
+          durationDays: assignDuration,
+        }),
+      })));
     }
     const [jobs, employees] = await Promise.all([api('/api/jobs'), api('/api/employees')]);
     state.jobs = jobs;
@@ -924,6 +977,7 @@ let currentDetailJobId = null;
 
 async function openJobDetail(id, section) {
   currentDetailJobId = id;
+  editingTeamAssignmentId = null;
   const target = section || 'info';
   document.querySelectorAll('.job-detail-tab').forEach((b) => b.classList.toggle('active', b.dataset.section === target));
   document.querySelectorAll('.job-detail-section').forEach((s) => s.classList.toggle('active', s.id === `jobDetailSection-${target}`));
@@ -944,42 +998,9 @@ async function refreshJobDetail() {
   renderJobDetailInfo(job);
   DOCUMENT_SECTIONS.forEach((category) => renderDocumentSection(category, (job.documents || {})[category]));
   renderVariationsSection(job.variations || []);
-  renderJobClockTimesSection(await api(`/api/jobs/${currentDetailJobId}/time-logs`));
-}
-
-// Every operative assigned to this job, each with their own small time-log table - lets an
-// admin/surveyor see everyone's clock-in/arrived/completed/clock-out from the Jobs tab, rather
-// than needing the separate Job Assignments tab (which is scoped one assignment at a time).
-function renderJobClockTimesSection(assignments) {
-  const container = document.getElementById('jobDetailSection-clocktimes');
-  if (!assignments.length) {
-    container.innerHTML = '<p class="empty-state">No operatives assigned to this job yet.</p>';
-    return;
-  }
-  container.innerHTML = assignments.map((a) => `
-    <div class="job-clocktimes-assignment">
-      <h4>${escapeHtml(a.userName)} <span class="hint">— ${escapeHtml(a.task)}, ${a.startDate}, ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span></h4>
-      ${a.timeLogs.length ? `
-        <div class="table-scroll">
-          <table class="data-table">
-            <thead><tr><th>Date</th><th>Clock In</th><th>Arrived</th><th>Completed</th><th>Clock Out</th><th>On Site</th></tr></thead>
-            <tbody>
-              ${a.timeLogs.map((l) => `
-                <tr>
-                  <td>${l.logDate}</td>
-                  <td>${timeLogTimeOf(l.clockInAt)}</td>
-                  <td>${timeLogTimeOf(l.arrivedAt)}</td>
-                  <td>${timeLogTimeOf(l.completedAt)}</td>
-                  <td>${timeLogTimeOf(l.clockOutAt)}</td>
-                  <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      ` : '<p class="empty-state">No time logged yet.</p>'}
-    </div>
-  `).join('');
+  // Scoped to just this job while its detail modal is open - see renderJobTeamSection.
+  state.jobAssignments = await api(`/api/jobs/${currentDetailJobId}/time-logs`);
+  renderJobTeamSection(state.jobAssignments);
 }
 
 function variationsTotal(variations) {
@@ -1605,128 +1626,166 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
   }
 });
 
-// ---------- Job Assignments ----------
-// Admin: full CRUD. Surveyor: same list, read-only (no add form, no edit/delete buttons -
-// see jobAssignmentsAddRow's admin-only hidden toggle in showApp, mirrored by isAdmin()
-// checks below). Neither staff nor operatives ever see this tab (teamTabGroup is
-// hidden for both - see showApp).
+// ---------- Job Detail: Team (assignments) ----------
+// Full assignment management lives inside the Job Detail modal's Team tab - assign who's
+// physically carrying out this job, edit/delete assignments, and jump into their time log /
+// RAMS / photos, all without a separate Job Assignments tab. Admin: full CRUD. Surveyor: same
+// view, read-only (no add row, no edit/delete buttons - isAdmin() checks below). Staff and
+// operatives never reach the Jobs tab at all (see showApp).
 
-let editingAssignmentId = null;
+let editingTeamAssignmentId = null;
 
-function jobOptionsHtml(selectedId) {
-  return '<option value="">Job…</option>' + state.jobs
-    .filter((j) => !j.completedAt)
-    .map((j) => `<option value="${j.id}" ${selectedId === j.id ? 'selected' : ''}>${escapeHtml(j.jobReference || j.client)}${j.location ? ' — ' + escapeHtml(j.location) : ''}</option>`)
-    .join('');
-}
-
-function operativeOptionsHtml(selectedId) {
+function operativeOptionsHtml(selectedId, excludeUserIds) {
+  const exclude = excludeUserIds || new Set();
   return '<option value="">Employee…</option>' + state.operativeUsers
+    .filter((u) => u.id === selectedId || !exclude.has(u.id))
     .map((u) => `<option value="${u.id}" ${selectedId === u.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`)
     .join('');
 }
 
-function assignmentDisplayRow(a) {
+function timeLogTableHtml(timeLogs) {
+  if (!timeLogs.length) return '<p class="empty-state">No time logged yet.</p>';
   return `
-    <tr data-id="${a.id}">
-      <td>${escapeHtml(a.jobReference || a.jobClient)}${a.jobLocation ? ' — ' + escapeHtml(a.jobLocation) : ''}</td>
-      <td>${escapeHtml(a.userName)}</td>
-      <td>${escapeHtml(a.task)}</td>
-      <td>${a.startDate}</td>
-      <td>${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</td>
-      <td><span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></td>
-      <td class="row-actions">
-        <button type="button" class="ja-photos-btn" data-job="${a.jobId}">View Photos</button>
-        <button type="button" class="ja-timelog-btn" data-id="${a.id}">Time Log</button>
-        <button type="button" class="ja-rams-btn" data-id="${a.id}">RAMS</button>
-        ${isAdmin() ? `<button type="button" class="ja-edit-btn">Edit</button><button type="button" class="danger ja-delete-btn">Delete</button>` : ''}
-      </td>
-    </tr>`;
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Clock In</th><th>Arrived</th><th>Completed</th><th>Clock Out</th><th>On Site</th></tr></thead>
+        <tbody>
+          ${timeLogs.map((l) => `
+            <tr>
+              <td>${l.logDate}</td>
+              <td>${timeLogTimeOf(l.clockInAt)}</td>
+              <td>${timeLogTimeOf(l.arrivedAt)}</td>
+              <td>${timeLogTimeOf(l.completedAt)}</td>
+              <td>${timeLogTimeOf(l.clockOutAt)}</td>
+              <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
-function assignmentEditRow(a) {
+function teamAssignmentDisplayRow(a) {
   return `
-    <tr data-id="${a.id}">
-      <td><select class="ja-edit-job">${jobOptionsHtml(a.jobId)}</select></td>
-      <td><select class="ja-edit-user">${operativeOptionsHtml(a.userId)}</select></td>
-      <td><input type="text" class="ja-edit-task" value="${escapeHtml(a.task)}"></td>
-      <td><input type="date" class="ja-edit-start" value="${a.startDate}"></td>
-      <td><input type="number" class="ja-edit-duration" min="1" step="1" value="${a.durationDays}"></td>
-      <td>—</td>
-      <td class="row-actions">
+    <div class="job-clocktimes-assignment" data-id="${a.id}">
+      <div class="job-team-row-header">
+        <h4>${escapeHtml(a.userName)} <span class="hint">— ${escapeHtml(a.task)}, ${a.startDate}, ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span> <span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></h4>
+        <div class="row-actions">
+          <button type="button" class="ja-photos-btn">View Photos</button>
+          <button type="button" class="ja-timelog-btn">Time Log</button>
+          <button type="button" class="ja-rams-btn">RAMS</button>
+          ${isAdmin() ? `<button type="button" class="ja-edit-btn">Edit</button><button type="button" class="danger ja-delete-btn">Delete</button>` : ''}
+        </div>
+      </div>
+      ${timeLogTableHtml(a.timeLogs)}
+    </div>`;
+}
+
+function teamAssignmentEditRow(a, excludeUserIds) {
+  return `
+    <div class="job-clocktimes-assignment job-team-row-editing" data-id="${a.id}">
+      <div class="job-team-edit-fields">
+        <select class="ja-edit-user">${operativeOptionsHtml(a.userId, excludeUserIds)}</select>
+        <input type="text" class="ja-edit-task" value="${escapeHtml(a.task)}" placeholder="Task">
+        <input type="date" class="ja-edit-start" value="${a.startDate}">
+        <input type="number" class="ja-edit-duration" min="1" step="1" value="${a.durationDays}">
         <button type="button" class="primary ja-save-btn">Save</button>
         <button type="button" class="ja-cancel-btn">Cancel</button>
-      </td>
-    </tr>`;
+      </div>
+    </div>`;
 }
 
-function renderJobAssignments() {
-  const tbody = document.querySelector('#jobAssignmentsTable tbody');
-  const list = [...state.jobAssignments].sort((a, b) => a.startDate.localeCompare(b.startDate));
-  document.getElementById('jobAssignmentsEmptyState').hidden = !!list.length;
-  tbody.innerHTML = list.map((a) => (a.id === editingAssignmentId ? assignmentEditRow(a) : assignmentDisplayRow(a))).join('');
+// `assignments` is scoped to just the job currently open in the Job Detail modal (see
+// refreshJobDetail) - not the full cross-job list the old standalone Job Assignments tab held.
+function renderJobTeamSection(assignments) {
+  const container = document.getElementById('jobDetailSection-clocktimes');
+  const assignedUserIds = new Set(assignments.map((a) => a.userId));
+  const addRow = isAdmin() ? `
+    <div class="import-upload job-team-add-row">
+      <select id="teamAssignUser">${operativeOptionsHtml('', assignedUserIds)}</select>
+      <input type="text" id="teamAssignTask" placeholder="Task (e.g. Install signage)">
+      <input type="date" id="teamAssignStartDate">
+      <input type="number" id="teamAssignDuration" placeholder="Days" min="1" step="1" value="1">
+      <button type="button" id="teamAssignBtn" class="primary">+ Assign</button>
+    </div>` : '';
+  const list = assignments.length
+    ? assignments.map((a) => (a.id === editingTeamAssignmentId ? teamAssignmentEditRow(a, assignedUserIds) : teamAssignmentDisplayRow(a))).join('')
+    : '<p class="empty-state">No one assigned to this job yet.</p>';
+  container.innerHTML = addRow + list;
 
   if (isAdmin()) {
-    document.getElementById('newAssignmentJob').innerHTML = jobOptionsHtml('');
-    document.getElementById('newAssignmentUser').innerHTML = operativeOptionsHtml('');
+    document.getElementById('teamAssignBtn').addEventListener('click', async () => {
+      const userSel = document.getElementById('teamAssignUser');
+      const taskInput = document.getElementById('teamAssignTask');
+      const startInput = document.getElementById('teamAssignStartDate');
+      const durationInput = document.getElementById('teamAssignDuration');
+      if (!userSel.value || !taskInput.value.trim() || !startInput.value) {
+        alert('Choose an employee and fill in the task and start date.');
+        return;
+      }
+      try {
+        await api('/api/job-assignments', {
+          method: 'POST',
+          body: JSON.stringify({
+            jobId: currentDetailJobId,
+            userId: userSel.value,
+            task: taskInput.value,
+            startDate: startInput.value,
+            durationDays: durationInput.value || 1,
+          }),
+        });
+        refreshJobDetail();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
   }
 
-  tbody.querySelectorAll('.ja-photos-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'photos'));
+  container.querySelectorAll('.ja-photos-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openJobDetail(currentDetailJobId, 'photos'));
   });
-  tbody.querySelectorAll('.ja-timelog-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openTimeLogModal(btn.dataset.id));
+  container.querySelectorAll('.ja-timelog-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openTimeLogModal(btn.closest('[data-id]').dataset.id));
   });
-  tbody.querySelectorAll('.ja-rams-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openRamsViewModal(btn.dataset.id));
+  container.querySelectorAll('.ja-rams-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openRamsViewModal(btn.closest('[data-id]').dataset.id));
   });
-  tbody.querySelectorAll('.ja-edit-btn').forEach((btn) => {
-    btn.addEventListener('click', () => { editingAssignmentId = btn.closest('tr').dataset.id; renderJobAssignments(); });
+  container.querySelectorAll('.ja-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingTeamAssignmentId = btn.closest('[data-id]').dataset.id; renderJobTeamSection(state.jobAssignments); });
   });
-  tbody.querySelectorAll('.ja-cancel-btn').forEach((btn) => {
-    btn.addEventListener('click', () => { editingAssignmentId = null; renderJobAssignments(); });
+  container.querySelectorAll('.ja-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingTeamAssignmentId = null; renderJobTeamSection(state.jobAssignments); });
   });
-  tbody.querySelectorAll('.ja-save-btn').forEach((btn) => {
+  container.querySelectorAll('.ja-save-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const tr = btn.closest('tr');
+      const row = btn.closest('[data-id]');
       const body = {
-        jobId: tr.querySelector('.ja-edit-job').value,
-        userId: tr.querySelector('.ja-edit-user').value,
-        task: tr.querySelector('.ja-edit-task').value,
-        startDate: tr.querySelector('.ja-edit-start').value,
-        durationDays: tr.querySelector('.ja-edit-duration').value,
+        jobId: currentDetailJobId,
+        userId: row.querySelector('.ja-edit-user').value,
+        task: row.querySelector('.ja-edit-task').value,
+        startDate: row.querySelector('.ja-edit-start').value,
+        durationDays: row.querySelector('.ja-edit-duration').value,
       };
       try {
-        await api(`/api/job-assignments/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
-        editingAssignmentId = null;
-        loadJobAssignments();
+        await api(`/api/job-assignments/${row.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        editingTeamAssignmentId = null;
+        refreshJobDetail();
       } catch (err) {
         alert(err.message);
       }
     });
   });
-  tbody.querySelectorAll('.ja-delete-btn').forEach((btn) => {
+  container.querySelectorAll('.ja-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this assignment?')) return;
       try {
-        await api(`/api/job-assignments/${btn.closest('tr').dataset.id}`, { method: 'DELETE' });
-        loadJobAssignments();
+        await api(`/api/job-assignments/${btn.closest('[data-id]').dataset.id}`, { method: 'DELETE' });
+        refreshJobDetail();
       } catch (err) {
         alert(err.message);
       }
     });
   });
-}
-
-async function loadJobAssignments() {
-  state.jobAssignments = await api('/api/job-assignments');
-  // Any employee with a login can be assigned to physically carry out a job, not just
-  // those with an Installation/Manufacturing Operative role - office staff sometimes help
-  // out on site too.
-  if (isAdmin()) {
-    state.operativeUsers = await api('/api/users');
-  }
-  renderJobAssignments();
 }
 
 // ---------- Time Log viewer (admin/surveyor, read-only) ----------
@@ -1847,36 +1906,6 @@ document.getElementById('ramsAttachToJobBtn').addEventListener('click', async ()
   try {
     await api(`/api/job-assignments/${currentRamsViewAssignmentId}/rams/attach-to-job`, { method: 'POST' });
     alert('Attached to the job\'s documents - check the Jobs tab.');
-  } catch (err) {
-    alert(err.message);
-  }
-});
-
-document.getElementById('addAssignmentBtn').addEventListener('click', async () => {
-  const jobSel = document.getElementById('newAssignmentJob');
-  const userSel = document.getElementById('newAssignmentUser');
-  const taskInput = document.getElementById('newAssignmentTask');
-  const startInput = document.getElementById('newAssignmentStartDate');
-  const durationInput = document.getElementById('newAssignmentDuration');
-  if (!jobSel.value || !userSel.value || !taskInput.value.trim() || !startInput.value) {
-    alert('Choose a job, an operative, and fill in the task and start date.');
-    return;
-  }
-  try {
-    await api('/api/job-assignments', {
-      method: 'POST',
-      body: JSON.stringify({
-        jobId: jobSel.value,
-        userId: userSel.value,
-        task: taskInput.value,
-        startDate: startInput.value,
-        durationDays: durationInput.value || 1,
-      }),
-    });
-    taskInput.value = '';
-    startInput.value = '';
-    durationInput.value = '1';
-    loadJobAssignments();
   } catch (err) {
     alert(err.message);
   }

@@ -298,19 +298,17 @@ app.get('/api/jobs/:id', handle(async (req, res) => {
   res.json(job);
 }));
 
-// Every operative's clock-in/arrived/completed/clock-out log for this job in one place, so the
-// Jobs tab shows it alongside RAMS/photos/etc rather than needing the separate Job Assignments
-// tab. Not operative-reachable (they don't have Jobs tab access anyway - see OPERATIVE_ALLOWED_ROUTES).
+// Every operative's assignment + clock-in/arrived/completed/clock-out log for this job in one
+// place, so the Jobs tab's Team section can both display and manage assignments (add/edit/
+// delete) without a separate Job Assignments tab. Not operative-reachable (they don't have
+// Jobs tab access anyway - see OPERATIVE_ALLOWED_ROUTES). Returns the full assignment row
+// (id/jobId/userId/etc, not just a narrow display subset) since the frontend reuses this
+// response to drive edit/delete and to feed the Time Log / RAMS modals' lookups.
 app.get('/api/jobs/:id/time-logs', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
   const assignments = await db.listJobAssignmentsForJob(req.params.id);
   const withLogs = await Promise.all(assignments.map(async (a) => ({
-    assignmentId: a.id,
-    userName: a.userName,
-    task: a.task,
-    startDate: a.startDate,
-    durationDays: a.durationDays,
-    completed: a.completed,
+    ...a,
     timeLogs: await db.listTimeLogs(a.id),
   })));
   res.json(withLogs);
