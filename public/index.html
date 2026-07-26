@@ -345,12 +345,13 @@
       <input type="text" id="newQuoteAddress" placeholder="Site address">
       <input type="text" id="newQuoteDescription" placeholder="Description / scope of works">
       <input type="date" id="newQuoteDueDate">
+      <input type="number" id="newQuoteValue" placeholder="Quoted value (optional)" step="0.01" min="0">
       <select id="newQuoteAssignedTo"><option value="">Unassigned</option></select>
       <button type="button" id="addQuoteBtn" class="primary">+ Add</button>
     </div>
     <div class="table-scroll">
       <table class="data-table" id="quotingTable">
-        <thead><tr><th>Client</th><th>Site Address</th><th>Description</th><th>Due Date</th><th>Assigned To</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Client</th><th>Site Address</th><th>Description</th><th>Due Date</th><th>Value</th><th>Assigned To</th><th>Status</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -574,13 +575,19 @@
 
   <!-- REPORTS TAB -->
   <section id="tab-reports" class="tab-panel">
-    <h2 id="reportsHeading">Yearly Reports</h2>
+    <div class="panel-header">
+      <h2 id="reportsHeading">Yearly Reports</h2>
+      <button type="button" id="reportsExportBtn" class="link-btn">Export CSV</button>
+    </div>
     <div id="reportsContainer"></div>
   </section>
 
   <!-- CLIENT REPORT TAB -->
   <section id="tab-clients" class="tab-panel">
-    <h2>Client Report</h2>
+    <div class="panel-header">
+      <h2>Client Report</h2>
+      <button type="button" id="clientsExportBtn" class="link-btn">Export CSV</button>
+    </div>
     <p class="hint">All-time ranking of clients by how much money they've brought in, across all jobs.</p>
     <div id="clientsContainer"></div>
   </section>

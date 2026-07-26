@@ -362,6 +362,10 @@ create table if not exists quotes (
   updated_at timestamptz not null default now()
 );
 
+-- Optional quoted value - lets a won quote pre-fill the new job's Value field via "Convert
+-- to Job" (see convertQuoteToJob-style prefill in app.js) instead of re-typing it.
+alter table quotes add column if not exists value numeric;
+
 create index if not exists quotes_assigned_to_idx on quotes (assigned_to);
 
 -- Inventory of physical site signs, shared and editable by anyone (removing a sign is

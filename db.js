@@ -1360,10 +1360,18 @@ function rowToQuote(row) {
     assignedTo: row.assigned_to,
     quoted: row.quoted,
     quotedAt: row.quoted_at,
+    value: row.value === null || row.value === undefined ? null : Number(row.value),
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parseOptionalQuoteValue(input) {
+  if (input === undefined || input === null || input === '') return null;
+  const n = Number(input);
+  if (isNaN(n)) throw new Error('Value must be a number');
+  return n;
 }
 
 async function listQuotes() {
@@ -1390,6 +1398,7 @@ async function createQuote(input, user) {
     description: (input.description || '').trim() || null,
     due_date: input.dueDate || null,
     assigned_to: input.assignedTo || null,
+    value: parseOptionalQuoteValue(input.value),
     quoted: false,
     created_by: user.id,
     created_at: new Date().toISOString(),
@@ -1412,6 +1421,7 @@ async function updateQuote(id, input, user) {
       description: (input.description || '').trim() || null,
       due_date: input.dueDate || null,
       assigned_to: input.assignedTo || null,
+      value: parseOptionalQuoteValue(input.value),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id).select().maybeSingle();

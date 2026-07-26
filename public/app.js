@@ -1640,6 +1640,7 @@ function quoteEditRow(q) {
       <td><input type="text" class="qt-edit-address" value="${escapeHtml(q.siteAddress || '')}"></td>
       <td><input type="text" class="qt-edit-description" value="${escapeHtml(q.description || '')}"></td>
       <td><input type="date" class="qt-edit-duedate" value="${q.dueDate || ''}"></td>
+      <td><input type="number" class="qt-edit-value" value="${q.value === null ? '' : q.value}" step="0.01" min="0"></td>
       <td><select class="qt-edit-assigned">${quoteAssigneeOptions(q.assignedTo)}</select></td>
       <td><span class="hire-status ${q.quoted ? 'returned' : 'due-soon'}">${q.quoted ? 'Quoted' : 'Pending'}</span></td>
       <td class="row-actions">
@@ -1658,12 +1659,13 @@ function quoteDisplayRow(q) {
       <td>${escapeHtml(q.siteAddress || '—')}</td>
       <td>${escapeHtml(q.description || '—')}</td>
       <td>${q.dueDate ? new Date(q.dueDate).toLocaleDateString('en-GB') : '—'}</td>
+      <td>${q.value === null ? '—' : money(q.value)}</td>
       <td>${escapeHtml(quotingUserName(q.assignedTo) || 'Unassigned')}</td>
       <td>${(canManage || isMine)
         ? `<label class="quote-status-toggle"><input type="checkbox" data-toggle-quote="${q.id}" ${q.quoted ? 'checked' : ''}> <span class="hire-status ${q.quoted ? 'returned' : 'due-soon'}">${q.quoted ? 'Quoted' : 'Pending'}</span></label>`
         : `<span class="hire-status ${q.quoted ? 'returned' : 'due-soon'}">${q.quoted ? 'Quoted' : 'Pending'}</span>`}</td>
       <td class="row-actions">
-        ${canManage ? '<button type="button" class="qt-edit-btn">Edit</button><button type="button" class="danger qt-delete-btn">Delete</button>' : ''}
+        ${canManage ? `<button type="button" class="qt-convert-btn">Convert to Job</button><button type="button" class="qt-edit-btn">Edit</button><button type="button" class="danger qt-delete-btn">Delete</button>` : ''}
       </td>
     </tr>`;
 }
@@ -1712,6 +1714,7 @@ function renderQuoting() {
         siteAddress: tr.querySelector('.qt-edit-address').value,
         description: tr.querySelector('.qt-edit-description').value,
         dueDate: tr.querySelector('.qt-edit-duedate').value || null,
+        value: tr.querySelector('.qt-edit-value').value || null,
         assignedTo: tr.querySelector('.qt-edit-assigned').value || null,
       };
       try {
@@ -1734,6 +1737,25 @@ function renderQuoting() {
       }
     });
   });
+  // Pre-fills the New Job form from this quote (client/site/description/value) rather than
+  // silently creating the job outright - same reviewable pattern as the job-sheet import
+  // prefill, so nothing gets created without someone actually checking it first. The quote
+  // itself is left as-is (still there, still markable as quoted) since a job and a quote are
+  // still two separate records - this just removes re-typing the same details twice.
+  tbody.querySelectorAll('.qt-convert-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const q = state.quotes.find((x) => x.id === btn.closest('tr').dataset.id);
+      if (!q) return;
+      goToTab('jobs');
+      openJobModal(null, {
+        client: q.clientName,
+        location: q.siteAddress || '',
+        description: q.description || '',
+        value: q.value === null ? '' : q.value,
+        employeeName: quotingUserName(q.assignedTo) || '',
+      });
+    });
+  });
 }
 
 async function loadQuotes() {
@@ -1751,6 +1773,7 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
   const addressInput = document.getElementById('newQuoteAddress');
   const descriptionInput = document.getElementById('newQuoteDescription');
   const dueDateInput = document.getElementById('newQuoteDueDate');
+  const valueInput = document.getElementById('newQuoteValue');
   const assignedInput = document.getElementById('newQuoteAssignedTo');
   if (!clientInput.value.trim()) return;
   try {
@@ -1761,6 +1784,7 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
         siteAddress: addressInput.value,
         description: descriptionInput.value,
         dueDate: dueDateInput.value || null,
+        value: valueInput.value || null,
         assignedTo: assignedInput.value || null,
       }),
     });
@@ -1768,7 +1792,9 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
     addressInput.value = '';
     descriptionInput.value = '';
     dueDateInput.value = '';
+    valueInput.value = '';
     loadQuotes();
+    toast('Quote added.', 'success');
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -4158,16 +4184,40 @@ document.getElementById('raAttachBtn').addEventListener('click', async () => {
 
 // ---------- Reports ----------
 
+// Downloads a CSV built from a plain array-of-arrays (first row = headers) - used by the
+// Reports/Client Report tabs' Export buttons so the figures on screen can leave the app
+// (an accountant, a year-end pack) without manually retyping them.
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map((cell) => {
+    const s = String(cell === undefined || cell === null ? '' : cell);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+let lastYearlyReport = [];
+
 async function loadReports() {
   document.getElementById('reportsHeading').textContent = isAdmin() ? 'Yearly Reports' : 'My Yearly Report';
   const container = document.getElementById('reportsContainer');
 
   if (!isAdmin()) {
-    renderOwnYearlyReport(container, await api('/api/reports/yearly'));
+    const years = await api('/api/reports/yearly');
+    lastYearlyReport = years;
+    renderOwnYearlyReport(container, years);
     return;
   }
 
   const [years, monthly] = await Promise.all([api('/api/reports/yearly'), api('/api/reports/monthly')]);
+  lastYearlyReport = years;
 
   const yearCardsHtml = !years.length
     ? '<p class="empty-state">No jobs recorded yet — add or import jobs to see reports.</p>'
@@ -4197,6 +4247,21 @@ async function loadReports() {
   container.innerHTML = `<div class="monthly-chart-card" id="monthlyChartCard"></div>${yearCardsHtml}`;
   buildMonthlyChart(monthly);
 }
+
+document.getElementById('reportsExportBtn').addEventListener('click', () => {
+  if (!lastYearlyReport.length) { toast('Nothing to export yet.', 'error'); return; }
+  const rows = [['Year', 'Employee', 'Total Value', 'Total Profit', 'Jobs Won']];
+  if (isAdmin()) {
+    lastYearlyReport.forEach((y) => y.employees.forEach((e) => {
+      rows.push([y.year, e.employee, e.totalValue.toFixed(2), e.totalProfit.toFixed(2), e.jobCount]);
+    }));
+  } else {
+    lastYearlyReport.forEach((y) => {
+      rows.push([y.year, state.currentUser.name, y.own.totalValue.toFixed(2), y.own.totalProfit.toFixed(2), y.own.jobCount]);
+    });
+  }
+  downloadCsv('yearly-report.csv', rows);
+});
 
 // Non-admins only ever see their own figures per year - no company totals, no other
 // employees' numbers, no monthly trend (that's company-wide, so admin-only too).
@@ -4461,8 +4526,11 @@ function buildClientPieChart(clients, totalTurnover) {
   `;
 }
 
+let lastClientReport = [];
+
 async function loadClients() {
   const clients = await api('/api/reports/clients');
+  lastClientReport = clients;
   const container = document.getElementById('clientsContainer');
   if (!clients.length) {
     container.innerHTML = '<p class="empty-state">No jobs recorded yet — add or import jobs to see the client ranking.</p>';
@@ -4501,6 +4569,13 @@ async function loadClients() {
     </div>
   `;
 }
+
+document.getElementById('clientsExportBtn').addEventListener('click', () => {
+  if (!lastClientReport.length) { toast('Nothing to export yet.', 'error'); return; }
+  const rows = [['Rank', 'Client', 'Total Value', 'Total Profit', 'Jobs']];
+  lastClientReport.forEach((c, i) => rows.push([i + 1, c.client, c.totalValue.toFixed(2), c.totalProfit.toFixed(2), c.jobCount]));
+  downloadCsv('client-report.csv', rows);
+});
 
 // ---------- Admin ----------
 
