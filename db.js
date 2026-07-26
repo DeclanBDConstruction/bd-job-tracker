@@ -477,9 +477,10 @@ function validateJobAssignmentInput(input) {
 }
 
 async function assertAssignableUser(userId) {
-  const { data: user, error } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
+  const { data: user, error } = await supabase.from('users').select('id, name').eq('id', userId).maybeSingle();
   check(error);
   if (!user) throw new Error('Chosen user does not exist');
+  return user;
 }
 
 async function createJobAssignment(input, assignedByUser) {
@@ -488,8 +489,11 @@ async function createJobAssignment(input, assignedByUser) {
   const { data: job, error: jobErr } = await supabase.from('jobs').select('id').eq('id', input.jobId).maybeSingle();
   check(jobErr);
   if (!job) throw new Error('Job not found');
-  await assertAssignableUser(input.userId);
+  const assignee = await assertAssignableUser(input.userId);
   const durationDays = Math.max(1, Math.ceil(Number(input.durationDays)));
+  const endDate = addDaysToDateString(input.startDate, durationDays - 1);
+  const conflict = await findHolidayConflict(input.userId, input.startDate, endDate);
+  if (conflict) throw new Error(`${assignee.name} is on holiday ${conflict.date} to ${conflict.endDate} - can't assign them for this period`);
   const row = {
     id: genId(),
     job_id: input.jobId,
@@ -498,7 +502,7 @@ async function createJobAssignment(input, assignedByUser) {
     task: input.task.trim(),
     start_date: input.startDate,
     duration_days: durationDays,
-    end_date: addDaysToDateString(input.startDate, durationDays - 1),
+    end_date: endDate,
     completed: false,
     completed_at: null,
     created_at: new Date().toISOString(),
@@ -512,8 +516,11 @@ async function createJobAssignment(input, assignedByUser) {
 async function updateJobAssignment(id, input) {
   const errors = validateJobAssignmentInput(input);
   if (errors.length) throw new Error(errors.join('; '));
-  await assertAssignableUser(input.userId);
+  const assignee = await assertAssignableUser(input.userId);
   const durationDays = Math.max(1, Math.ceil(Number(input.durationDays)));
+  const endDate = addDaysToDateString(input.startDate, durationDays - 1);
+  const conflict = await findHolidayConflict(input.userId, input.startDate, endDate);
+  if (conflict) throw new Error(`${assignee.name} is on holiday ${conflict.date} to ${conflict.endDate} - can't assign them for this period`);
   const { data, error } = await supabase.from('job_assignments')
     .update({
       job_id: input.jobId,
@@ -521,7 +528,7 @@ async function updateJobAssignment(id, input) {
       task: input.task.trim(),
       start_date: input.startDate,
       duration_days: durationDays,
-      end_date: addDaysToDateString(input.startDate, durationDays - 1),
+      end_date: endDate,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id).select().maybeSingle();
@@ -1044,8 +1051,22 @@ function rowToEvent(row) {
     startTime: row.start_time,
     endTime: row.end_time,
     isPrivate: row.is_private,
+    isHoliday: !!row.is_holiday,
     createdAt: row.created_at,
   };
+}
+
+// Used when creating/updating a job assignment (see createJobAssignment/updateJobAssignment)
+// - finds the first holiday that overlaps the assignment's date range, regardless of
+// is_private, since a holiday always blocks an assignment even though most personal calendar
+// entries stay hidden from everyone else.
+async function findHolidayConflict(userId, startDate, endDate) {
+  const { data, error } = await supabase.from('calendar_events').select('*')
+    .eq('user_id', userId).eq('is_holiday', true)
+    .lte('date', endDate).gte('end_date', startDate)
+    .order('date').limit(1);
+  check(error);
+  return data.length ? rowToEvent(data[0]) : null;
 }
 
 // Returns public entries plus this user's own private ones - never another user's private
@@ -1082,12 +1103,25 @@ async function createCalendarEvent(input, user) {
     else if (endTime <= startTime) errors.push('End time must be after start time');
   }
   if (errors.length) throw new Error(errors.join('; '));
+  const isHoliday = !!input.isHoliday;
+
+  // A holiday can be logged on someone else's behalf if you're an admin (e.g. entering
+  // approved leave for the team) - everyone else, and every other kind of entry, can only
+  // ever be posted as yourself, same as before.
+  let owner = user;
+  if (isHoliday && user.role === 'admin' && input.userId) {
+    const { data: targetUser, error: userErr } = await supabase.from('users').select('id, name')
+      .eq('id', input.userId).maybeSingle();
+    check(userErr);
+    if (!targetUser) throw new Error('Chosen employee does not exist');
+    owner = { id: targetUser.id, name: targetUser.name };
+  }
 
   const spanDays = durationUnit === 'days' ? Math.max(1, Math.ceil(durationValue)) : 1;
   const row = {
     id: genId(),
-    user_id: user.id,
-    user_name: user.name,
+    user_id: owner.id,
+    user_name: owner.name,
     date: input.date,
     end_date: addDaysToDateString(input.date, spanDays - 1),
     title,
@@ -1095,7 +1129,10 @@ async function createCalendarEvent(input, user) {
     duration_unit: durationUnit,
     start_time: startTime,
     end_time: endTime,
-    is_private: !!input.isPrivate,
+    // Holidays are always visible to everyone (never private) so the whole team can see
+    // who's off when planning jobs - not user-choosable like an ordinary personal entry.
+    is_private: isHoliday ? false : !!input.isPrivate,
+    is_holiday: isHoliday,
     created_at: new Date().toISOString(),
   };
   const { data, error } = await supabase.from('calendar_events').insert(row).select().single();

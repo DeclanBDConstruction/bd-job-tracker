@@ -178,6 +178,13 @@ alter table calendar_events add column if not exists is_private boolean not null
 alter table calendar_events add column if not exists start_time text;
 alter table calendar_events add column if not exists end_time text;
 
+-- Marks an entry as a holiday - always visible to everyone regardless of is_private (see
+-- createCalendarEvent in db.js) so the whole team can see who's off, and checked against
+-- when creating/editing a job assignment (see findHolidayConflict/createJobAssignment) so
+-- nobody gets assigned to a job while they're on holiday.
+alter table calendar_events add column if not exists is_holiday boolean not null default false;
+create index if not exists calendar_events_holiday_idx on calendar_events (user_id, is_holiday);
+
 -- Labour rates and material prices used when pricing up quotes. `kind` splits the same
 -- shape of data into the Labour tab and the Price List tab.
 create table if not exists price_list_items (

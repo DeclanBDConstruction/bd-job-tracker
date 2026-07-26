@@ -974,7 +974,10 @@ jobForm.addEventListener('submit', async (e) => {
       jobId = created.id;
     }
     if (newlyCheckedTeam.length) {
-      await Promise.all(newlyCheckedTeam.map((cb) => api('/api/job-assignments', {
+      // allSettled rather than all - one person having a holiday conflict shouldn't stop the
+      // rest of the ticked team from being assigned; collect every failure and report them
+      // together instead of just whichever one happened to reject first.
+      const results = await Promise.allSettled(newlyCheckedTeam.map((cb) => api('/api/job-assignments', {
         method: 'POST',
         body: JSON.stringify({
           jobId,
@@ -984,6 +987,8 @@ jobForm.addEventListener('submit', async (e) => {
           durationDays: assignDuration,
         }),
       })));
+      const failures = results.filter((r) => r.status === 'rejected').map((r) => r.reason.message);
+      if (failures.length) throw new Error(failures.join('\n'));
     }
     const [jobs, employees] = await Promise.all([api('/api/jobs'), api('/api/employees')]);
     state.jobs = jobs;
@@ -2744,7 +2749,7 @@ function createCalendarView({ scope, ids }) {
       const isToday = ds === todayStr;
       const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => e.isAssignment
         ? `<div class="cal-chip cal-chip-assignment" title="${escapeHtml(e.title)} (${e.completed ? 'Done' : 'Pending'})">${escapeHtml(truncate(e.title, 20))}</div>`
-        : `<div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>`
+        : `<div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${e.isHoliday ? '🏖 ' : ''}${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>`
       ).join('');
       const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
       return `
@@ -2768,7 +2773,7 @@ function createCalendarView({ scope, ids }) {
     document.getElementById(ids.addForm).reset();
     document.getElementById(ids.addForm).hidden = true;
     document.getElementById(ids.addBtn).hidden = false;
-    syncKindFields();
+    syncHolidayFields();
     document.getElementById(ids.modal).hidden = false;
   }
 
@@ -2788,7 +2793,7 @@ function createCalendarView({ scope, ids }) {
       <li class="cal-day-event-item">
         <span class="cal-swatch" style="background:${userColor(e)}"></span>
         <div class="cal-day-event-body">
-          <div class="cal-day-event-title">${escapeHtml(e.title)}${scope === 'private' && !e.isPrivate ? ' <span class="cal-today-badge" title="Also visible to everyone on the team calendar">Team</span>' : ''}</div>
+          <div class="cal-day-event-title">${e.isHoliday ? '🏖 ' : ''}${escapeHtml(e.title)}${scope === 'private' && !e.isPrivate ? ' <span class="cal-today-badge" title="Also visible to everyone on the team calendar">Team</span>' : ''}</div>
           <div class="cal-day-event-meta">${scope === 'private' ? '' : `${escapeHtml(e.userName)} · `}${formatWhen(e)}${e.date !== e.endDate ? ` · ${e.date} to ${e.endDate}` : ''}</div>
         </div>
         ${(state.currentUser && (state.currentUser.id === e.userId || state.currentUser.role === 'admin')) ? `<button type="button" class="danger cal-day-event-delete" data-id="${e.id}">Delete</button>` : ''}
@@ -2838,11 +2843,15 @@ function createCalendarView({ scope, ids }) {
   document.getElementById(ids.addBtn).addEventListener('click', () => {
     document.getElementById(ids.addForm).hidden = false;
     document.getElementById(ids.addBtn).hidden = true;
+    if (isAdmin()) {
+      document.getElementById(ids.holidayFor).innerHTML = '<option value="">Myself</option>'
+        + state.operativeUsers.map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+    }
     document.getElementById(ids.addTitle).focus();
   });
 
   // Toggles between a specific start/end time (same day) and a number-of-days field
-  // (for holidays/multi-day entries) depending on what's picked in the "When" dropdown.
+  // depending on what's picked in the "When" dropdown.
   function syncKindFields() {
     const kind = document.getElementById(ids.kind).value;
     document.getElementById(ids.timeFields).hidden = kind !== 'time';
@@ -2850,21 +2859,37 @@ function createCalendarView({ scope, ids }) {
   }
   document.getElementById(ids.kind).addEventListener('change', syncKindFields);
 
+  // A holiday always spans whole days and is always visible to everyone (see
+  // createCalendarEvent in db.js) - not a per-entry choice like an ordinary event - so this
+  // hides the "When" picker entirely and forces it to "days" rather than asking. Admins
+  // additionally get a "Holiday for" picker to log one on someone else's behalf.
+  function syncHolidayFields() {
+    const isHoliday = document.getElementById(ids.holidayCheck).checked;
+    const kindSelect = document.getElementById(ids.kind);
+    kindSelect.closest('label').hidden = isHoliday;
+    if (isHoliday) kindSelect.value = 'days';
+    syncKindFields();
+    document.getElementById(ids.holidayForWrap).hidden = !isHoliday || !isAdmin();
+  }
+  document.getElementById(ids.holidayCheck).addEventListener('change', syncHolidayFields);
+
   document.getElementById(ids.addCancelBtn).addEventListener('click', () => {
     document.getElementById(ids.addForm).reset();
     document.getElementById(ids.addForm).hidden = true;
     document.getElementById(ids.addBtn).hidden = false;
-    syncKindFields();
+    syncHolidayFields();
   });
 
   document.getElementById(ids.addForm).addEventListener('submit', async (e) => {
     e.preventDefault();
-    const kind = document.getElementById(ids.kind).value;
+    const isHoliday = document.getElementById(ids.holidayCheck).checked;
+    const kind = isHoliday ? 'days' : document.getElementById(ids.kind).value;
     const payload = {
       date: selectedDate,
       title: document.getElementById(ids.addTitle).value,
       durationUnit: kind,
       isPrivate: scope === 'private',
+      isHoliday,
     };
     if (kind === 'days') {
       payload.durationValue = document.getElementById(ids.addDurationValue).value;
@@ -2872,13 +2897,17 @@ function createCalendarView({ scope, ids }) {
       payload.startTime = document.getElementById(ids.addStartTime).value;
       payload.endTime = document.getElementById(ids.addEndTime).value;
     }
+    if (isHoliday && isAdmin()) {
+      const forUserId = document.getElementById(ids.holidayFor).value;
+      if (forUserId) payload.userId = forUserId;
+    }
     try {
       await api('/api/calendar', { method: 'POST', body: JSON.stringify(payload) });
       state.calendarEvents = await api('/api/calendar');
       document.getElementById(ids.addForm).reset();
       document.getElementById(ids.addForm).hidden = true;
       document.getElementById(ids.addBtn).hidden = false;
-      syncKindFields();
+      syncHolidayFields();
       renderDayEvents();
       render();
     } catch (err) {
@@ -2902,6 +2931,7 @@ const teamCalendar = createCalendarView({
     kind: 'calDayAddKind', timeFields: 'calDayAddTimeFields', daysFields: 'calDayAddDaysFields',
     addStartTime: 'calDayAddStartTime', addEndTime: 'calDayAddEndTime',
     addDurationValue: 'calDayAddDurationValue', addCancelBtn: 'calDayAddCancelBtn',
+    holidayCheck: 'calDayAddHoliday', holidayForWrap: 'calDayAddHolidayForWrap', holidayFor: 'calDayAddHolidayFor',
   },
 });
 
@@ -2914,6 +2944,7 @@ const myCalendar = createCalendarView({
     kind: 'myCalDayAddKind', timeFields: 'myCalDayAddTimeFields', daysFields: 'myCalDayAddDaysFields',
     addStartTime: 'myCalDayAddStartTime', addEndTime: 'myCalDayAddEndTime',
     addDurationValue: 'myCalDayAddDurationValue', addCancelBtn: 'myCalDayAddCancelBtn',
+    holidayCheck: 'myCalDayAddHoliday', holidayForWrap: 'myCalDayAddHolidayForWrap', holidayFor: 'myCalDayAddHolidayFor',
   },
 });
 
