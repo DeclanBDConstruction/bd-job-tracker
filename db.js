@@ -633,8 +633,19 @@ async function clockIn(assignmentId) {
 }
 
 async function markArrived(assignmentId) {
-  const rams = await getJobAssignmentRams(assignmentId);
-  if (!rams) throw new Error('Submit your RAMS for this job before marking yourself as arrived');
+  // RAMS is required at the JOB level, not per-assignment - if it's already on file (an
+  // office upload, or another operative on this same job already did theirs), nobody else
+  // assigned to it needs to submit their own. Only fall back to checking this assignment's
+  // own submission (the pre-job-level-gate behaviour) when the job doesn't have one yet,
+  // which also covers the rare case where a submission's auto-attach to the job's documents
+  // failed - see attachRamsToJobDocuments in server.js.
+  const mine = await getJobAssignmentRams(assignmentId);
+  if (!mine) {
+    const assignment = await getJobAssignment(assignmentId);
+    const job = assignment ? await getJob(assignment.jobId) : null;
+    const jobHasRams = !!(job && job.documents.rams && job.documents.rams.length);
+    if (!jobHasRams) throw new Error('Submit your RAMS for this job before marking yourself as arrived');
+  }
   const log = await getTodayTimeLog(assignmentId);
   if (!log || !log.clockInAt) throw new Error('Clock in before marking yourself as arrived');
   if (log.arrivedAt) throw new Error('Already marked as arrived today');
@@ -684,6 +695,20 @@ async function getJobAssignmentRams(assignmentId) {
     .eq('assignment_id', assignmentId).maybeSingle();
   check(error);
   return data ? rowToJobAssignmentRams(data) : null;
+}
+
+// Job-level view for the Assignment Detail modal: whether the JOB this assignment is on
+// already has any RAMS document on file at all (an office upload, a library/custom RA
+// attached from the Job Detail Rams tab, or any operative's own dynamic submission - all of
+// these land in job.documents.rams, see attachRamsToJobDocuments in server.js and
+// jobsMissingRams in app.js, which already treats job.documents.rams the same way). If so,
+// nobody else assigned to the job needs to submit their own - they can just read what's there.
+async function getJobAssignmentRamsStatus(assignmentId) {
+  const assignment = await getJobAssignment(assignmentId);
+  if (!assignment) return null;
+  const job = await getJob(assignment.jobId);
+  const documents = (job && job.documents.rams) || [];
+  return { jobHasRams: documents.length > 0, documents };
 }
 
 function sanitizeRamsHazards(hazards) {
@@ -1921,6 +1946,7 @@ module.exports = {
   markArrived,
   clockOut,
   getJobAssignmentRams,
+  getJobAssignmentRamsStatus,
   createJobAssignmentRams,
   listSavedRiskAssessments,
   getSavedRiskAssessment,

@@ -201,6 +201,8 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/rams$/ },
   { method: 'GET', path: /^\/job-assignments\/[^/]+\/rams$/ },
   { method: 'POST', path: /^\/job-assignments\/[^/]+\/rams\/attach-to-job$/ },
+  { method: 'GET', path: /^\/job-assignments\/[^/]+\/rams-status$/ },
+  { method: 'GET', path: /^\/job-assignments\/[^/]+\/rams-status\/[^/]+\/file$/ },
 ];
 
 app.use('/api', (req, res, next) => {
@@ -691,6 +693,42 @@ app.get('/api/job-assignments/:id/rams', handle(async (req, res) => {
     return res.status(403).json({ error: 'You can only view RAMS for your own assignment' });
   }
   res.json(await db.getJobAssignmentRams(req.params.id));
+}));
+
+// Job-level RAMS status for the Assignment Detail modal (see markArrived/
+// getJobAssignmentRamsStatus in db.js) - whether the job already has RAMS on file at all,
+// so only one operative assigned to it ever needs to fill in the dynamic form, plus the
+// list of those documents so the rest can just read them. Same ownership rule as above.
+app.get('/api/job-assignments/:id/rams-status', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
+    return res.status(403).json({ error: 'You can only view RAMS status for your own assignment' });
+  }
+  res.json(await db.getJobAssignmentRamsStatus(req.params.id));
+}));
+
+// Narrow, purpose-built read of one of those job-level RAMS documents via an operative's own
+// assignment - deliberately not the generic /api/jobs/:id/documents/:category/:docId/file
+// route, which is unrestricted-by-design for office roles and has no ownership check at all
+// (same reasoning as the /photo route above).
+app.get('/api/job-assignments/:id/rams-status/:docId/file', handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
+    return res.status(403).json({ error: 'You can only view RAMS documents for your own assignment' });
+  }
+  const doc = await db.getJobDocument(assignment.jobId, 'rams', req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  const { data, error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .download(storagePath(assignment.jobId, 'rams', doc.storedName));
+  if (error) return res.status(404).json({ error: 'File not found in storage' });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  const filename = doc.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
+  res.setHeader('Content-Type', data.type || 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.send(buffer);
 }));
 
 // Manual re-sync for RAMS submitted before this auto-attach behaviour existed (or if the upload

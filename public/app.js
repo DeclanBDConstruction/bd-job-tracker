@@ -2932,11 +2932,13 @@ function findMyAssignment(id) {
 
 let currentAssignmentTimeLog = null;
 let currentAssignmentRams = null;
+let currentAssignmentRamsStatus = null;
 
 async function openAssignmentDetail(id) {
   currentAssignmentId = id;
   currentAssignmentTimeLog = null; // avoid briefly showing the previously-open assignment's clock state
   currentAssignmentRams = null;
+  currentAssignmentRamsStatus = null;
   renderAssignmentDetail();
   renderAssignmentTimeLog();
   renderAssignmentRamsStatus();
@@ -2990,7 +2992,8 @@ function renderAssignmentTimeLog() {
         ${arrived
           ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>`
           : (() => {
-              const ramsDone = !!currentAssignmentRams;
+              // Job-level, not per-assignment - see renderAssignmentRamsStatus/db.js markArrived.
+              const ramsDone = !!(currentAssignmentRams || (currentAssignmentRamsStatus && currentAssignmentRamsStatus.jobHasRams));
               const canMarkArrived = clockedIn && ramsDone;
               const title = !clockedIn ? 'Clock in first' : !ramsDone ? 'Submit your RAMS first' : '';
               return `<button type="button" id="assignmentArrivedBtn" ${canMarkArrived ? '' : 'disabled'} title="${title}">Mark Arrived</button>`;
@@ -3042,16 +3045,29 @@ async function refreshAssignmentRams() {
   } catch (err) {
     currentAssignmentRams = null;
   }
+  try {
+    currentAssignmentRamsStatus = await api(`/api/job-assignments/${currentAssignmentId}/rams-status`);
+  } catch (err) {
+    currentAssignmentRamsStatus = null;
+  }
   renderAssignmentRamsStatus();
-  renderAssignmentTimeLog(); // the Arrived button's disabled state depends on currentAssignmentRams too
+  renderAssignmentTimeLog(); // the Arrived button's disabled state depends on these too
 }
 
-// RAMS locks once the operative has actually marked themselves arrived (see the matching
-// server-side check in db.js createJobAssignmentRams) - after that the button just opens a
-// read-only view rather than the editable form.
+// RAMS is required once per JOB, not once per operative on it - if it's already on file
+// (an office upload, or a teammate's own submission on a different assignment against the
+// same job) nothing is required here at all, just links to read what's there. Only when the
+// job has nothing yet does this operative need to fill in the dynamic form themselves - see
+// db.js's getJobAssignmentRamsStatus/markArrived for the matching server-side logic.
+// Once THIS operative has actually submitted their own, it also locks once they've marked
+// themselves arrived (see the matching server-side check in db.js createJobAssignmentRams) -
+// after that the button just opens a read-only view rather than the editable form.
 function renderAssignmentRamsStatus() {
   const box = document.getElementById('assignmentRamsStatus');
+  const btn = document.getElementById('assignmentRamsBtn');
   const locked = !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+  const jobDocs = (currentAssignmentRamsStatus && currentAssignmentRamsStatus.documents) || [];
+
   if (currentAssignmentRams) {
     // "Attach to Job Documents" is a manual retry in case the automatic upload (on save) ever
     // missed - lets the operative fix it themselves rather than needing an admin, same action
@@ -3068,11 +3084,19 @@ function renderAssignmentRamsStatus() {
         alert(err.message);
       }
     });
+    btn.hidden = false;
+    btn.textContent = locked ? 'View RAMS' : 'View / Edit RAMS';
+  } else if (jobDocs.length) {
+    box.innerHTML = `
+      <span class="status-pill complete">RAMS already on file for this job</span>
+      ${jobDocs.map((d) => `<a class="link-btn" href="/api/job-assignments/${currentAssignmentId}/rams-status/${d.id}/file" target="_blank" rel="noopener">View ${escapeHtml(d.originalName)}</a>`).join('')}
+    `;
+    btn.hidden = true; // nothing for this operative to fill in - the links above cover it
   } else {
     box.innerHTML = `<span class="status-pill in-progress">RAMS required before Mark Arrived</span>`;
+    btn.hidden = false;
+    btn.textContent = 'RAMS (required)';
   }
-  const btn = document.getElementById('assignmentRamsBtn');
-  btn.textContent = currentAssignmentRams ? (locked ? 'View RAMS' : 'View / Edit RAMS') : 'RAMS (required)';
 }
 
 document.getElementById('assignmentDetailCloseBtn').addEventListener('click', () => {
