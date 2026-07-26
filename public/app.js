@@ -3548,7 +3548,7 @@ function renderHomeDashboard() {
     teamCalendar.openDayModal(todayStr);
   });
 
-  container.querySelectorAll('.home-rams-btn').forEach((btn) => {
+  container.querySelectorAll('.home-rams-btn[data-job]').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
   });
   container.querySelectorAll('[data-open-assignment]').forEach((btn) => {
