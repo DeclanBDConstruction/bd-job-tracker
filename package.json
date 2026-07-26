@@ -4,7 +4,8 @@
   "description": "Simple job tracker for BD Construction: Excel import, job/employee tracking, yearly reports.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

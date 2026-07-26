@@ -79,9 +79,12 @@ function broadcast(type) {
 }
 
 // Proxies/browsers can silently drop an idle connection, so ping periodically to keep it open.
+// unref() so this timer alone never keeps the process alive - irrelevant in normal operation
+// (the HTTP listener already does that), but it means requiring this file in a test doesn't
+// leave a dangling interval behind.
 setInterval(() => {
   for (const res of sseClients) res.write(': ping\n\n');
-}, 20000);
+}, 20000).unref();
 
 // ---------- Job documents (RAMS, drawings, permits, photos) ----------
 // Files live in Supabase Storage under `${jobId}/${category}/${storedName}`; only
@@ -604,31 +607,45 @@ app.put('/api/job-assignments/:id/complete', handle(async (req, res) => {
   res.json(assignment);
 }));
 
+// Shared "load this assignment, 404 if missing, 403 if not allowed" check used by every
+// operative self-service job-assignment route below - collapses what was 11 near-identical
+// copies of this same block into one place. `strict: true` means only the assignment's own
+// operative may proceed (clock-in, RAMS/permit/photo submission - things that write); the
+// default (false) also lets admin/surveyor through regardless of whose assignment it is,
+// matching the unrestricted view they already have over the rest of a job (used by read
+// routes admin/surveyor share with operatives, e.g. time-logs/RAMS viewing).
+async function loadOwnedAssignment(req, res, message, { strict = false } = {}) {
+  const assignment = await db.getJobAssignment(req.params.id);
+  if (!assignment) { res.status(404).json({ error: 'Assignment not found' }); return null; }
+  const blocked = strict
+    ? assignment.userId !== req.user.id
+    : db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id;
+  if (blocked) { res.status(403).json({ error: message }); return null; }
+  return assignment;
+}
+
 // Clock in/arrived/clock out - ownership-checked here (db.js's clockIn/markArrived/clockOut
 // trust the assignmentId they're given, same convention as addJobDocument etc), timestamps
 // are always server-stamped inside those functions, never taken from the request body.
 app.post('/api/job-assignments/:id/time/clock-in', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only clock in on your own assignment' });
+  const assignment = await loadOwnedAssignment(req, res, 'You can only clock in on your own assignment', { strict: true });
+  if (!assignment) return;
   const log = await db.clockIn(req.params.id);
   broadcast('jobAssignments');
   res.json(log);
 }));
 
 app.post('/api/job-assignments/:id/time/arrived', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only mark yourself arrived on your own assignment' });
+  const assignment = await loadOwnedAssignment(req, res, 'You can only mark yourself arrived on your own assignment', { strict: true });
+  if (!assignment) return;
   const log = await db.markArrived(req.params.id);
   broadcast('jobAssignments');
   res.json(log);
 }));
 
 app.post('/api/job-assignments/:id/time/clock-out', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only clock out on your own assignment' });
+  const assignment = await loadOwnedAssignment(req, res, 'You can only clock out on your own assignment', { strict: true });
+  if (!assignment) return;
   const log = await db.clockOut(req.params.id);
   broadcast('jobAssignments');
   res.json(log);
@@ -639,11 +656,8 @@ app.post('/api/job-assignments/:id/time/clock-out', handle(async (req, res) => {
 // someone else's assignment anyway - see OPERATIVE_ALLOWED_ROUTES - but the check stays
 // here too since admin/surveyor share this same route and aren't operatives).
 app.get('/api/job-assignments/:id/time-logs', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
-    return res.status(403).json({ error: 'You can only view time logs for your own assignment' });
-  }
+  const assignment = await loadOwnedAssignment(req, res, 'You can only view time logs for your own assignment');
+  if (!assignment) return;
   res.json(await db.listTimeLogs(req.params.id));
 }));
 
@@ -653,9 +667,8 @@ app.get('/api/job-assignments/:id/time-logs', handle(async (req, res) => {
 // office roles across every category on any job, which is too broad to hand to operatives).
 app.post('/api/job-assignments/:id/photo', uploadImage.single('file'), handle(async (req, res) => {
   if (!req.file) throw new Error('No file uploaded');
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only upload photos against your own assignment' });
+  const assignment = await loadOwnedAssignment(req, res, 'You can only upload photos against your own assignment', { strict: true });
+  if (!assignment) return;
   const storedName = makeStoredName(req.file.originalname);
   const { error } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
@@ -690,9 +703,8 @@ function decodePngDataUrl(dataUrl) {
 }
 
 app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save a permit against your own assignment' });
+  const assignment = await loadOwnedAssignment(req, res, 'You can only save a permit against your own assignment', { strict: true });
+  if (!assignment) return;
 
   const textFields = ['siteName', 'jobNumber', 'description', 'date', 'operativeName', 'managerName'];
   const FIELD_LABELS = {
@@ -769,9 +781,8 @@ async function attachRamsToJobDocuments(assignment, rams) {
 }
 
 app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (assignment.userId !== req.user.id) return res.status(403).json({ error: 'You can only save RAMS against your own assignment' });
+  const assignment = await loadOwnedAssignment(req, res, 'You can only save RAMS against your own assignment', { strict: true });
+  if (!assignment) return;
 
   if (!decodePngDataUrl(req.body.signatureImage)) throw new Error('Sign before saving');
 
@@ -784,11 +795,8 @@ app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
 }));
 
 app.get('/api/job-assignments/:id/rams', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
-    return res.status(403).json({ error: 'You can only view RAMS for your own assignment' });
-  }
+  const assignment = await loadOwnedAssignment(req, res, 'You can only view RAMS for your own assignment');
+  if (!assignment) return;
   res.json(await db.getJobAssignmentRams(req.params.id));
 }));
 
@@ -797,11 +805,8 @@ app.get('/api/job-assignments/:id/rams', handle(async (req, res) => {
 // so only one operative assigned to it ever needs to fill in the dynamic form, plus the
 // list of those documents so the rest can just read them. Same ownership rule as above.
 app.get('/api/job-assignments/:id/rams-status', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
-    return res.status(403).json({ error: 'You can only view RAMS status for your own assignment' });
-  }
+  const assignment = await loadOwnedAssignment(req, res, 'You can only view RAMS status for your own assignment');
+  if (!assignment) return;
   res.json(await db.getJobAssignmentRamsStatus(req.params.id));
 }));
 
@@ -810,11 +815,8 @@ app.get('/api/job-assignments/:id/rams-status', handle(async (req, res) => {
 // route, which is unrestricted-by-design for office roles and has no ownership check at all
 // (same reasoning as the /photo route above).
 app.get('/api/job-assignments/:id/rams-status/:docId/file', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
-    return res.status(403).json({ error: 'You can only view RAMS documents for your own assignment' });
-  }
+  const assignment = await loadOwnedAssignment(req, res, 'You can only view RAMS documents for your own assignment');
+  if (!assignment) return;
   const doc = await db.getJobDocument(assignment.jobId, 'rams', req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   const { data, error } = await supabase.storage
@@ -833,11 +835,8 @@ app.get('/api/job-assignments/:id/rams-status/:docId/file', handle(async (req, r
 // record and files it under the job's documents, same as the automatic path above. Same
 // ownership rule as the GET route below: the assignment's own operative, or admin/surveyor.
 app.post('/api/job-assignments/:id/rams/attach-to-job', handle(async (req, res) => {
-  const assignment = await db.getJobAssignment(req.params.id);
-  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-  if (db.OPERATIVE_ROLES.includes(req.user.role) && assignment.userId !== req.user.id) {
-    return res.status(403).json({ error: 'You can only attach RAMS for your own assignment' });
-  }
+  const assignment = await loadOwnedAssignment(req, res, 'You can only attach RAMS for your own assignment');
+  if (!assignment) return;
   const rams = await db.getJobAssignmentRams(req.params.id);
   if (!rams) return res.status(404).json({ error: 'No RAMS submitted for this assignment yet' });
 
@@ -1291,7 +1290,14 @@ app.use((err, req, res, next) => {
   res.status(400).json({ error: err.message || 'Request failed' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`BD Construction Job Tracker running at http://localhost:${PORT}`);
-  console.log('Other devices on your office network can connect using your PC\'s IP address, e.g. http://192.168.x.x:' + PORT);
-});
+// Guarded so requiring this file (e.g. from test/permissions.test.js, to exercise the real
+// route allowlists below without duplicating them) never actually binds a port - only running
+// it directly (`node server.js` / `npm start`) does.
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`BD Construction Job Tracker running at http://localhost:${PORT}`);
+    console.log('Other devices on your office network can connect using your PC\'s IP address, e.g. http://192.168.x.x:' + PORT);
+  });
+}
+
+module.exports = { app, STAFF_ALLOWED_ROUTES, OPERATIVE_ALLOWED_ROUTES, CALENDAR_DIARY_ROUTES };

@@ -36,7 +36,17 @@ function genId() {
 }
 
 function check(error) {
-  if (error) throw new Error(error.message);
+  if (!error) return;
+  // Postgres constraint violations carry a stable `code` regardless of wording - rewritten
+  // to plain English here so an unanticipated one doesn't leak a raw column/constraint name
+  // to the browser. Specific cases that are actually expected to happen in normal use (e.g.
+  // a duplicate email at registration, a calendar colour someone else just grabbed) still get
+  // their own more precise message ahead of this, checked before check() is even called - this
+  // is just the generic fallback for whatever isn't already anticipated.
+  if (error.code === '23505') throw new Error('That already exists - check for a duplicate.');
+  if (error.code === '23503') throw new Error('That references something that no longer exists.');
+  if (error.code === '23502') throw new Error('A required field is missing.');
+  throw new Error(error.message);
 }
 
 // ---------- Employees ----------
@@ -2111,4 +2121,12 @@ module.exports = {
   updateDiaryEntry,
   setDiaryEntryCompleted,
   deleteDiaryEntry,
+  // Pure helpers with no Supabase calls - exported so they can be unit-tested directly (see
+  // test/db.pure.test.js) without needing a live database connection.
+  addDaysToDateString,
+  expiryStatus,
+  hireDueBackDate,
+  hireStatus,
+  validateJobInput,
+  validateJobAssignmentInput,
 };
