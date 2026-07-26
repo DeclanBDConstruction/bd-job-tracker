@@ -1528,6 +1528,11 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.cal-cell:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 .cal-cell-empty {
   background: transparent;
   box-shadow: none;

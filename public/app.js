@@ -2893,7 +2893,7 @@ function createCalendarView({ scope, ids }) {
       ).join('');
       const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
       return `
-        <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}">
+        <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}" role="button" tabindex="0" aria-label="${ds}${isToday ? ', today' : ''}">
           <div class="cal-cell-date">${d}${isToday ? '<span class="cal-today-badge">Today</span>' : ''}</div>
           <div class="cal-cell-events">${chips}${more}</div>
         </div>
@@ -2902,6 +2902,11 @@ function createCalendarView({ scope, ids }) {
 
     grid.querySelectorAll('.cal-cell[data-date]').forEach((cell) => {
       cell.addEventListener('click', () => openDayModal(cell.dataset.date));
+      cell.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        openDayModal(cell.dataset.date);
+      });
     });
   }
 
@@ -4666,5 +4671,59 @@ async function loadAdminUsers() {
     });
   });
 }
+
+// ---------- Modal accessibility (focus trap + Escape-to-close) ----------
+// Retrofitted once, globally, rather than touching every individual modal's open/close call
+// site (there are dozens scattered through this file) - a MutationObserver notices any of the
+// 10 .modal-overlay elements becoming visible/hidden, and one delegated keydown/focusin
+// handler covers all of them the same way, so this works regardless of which function opened
+// or closed a given modal.
+
+function visibleModals() {
+  return [...document.querySelectorAll('.modal-overlay')].filter((m) => !m.hidden);
+}
+
+// DOM order approximates stacking order here (later = drawn on top, see the modal-stacking
+// note elsewhere) - good enough to pick "the one Escape/focus-trap should act on" without
+// needing an explicit z-index/open-order stack.
+function topmostModal() {
+  const visible = visibleModals();
+  return visible.length ? visible[visible.length - 1] : null;
+}
+
+function focusableElements(container) {
+  return [...container.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => el.offsetParent !== null);
+}
+
+document.querySelectorAll('.modal-overlay').forEach((modal) => {
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.tabIndex = -1; // fallback focus target if a modal ever has nothing focusable inside
+  new MutationObserver(() => {
+    if (!modal.hidden) {
+      const focusables = focusableElements(modal);
+      (focusables[0] || modal).focus({ preventScroll: true });
+    }
+  }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const modal = topmostModal();
+  if (!modal) return;
+  // Clicking the modal's own close/cancel button (rather than just hiding it directly) means
+  // Escape goes through the same reset-state logic as actually clicking Close would.
+  const closeBtn = modal.querySelector('[id$="CloseBtn"], [id$="CancelBtn"]');
+  if (closeBtn) closeBtn.click();
+  else modal.hidden = true;
+});
+
+document.addEventListener('focusin', (e) => {
+  const modal = topmostModal();
+  if (!modal || modal.contains(e.target)) return;
+  const focusables = focusableElements(modal);
+  (focusables[0] || modal).focus({ preventScroll: true });
+});
 
 checkAuth();
