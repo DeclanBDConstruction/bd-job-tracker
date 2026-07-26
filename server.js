@@ -408,6 +408,49 @@ app.get('/api/jobs/:id/time-logs', handle(async (req, res) => {
   res.json(withLogs);
 }));
 
+// ---------- Job Costing (profit/loss) ----------
+// Not operative/staff-reachable (they don't have Jobs tab access at all - see the allowlists
+// above), same as every other Job Detail route; admin and surveyor both pass through
+// untouched, same access level they already have over the rest of a job's detail.
+
+app.get('/api/jobs/:id/costing', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  res.json(await db.getJobCostingSummary(req.params.id));
+}));
+
+app.post('/api/jobs/:id/costing/lines', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  const line = await db.createJobCostingLine(req.params.id, req.body);
+  broadcast('jobs');
+  res.status(201).json(line);
+}));
+
+app.put('/api/costing-lines/:id', handle(async (req, res) => {
+  const line = await db.updateJobCostingLine(req.params.id, req.body);
+  broadcast('jobs');
+  res.json(line);
+}));
+
+app.delete('/api/costing-lines/:id', handle(async (req, res) => {
+  await db.deleteJobCostingLine(req.params.id);
+  broadcast('jobs');
+  res.status(204).end();
+}));
+
+app.put('/api/jobs/:id/costing/labour/:userId', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  await db.setJobCostingLabourHours(req.params.id, req.params.userId, req.body.hours);
+  broadcast('jobs');
+  res.json(await db.getJobCostingLabour(req.params.id));
+}));
+
+app.delete('/api/jobs/:id/costing/labour/:userId', handle(async (req, res) => {
+  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
+  await db.clearJobCostingLabourHours(req.params.id, req.params.userId);
+  broadcast('jobs');
+  res.json(await db.getJobCostingLabour(req.params.id));
+}));
+
 app.post('/api/jobs', handle(async (req, res) => {
   const job = await db.createJob(req.body);
   broadcast('jobs');

@@ -404,6 +404,38 @@ create index if not exists custom_risk_assessments_title_idx on custom_risk_asse
 create index if not exists hires_job_id_idx on hires (job_id);
 create index if not exists hires_hire_date_idx on hires (hire_date);
 
+-- Job costing (profit/loss breakdown per job - see the Job Detail "Costing" tab). Employee
+-- hours are computed live from assignment_time_logs (clock-in to clock-out) rather than
+-- stored, so this table only ever holds a manual correction when one's actually needed - no
+-- row here means "use the clocked hours as-is". The labour rate itself isn't stored anywhere
+-- new either - it's looked up from price_list_items (kind='labour') by matching the job's
+-- client name, so adding/editing a rate there is all that's needed for it to apply.
+create table if not exists job_costing_labour_overrides (
+  id uuid primary key,
+  job_id uuid not null references jobs(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  hours numeric not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists job_costing_labour_overrides_job_user_idx on job_costing_labour_overrides (job_id, user_id);
+
+-- Materials/subcontractor cost lines for the same Costing tab. `amounts` is a list of
+-- individual charges on that one line (e.g. several deliveries/invoices for the same
+-- material over the course of the job) summed into a single line total before markup is
+-- applied - same shape as the existing paper job-costing sheet.
+create table if not exists job_costing_lines (
+  id uuid primary key,
+  job_id uuid not null references jobs(id) on delete cascade,
+  section text not null,
+  description text not null,
+  amounts jsonb not null default '[]'::jsonb,
+  markup_percent numeric not null default 30,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists job_costing_lines_job_id_idx on job_costing_lines (job_id);
+
 -- Lock every table down by default. The app only ever talks to Supabase using the
 -- service-role key (which bypasses RLS), so these policies exist purely as a safety
 -- net in case the anon/public key were ever exposed - with RLS on and no policies,
@@ -427,6 +459,8 @@ alter table diary_entries enable row level security;
 alter table subbies enable row level security;
 alter table quotes enable row level security;
 alter table signage enable row level security;
+alter table job_costing_labour_overrides enable row level security;
+alter table job_costing_lines enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

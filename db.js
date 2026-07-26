@@ -1251,6 +1251,207 @@ async function deletePriceListItem(id) {
   check(error);
 }
 
+// ---------- Job Costing (profit/loss) ----------
+// Per-job costing breakdown shown in the Job Detail modal's Costing tab - same shape as the
+// paper job-costing spreadsheet this replaces (Employee Hours / Sub Contractor / Materials
+// sections, a markup % per materials/subby line, Grand Total, Profit, Spent).
+
+const JOB_COSTING_SECTIONS = ['materials', 'subby'];
+
+function rowToCostingLine(row) {
+  const amounts = (row.amounts || []).map(Number).filter((n) => !isNaN(n));
+  const unitPrice = amounts.reduce((sum, a) => sum + a, 0);
+  const markupPercent = Number(row.markup_percent) || 0;
+  const markupAmount = unitPrice * (markupPercent / 100);
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    section: row.section,
+    description: row.description,
+    amounts,
+    unitPrice,
+    markupPercent,
+    markupAmount,
+    total: unitPrice + markupAmount,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listJobCostingLines(jobId) {
+  const { data, error } = await supabase.from('job_costing_lines').select('*').eq('job_id', jobId).order('created_at');
+  check(error);
+  return data.map(rowToCostingLine);
+}
+
+function validateCostingLineInput(input) {
+  if (!JOB_COSTING_SECTIONS.includes(input.section)) throw new Error('Invalid costing section');
+  const description = (input.description || '').trim();
+  if (!description) throw new Error('A description is required');
+  const amounts = (Array.isArray(input.amounts) ? input.amounts : [])
+    .map(Number).filter((n) => !isNaN(n) && n >= 0);
+  const markupPercent = Number(input.markupPercent);
+  return { description, amounts, markupPercent: isNaN(markupPercent) ? 30 : markupPercent };
+}
+
+async function createJobCostingLine(jobId, input) {
+  const { description, amounts, markupPercent } = validateCostingLineInput(input);
+  const row = {
+    id: genId(),
+    job_id: jobId,
+    section: input.section,
+    description,
+    amounts,
+    markup_percent: markupPercent,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('job_costing_lines').insert(row).select().single();
+  check(error);
+  return rowToCostingLine(data);
+}
+
+async function updateJobCostingLine(id, input) {
+  const { data: existing, error: findErr } = await supabase.from('job_costing_lines').select('section').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Costing line not found');
+  const { description, amounts, markupPercent } = validateCostingLineInput({ ...input, section: existing.section });
+  const { data, error } = await supabase.from('job_costing_lines')
+    .update({ description, amounts, markup_percent: markupPercent, updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Costing line not found');
+  return rowToCostingLine(data);
+}
+
+async function deleteJobCostingLine(id) {
+  const { error } = await supabase.from('job_costing_lines').delete().eq('id', id);
+  check(error);
+}
+
+// Employee hours for a job's Labour section: total clocked hours (clock-in to clock-out,
+// summed across every day logged) per employee assigned to this job, using a saved override
+// instead of the computed figure if one exists (see setJobCostingLabourHours). The rate isn't
+// stored anywhere new - it's looked up from the existing Labour Rates list (price_list_items,
+// kind='labour') by matching the job's client name, so adding/editing a rate there is all
+// that's needed for a job against that client to pick it up automatically. No match at all
+// means there's genuinely nothing to base a cost on yet - returned as rate: null rather than
+// guessing a number, so the Costing tab can prompt to add one instead of silently costing £0.
+async function getJobCostingLabour(jobId) {
+  const job = await getJob(jobId);
+  if (!job) throw new Error('Job not found');
+
+  const assignments = await listJobAssignmentsForJob(jobId);
+  const [{ data: logs, error: logsErr }, { data: overrides, error: overridesErr }, { data: rateRows, error: rateErr }] = await Promise.all([
+    assignments.length
+      ? supabase.from('assignment_time_logs').select('*').in('assignment_id', assignments.map((a) => a.id))
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('job_costing_labour_overrides').select('*').eq('job_id', jobId),
+    supabase.from('price_list_items').select('*').eq('kind', 'labour'),
+  ]);
+  check(logsErr);
+  check(overridesErr);
+  check(rateErr);
+
+  const clientNorm = (job.client || '').trim().toLowerCase();
+  const rateMatch = (rateRows || []).find((r) => r.name.trim().toLowerCase() === clientNorm);
+  const rate = rateMatch ? Number(rateMatch.price) : null;
+
+  const hoursByAssignment = {};
+  for (const log of logs) {
+    if (!log.clock_in_at || !log.clock_out_at) continue;
+    const hrs = (new Date(log.clock_out_at) - new Date(log.clock_in_at)) / 3600000;
+    hoursByAssignment[log.assignment_id] = (hoursByAssignment[log.assignment_id] || 0) + hrs;
+  }
+  const hoursByUser = {};
+  const nameByUser = {};
+  for (const a of assignments) {
+    hoursByUser[a.userId] = (hoursByUser[a.userId] || 0) + (hoursByAssignment[a.id] || 0);
+    nameByUser[a.userId] = a.userName;
+  }
+  const overrideByUser = Object.fromEntries((overrides || []).map((o) => [o.user_id, Number(o.hours)]));
+
+  const userIds = [...new Set([...Object.keys(hoursByUser), ...Object.keys(overrideByUser)])];
+
+  const employees = userIds.map((userId) => {
+    const computedHours = Math.round((hoursByUser[userId] || 0) * 100) / 100;
+    const hasOverride = Object.prototype.hasOwnProperty.call(overrideByUser, userId);
+    const hours = hasOverride ? overrideByUser[userId] : computedHours;
+    return {
+      userId,
+      userName: nameByUser[userId] || '(former employee)',
+      computedHours,
+      hours,
+      overridden: hasOverride,
+      rate,
+      total: rate === null ? 0 : hours * rate,
+    };
+  }).sort((a, b) => a.userName.localeCompare(b.userName));
+
+  const totalHours = employees.reduce((sum, e) => sum + e.hours, 0);
+  const total = employees.reduce((sum, e) => sum + e.total, 0);
+
+  return { clientName: job.client, rate, employees, totalHours, total };
+}
+
+async function setJobCostingLabourHours(jobId, userId, hours) {
+  const n = Number(hours);
+  if (isNaN(n) || n < 0) throw new Error('Hours must be a positive number');
+  const { data: existing, error: findErr } = await supabase.from('job_costing_labour_overrides')
+    .select('id').eq('job_id', jobId).eq('user_id', userId).maybeSingle();
+  check(findErr);
+  if (existing) {
+    const { error } = await supabase.from('job_costing_labour_overrides')
+      .update({ hours: n, updated_at: new Date().toISOString() }).eq('id', existing.id);
+    check(error);
+  } else {
+    const { error } = await supabase.from('job_costing_labour_overrides').insert({
+      id: genId(), job_id: jobId, user_id: userId, hours: n,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    check(error);
+  }
+}
+
+async function clearJobCostingLabourHours(jobId, userId) {
+  const { error } = await supabase.from('job_costing_labour_overrides').delete().eq('job_id', jobId).eq('user_id', userId);
+  check(error);
+}
+
+// Full profit/loss summary for the Costing tab. Grand Total (what Profit is based on)
+// includes the materials/subby markup, matching how the existing paper job sheet calculates
+// Profit = Quoted Price - Grand Total; Spent is the separate, raw-cost (no markup) actual
+// cash-outlay figure the same sheet also tracks - both are kept, not collapsed into one.
+async function getJobCostingSummary(jobId) {
+  const job = await getJob(jobId);
+  if (!job) throw new Error('Job not found');
+  const [labour, lines] = await Promise.all([getJobCostingLabour(jobId), listJobCostingLines(jobId)]);
+  const materialsLines = lines.filter((l) => l.section === 'materials');
+  const subbyLines = lines.filter((l) => l.section === 'subby');
+  const sumField = (arr, field) => arr.reduce((sum, l) => sum + l[field], 0);
+
+  const materialsTotal = sumField(materialsLines, 'total');
+  const materialsRaw = sumField(materialsLines, 'unitPrice');
+  const subbyTotal = sumField(subbyLines, 'total');
+  const subbyRaw = sumField(subbyLines, 'unitPrice');
+
+  const grandTotal = labour.total + materialsTotal + subbyTotal;
+  const spent = labour.total + materialsRaw + subbyRaw;
+  const quotedPrice = Number(job.value) || 0;
+
+  return {
+    labour,
+    materialsLines,
+    subbyLines,
+    materialsTotal,
+    subbyTotal,
+    grandTotal,
+    spent,
+    quotedPrice,
+    profit: quotedPrice - grandTotal,
+  };
+}
+
 // ---------- Subbies (subcontractor directory) ----------
 // Shared contact list anyone can add to - not scoped to any one job or user.
 
@@ -2090,6 +2291,14 @@ module.exports = {
   createPriceListItem,
   updatePriceListItem,
   deletePriceListItem,
+  listJobCostingLines,
+  createJobCostingLine,
+  updateJobCostingLine,
+  deleteJobCostingLine,
+  getJobCostingLabour,
+  setJobCostingLabourHours,
+  clearJobCostingLabourHours,
+  getJobCostingSummary,
   listSubbies,
   listSubbiesExpiring,
   getSubby,
@@ -2129,4 +2338,5 @@ module.exports = {
   hireStatus,
   validateJobInput,
   validateJobAssignmentInput,
+  rowToCostingLine,
 };

@@ -1126,6 +1126,8 @@ async function refreshJobDetail() {
   // Scoped to just this job while its detail modal is open - see renderJobTeamSection.
   state.jobAssignments = await api(`/api/jobs/${currentDetailJobId}/time-logs`);
   renderJobTeamSection(state.jobAssignments);
+  const costing = await api(`/api/jobs/${currentDetailJobId}/costing`);
+  renderJobCostingSection(costing);
 }
 
 function variationsTotal(variations) {
@@ -1984,6 +1986,186 @@ function renderJobTeamSection(assignments) {
       }
     });
   });
+}
+
+// ---------- Job Costing (profit/loss) ----------
+// Replaces the old paper job-costing spreadsheet: Employee Hours (auto-filled from clocked
+// time, editable per line), Subcontractors and Materials (freely editable cost lines with a
+// markup %), and a Quoted Price/Grand Total/Profit/Spent summary - same shape, same
+// arithmetic. Labour rate comes from the Labour Rates list (Operations tab) matched by the
+// job's client name, not anything stored here.
+
+function costingLineRow(line) {
+  return `
+    <tr data-id="${line.id}">
+      <td><input type="text" class="costing-edit-desc" value="${escapeHtml(line.description)}"></td>
+      <td><input type="text" class="costing-edit-amounts" value="${line.amounts.join(', ')}" placeholder="e.g. 120, 45.50"></td>
+      <td>${money(line.unitPrice)}</td>
+      <td><input type="number" class="costing-edit-markup" value="${line.markupPercent}" min="0" step="1"></td>
+      <td>${money(line.markupAmount)}</td>
+      <td><strong>${money(line.total)}</strong></td>
+      <td class="row-actions">
+        <button type="button" class="costing-save-btn">Save</button>
+        <button type="button" class="danger costing-delete-btn">Delete</button>
+      </td>
+    </tr>
+  `;
+}
+
+function costingSectionTableHtml(bodyId, rows) {
+  return `
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Description</th><th>Amounts</th><th>Unit Price</th><th>Markup %</th><th>Markup £</th><th>Total</th><th></th></tr></thead>
+        <tbody id="${bodyId}">${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderJobCostingSection(costing) {
+  const container = document.getElementById('jobDetailSection-costing');
+  const labour = costing.labour;
+  const rateNote = labour.rate === null
+    ? `<p class="empty-state">No labour rate on file for "${escapeHtml(labour.clientName || '')}" - add one under Operations → Labour Rates (name it exactly the same as this job's client) to price up hours automatically.</p>`
+    : `<p class="hint">Using the "${escapeHtml(labour.clientName)}" rate from Labour Rates: ${money(labour.rate)}/hr.</p>`;
+
+  const employeeRows = labour.employees.length ? labour.employees.map((e) => `
+    <tr data-user="${e.userId}">
+      <td>${escapeHtml(e.userName)}</td>
+      <td>
+        <input type="number" class="costing-hours-input" value="${e.hours}" min="0" step="0.25" data-user="${e.userId}">
+        ${e.overridden ? `<button type="button" class="link-btn costing-revert-hours-btn" data-user="${e.userId}">↺ Use clocked (${e.computedHours})</button>` : ''}
+      </td>
+      <td>${labour.rate === null ? '—' : money(labour.rate)}</td>
+      <td><strong>${money(e.total)}</strong></td>
+    </tr>
+  `).join('') : `<tr><td colspan="4" class="empty-state">Nobody's clocked time on this job yet.</td></tr>`;
+
+  container.innerHTML = `
+    ${rateNote}
+    <h3>Employee Hours</h3>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Employee</th><th>Hours (clock-in to clock-out)</th><th>Rate</th><th>Total</th></tr></thead>
+        <tbody>${employeeRows}</tbody>
+        <tfoot><tr><td><strong>Total</strong></td><td><strong>${labour.totalHours.toFixed(2)}</strong></td><td></td><td><strong>${money(labour.total)}</strong></td></tr></tfoot>
+      </table>
+    </div>
+
+    <h3>Subcontractors</h3>
+    ${costingSectionTableHtml('costingSubbyBody', costing.subbyLines.map(costingLineRow).join(''))}
+    <div class="import-upload">
+      <input type="text" id="costingNewSubbyDesc" placeholder="Description">
+      <input type="text" id="costingNewSubbyAmounts" placeholder="Amounts, e.g. 120, 45.50">
+      <input type="number" id="costingNewSubbyMarkup" placeholder="Markup %" value="30" min="0" step="1">
+      <button type="button" id="costingAddSubbyBtn" class="primary">+ Add Line</button>
+    </div>
+
+    <h3>Materials</h3>
+    ${costingSectionTableHtml('costingMaterialsBody', costing.materialsLines.map(costingLineRow).join(''))}
+    <div class="import-upload">
+      <input type="text" id="costingNewMaterialDesc" placeholder="Description">
+      <input type="text" id="costingNewMaterialAmounts" placeholder="Amounts, e.g. 120, 45.50">
+      <input type="number" id="costingNewMaterialMarkup" placeholder="Markup %" value="30" min="0" step="1">
+      <button type="button" id="costingAddMaterialBtn" class="primary">+ Add Line</button>
+    </div>
+
+    <div class="report-summary">
+      <div class="stat"><div class="label">Quoted Price</div><div class="value">${money(costing.quotedPrice)}</div></div>
+      <div class="stat"><div class="label">Grand Total (cost)</div><div class="value">${money(costing.grandTotal)}</div></div>
+      <div class="stat"><div class="label">Profit</div><div class="value ${costing.profit >= 0 ? 'green' : 'red'}">${money(costing.profit)}</div></div>
+      <div class="stat"><div class="label">Spent (raw cost, no markup)</div><div class="value">${money(costing.spent)}</div></div>
+    </div>
+  `;
+
+  container.querySelectorAll('.costing-hours-input').forEach((input) => {
+    input.addEventListener('change', async () => {
+      try {
+        await api(`/api/jobs/${currentDetailJobId}/costing/labour/${input.dataset.user}`, {
+          method: 'PUT',
+          body: JSON.stringify({ hours: input.value }),
+        });
+        const fresh = await api(`/api/jobs/${currentDetailJobId}/costing`);
+        renderJobCostingSection(fresh);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+  container.querySelectorAll('.costing-revert-hours-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api(`/api/jobs/${currentDetailJobId}/costing/labour/${btn.dataset.user}`, { method: 'DELETE' });
+        const fresh = await api(`/api/jobs/${currentDetailJobId}/costing`);
+        renderJobCostingSection(fresh);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+
+  function wireLineButtons(scopeId) {
+    container.querySelectorAll(`#${scopeId} .costing-save-btn`).forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const tr = btn.closest('tr');
+        const body = {
+          description: tr.querySelector('.costing-edit-desc').value,
+          amounts: tr.querySelector('.costing-edit-amounts').value.split(',').map((s) => s.trim()).filter(Boolean),
+          markupPercent: tr.querySelector('.costing-edit-markup').value,
+        };
+        try {
+          await api(`/api/costing-lines/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(body) });
+          const fresh = await api(`/api/jobs/${currentDetailJobId}/costing`);
+          renderJobCostingSection(fresh);
+          toast('Line saved.', 'success');
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    });
+    container.querySelectorAll(`#${scopeId} .costing-delete-btn`).forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this line?')) return;
+        try {
+          await api(`/api/costing-lines/${btn.closest('tr').dataset.id}`, { method: 'DELETE' });
+          const fresh = await api(`/api/jobs/${currentDetailJobId}/costing`);
+          renderJobCostingSection(fresh);
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    });
+  }
+  wireLineButtons('costingSubbyBody');
+  wireLineButtons('costingMaterialsBody');
+
+  function wireAddLine(section, descId, amountsId, markupId, btnId) {
+    document.getElementById(btnId).addEventListener('click', async () => {
+      const descInput = document.getElementById(descId);
+      const amountsInput = document.getElementById(amountsId);
+      const markupInput = document.getElementById(markupId);
+      if (!descInput.value.trim()) { toast('Enter a description.', 'error'); return; }
+      try {
+        await api(`/api/jobs/${currentDetailJobId}/costing/lines`, {
+          method: 'POST',
+          body: JSON.stringify({
+            section,
+            description: descInput.value,
+            amounts: amountsInput.value.split(',').map((s) => s.trim()).filter(Boolean),
+            markupPercent: markupInput.value,
+          }),
+        });
+        const fresh = await api(`/api/jobs/${currentDetailJobId}/costing`);
+        renderJobCostingSection(fresh);
+        toast('Line added.', 'success');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  }
+  wireAddLine('subby', 'costingNewSubbyDesc', 'costingNewSubbyAmounts', 'costingNewSubbyMarkup', 'costingAddSubbyBtn');
+  wireAddLine('materials', 'costingNewMaterialDesc', 'costingNewMaterialAmounts', 'costingNewMaterialMarkup', 'costingAddMaterialBtn');
 }
 
 // ---------- Time Log viewer (admin/surveyor, read-only) ----------

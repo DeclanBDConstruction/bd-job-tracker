@@ -76,3 +76,25 @@ test('validateJobAssignmentInput requires job, user, task, a valid start date an
   });
   assert.equal(badDuration.length > 0, true);
 });
+
+test('rowToCostingLine: unit price sums amounts, markup applies to unit price, total is both', () => {
+  const line = db.rowToCostingLine({
+    id: 'l1', job_id: 'j1', section: 'materials', description: 'Worktops',
+    amounts: [120, 45.5, '30'], markup_percent: 30,
+    created_at: '2026-01-01', updated_at: '2026-01-01',
+  });
+  assert.equal(line.unitPrice, 195.5);
+  assert.equal(line.markupAmount, 195.5 * 0.3);
+  assert.equal(line.total, 195.5 + 195.5 * 0.3);
+});
+
+test('rowToCostingLine: non-numeric entries are excluded (not just zeroed), zero markup means total equals unit price', () => {
+  const line = db.rowToCostingLine({
+    id: 'l2', job_id: 'j1', section: 'subby', description: 'Electrician',
+    amounts: [100, 'not-a-number', 50], markup_percent: 0,
+    created_at: '2026-01-01', updated_at: '2026-01-01',
+  });
+  assert.equal(line.unitPrice, 150);
+  assert.equal(line.markupAmount, 0);
+  assert.equal(line.total, 150);
+});

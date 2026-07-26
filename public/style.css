@@ -2420,6 +2420,7 @@ button:disabled {
 .stat .label { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em; font-weight: 600; }
 .stat .value { font-size: 24px; font-weight: 800; color: var(--blue); }
 .stat .value.green { color: var(--green-dark); }
+.stat .value.red { color: #a8271f; }
 
 .top-earner {
   background: linear-gradient(90deg, var(--green-light), #f7fbef);
