@@ -698,6 +698,26 @@ button.danger:hover { background: #fdecea; }
   letter-spacing: 0.05em;
 }
 
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.sortable-th:hover {
+  background: var(--blue-dark);
+  color: white;
+}
+
+.sortable-th::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+}
+
+.sortable-th.sort-asc::after { content: '▲'; font-size: 9px; margin-left: 4px; }
+.sortable-th.sort-desc::after { content: '▼'; font-size: 9px; margin-left: 4px; }
+
 .data-table tbody tr { transition: background 0.12s ease; }
 .data-table tbody tr:nth-child(even) { background: #fafbfc; }
 .data-table tbody tr:hover { background: var(--blue-light); }

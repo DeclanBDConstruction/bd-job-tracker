@@ -67,7 +67,7 @@
       <span class="brand-sub">Job Tracker</span>
     </h1>
     <div class="header-search" id="headerSearchWrap">
-      <input type="text" id="headerSearchInput" placeholder="Search jobs by number, client, location…" autocomplete="off">
+      <input type="text" id="headerSearchInput" placeholder="Search jobs by number, client, location, employee…" autocomplete="off">
       <div class="header-search-results" id="headerSearchResults" hidden></div>
     </div>
     <div class="topbar-user">
@@ -208,9 +208,9 @@
           <col style="width:100px"><col style="width:115px"><col style="width:170px">
         </colgroup>
         <thead>
-          <tr>
-            <th>Date Won</th><th>Job No.</th><th>Client</th><th>Location</th><th>Description</th><th>Employee</th>
-            <th>Value</th><th>Profit</th><th>Status</th><th>Progress</th><th></th>
+          <tr id="jobsTableHead">
+            <th class="sortable-th" data-sort="dateWon">Date Won</th><th>Job No.</th><th class="sortable-th" data-sort="client">Client</th><th>Location</th><th>Description</th><th class="sortable-th" data-sort="employeeName">Employee</th>
+            <th class="sortable-th" data-sort="value">Value</th><th class="sortable-th" data-sort="profit">Profit</th><th class="sortable-th" data-sort="status">Status</th><th>Progress</th><th></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -248,7 +248,12 @@
 
   <!-- EMPLOYEES TAB -->
   <section id="tab-employees" class="tab-panel">
-    <h2>Employees</h2>
+    <div class="panel-header">
+      <h2>Employees</h2>
+      <div class="filters">
+        <input type="text" id="employeesSearch" placeholder="Search employees…">
+      </div>
+    </div>
     <div class="import-upload" id="employeeAddRow">
       <input type="text" id="newEmployeeName" placeholder="Employee name">
       <button id="addEmployeeBtn" class="primary">+ Add Employee</button>
@@ -553,6 +558,9 @@
   <section id="tab-risk" class="tab-panel">
     <div class="panel-header">
       <h2>Risk Assessments</h2>
+      <div class="filters">
+        <input type="text" id="raSearch" placeholder="Search risk assessments…">
+      </div>
     </div>
     <p class="hint">Generic templates, plus any you've uploaded or saved yourself — view, edit and attach straight to a job's RAMS documents. Editing a generic or saved risk assessment doesn't change the original: use Save As to keep your changes as a new one in this list. Always review and adjust for the actual site conditions before anyone works to one.</p>
     <form id="raLibraryUploadForm" class="ra-library-upload">

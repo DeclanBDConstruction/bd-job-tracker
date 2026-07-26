@@ -696,6 +696,24 @@ function renderEmployeeOptions() {
 
 const PROGRESS_LABELS = { 'not-started': 'Not Started', active: 'Active', completed: 'Completed' };
 
+// Click-to-sort on the Jobs table header (see #jobsTableHead in index.html) - defaults to
+// the same "most recently won first" order the API already returns, so sorting is purely
+// additive until someone actually clicks a column.
+let jobsSortKey = null;
+let jobsSortDir = 'asc';
+
+function sortJobs(list) {
+  if (!jobsSortKey) return list;
+  const numeric = jobsSortKey === 'value' || jobsSortKey === 'profit';
+  const dir = jobsSortDir === 'asc' ? 1 : -1;
+  return [...list].sort((a, b) => {
+    const av = a[jobsSortKey];
+    const bv = b[jobsSortKey];
+    if (numeric) return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
+    return String(av || '').localeCompare(String(bv || '')) * dir;
+  });
+}
+
 function renderJobs() {
   const search = document.getElementById('jobSearch').value.trim().toLowerCase();
   const statusFilter = document.getElementById('jobStatusFilter').value;
@@ -703,7 +721,7 @@ function renderJobs() {
   const employeeFilter = document.getElementById('jobEmployeeFilter').value;
 
   // Completed jobs move off to their own tab, so they never clutter the main list.
-  const filtered = state.jobs.filter((j) => {
+  const filtered = sortJobs(state.jobs.filter((j) => {
     if (j.completedAt) return false;
     if (statusFilter && j.status !== statusFilter) return false;
     if (progressFilter && j.progress !== progressFilter) return false;
@@ -713,6 +731,11 @@ function renderJobs() {
       if (!haystack.includes(search)) return false;
     }
     return true;
+  }));
+
+  document.querySelectorAll('#jobsTableHead .sortable-th').forEach((th) => {
+    th.classList.toggle('sort-asc', th.dataset.sort === jobsSortKey && jobsSortDir === 'asc');
+    th.classList.toggle('sort-desc', th.dataset.sort === jobsSortKey && jobsSortDir === 'desc');
   });
 
   const tbody = document.querySelector('#jobsTable tbody');
@@ -748,6 +771,18 @@ function renderJobs() {
   tbody.querySelectorAll('[data-delete]').forEach((btn) => btn.addEventListener('click', () => deleteJob(btn.dataset.delete)));
   tbody.querySelectorAll('[data-complete]').forEach((btn) => btn.addEventListener('click', () => completeJob(btn.dataset.complete)));
 }
+
+document.querySelectorAll('#jobsTableHead .sortable-th').forEach((th) => {
+  th.addEventListener('click', () => {
+    if (jobsSortKey === th.dataset.sort) {
+      jobsSortDir = jobsSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      jobsSortKey = th.dataset.sort;
+      jobsSortDir = 'asc';
+    }
+    renderJobs();
+  });
+});
 
 async function completeJob(id) {
   if (!confirm('Mark this job as completed? It will move to the Completed Jobs tab — you can reopen it from there if needed.')) return;
@@ -1247,11 +1282,15 @@ document.querySelectorAll('.job-detail-tab').forEach((btn) => {
 
 // ---------- Employees ----------
 
+let employeesSearchTerm = '';
+
 function renderEmployees() {
   document.getElementById('employeeAddRow').hidden = !isAdmin();
+  const term = employeesSearchTerm.trim().toLowerCase();
+  const list = state.employees.filter((e) => !term || e.name.toLowerCase().includes(term));
   const tbody = document.querySelector('#employeesTable tbody');
   tbody.innerHTML = '';
-  state.employees.forEach((e) => {
+  list.forEach((e) => {
     const jobCount = state.jobs.filter((j) => j.employeeId === e.id).length;
     const tr = document.createElement('tr');
     if (e.hasAccount) tr.classList.add('employee-linked');
@@ -1259,7 +1298,17 @@ function renderEmployees() {
       <td class="row-actions">${isAdmin() ? `<button data-del-emp="${e.id}" class="danger">Delete</button>` : ''}</td>`;
     tbody.appendChild(tr);
   });
+  if (!list.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="2" class="empty-state">${term ? 'No employees match your search.' : 'No employees yet.'}</td>`;
+    tbody.appendChild(tr);
+  }
 }
+
+document.getElementById('employeesSearch').addEventListener('input', (e) => {
+  employeesSearchTerm = e.target.value;
+  renderEmployees();
+});
 
 document.getElementById('addEmployeeBtn').addEventListener('click', async () => {
   const input = document.getElementById('newEmployeeName');
@@ -3849,9 +3898,15 @@ function raBandClient(r) {
   return { label: 'Stop', slug: 'stop' };
 }
 
+let raSearchTerm = '';
+
 function renderRiskAssessments() {
   const grid = document.getElementById('raGrid');
-  const libraryCards = state.raLibrary.map((ra) => `
+  const term = raSearchTerm.trim().toLowerCase();
+  const raLibrary = state.raLibrary.filter((ra) => !term || ra.name.toLowerCase().includes(term));
+  const riskAssessments = state.riskAssessments.filter((ra) => !term || ra.title.toLowerCase().includes(term));
+  const raCustom = state.raCustom.filter((ra) => !term || ra.title.toLowerCase().includes(term));
+  const libraryCards = raLibrary.map((ra) => `
     <div class="ra-card">
       <div class="ra-card-top">
         <h3>${escapeHtml(ra.name)}</h3>
@@ -3865,7 +3920,7 @@ function renderRiskAssessments() {
       </div>
     </div>
   `);
-  const genericCards = state.riskAssessments.map((ra) => `
+  const genericCards = riskAssessments.map((ra) => `
     <div class="ra-card">
       <div class="ra-card-top">
         <h3>${escapeHtml(ra.title)}</h3>
@@ -3878,7 +3933,7 @@ function renderRiskAssessments() {
       </div>
     </div>
   `);
-  const customCards = state.raCustom.map((ra) => `
+  const customCards = raCustom.map((ra) => `
     <div class="ra-card">
       <div class="ra-card-top">
         <h3>${escapeHtml(ra.title)}</h3>
@@ -3892,7 +3947,8 @@ function renderRiskAssessments() {
       </div>
     </div>
   `);
-  grid.innerHTML = libraryCards.join('') + customCards.join('') + genericCards.join('');
+  const allCards = libraryCards.join('') + customCards.join('') + genericCards.join('');
+  grid.innerHTML = allCards || `<p class="empty-state">No risk assessments match your search.</p>`;
   grid.querySelectorAll('.ra-view-btn').forEach((btn) => btn.addEventListener('click', () => openRaModal(btn.dataset.kind, btn.dataset.ra)));
   grid.querySelectorAll('.ra-library-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -3919,6 +3975,11 @@ function renderRiskAssessments() {
     });
   });
 }
+
+document.getElementById('raSearch').addEventListener('input', (e) => {
+  raSearchTerm = e.target.value;
+  renderRiskAssessments();
+});
 
 document.getElementById('raLibraryFileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
