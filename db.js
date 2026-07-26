@@ -43,16 +43,18 @@ function check(error) {
 
 // `hasAccount` flags employees whose name matched a user account at registration
 // (see registerUser's employee_id auto-link), so the Employees tab can show at a
-// glance who's actually signed up versus who's just a name on jobs.
+// glance who's actually signed up versus who's just a name on jobs. `role` (null if
+// no linked account) rides along too - the Jobs tab's employee filter uses it to
+// only offer admins/surveyors, since "employee" there means who won the job.
 async function listEmployees() {
   const [{ data, error }, { data: userRows, error: userErr }] = await Promise.all([
     supabase.from('employees').select('*').order('name'),
-    supabase.from('users').select('employee_id').not('employee_id', 'is', null),
+    supabase.from('users').select('employee_id, role').not('employee_id', 'is', null),
   ]);
   check(error);
   check(userErr);
-  const linkedIds = new Set(userRows.map((u) => u.employee_id));
-  return data.map((e) => ({ id: e.id, name: e.name, hasAccount: linkedIds.has(e.id) }));
+  const roleByEmployeeId = new Map(userRows.map((u) => [u.employee_id, u.role]));
+  return data.map((e) => ({ id: e.id, name: e.name, hasAccount: roleByEmployeeId.has(e.id), role: roleByEmployeeId.get(e.id) || null }));
 }
 
 async function findEmployeeByName(name) {

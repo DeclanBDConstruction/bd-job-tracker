@@ -638,7 +638,9 @@ function renderStatusOptions() {
 function renderEmployeeOptions() {
   const filterSel = document.getElementById('jobEmployeeFilter');
   filterSel.querySelectorAll('option:not(:first-child)').forEach((o) => o.remove());
-  state.employees.forEach((e) => {
+  // The Jobs tab's "Employee" column is who won the job, so only admins/surveyors are
+  // ever meaningful here - operatives (and unlinked names) are left off the filter.
+  state.employees.filter((e) => e.role === 'admin' || e.role === 'surveyor').forEach((e) => {
     const o = document.createElement('option'); o.value = e.name; o.textContent = e.name;
     filterSel.appendChild(o);
   });
