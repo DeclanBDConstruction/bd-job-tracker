@@ -25,6 +25,7 @@ const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
 const isAdmin = () => !!(state.currentUser && state.currentUser.role === 'admin');
 const isOperative = () => !!(state.currentUser && OPERATIVE_ROLES.includes(state.currentUser.role));
 const isStaff = () => !!(state.currentUser && state.currentUser.role === 'staff');
+const isSurveyor = () => !!(state.currentUser && state.currentUser.role === 'surveyor');
 const canManageQuotes = () => !!(state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.canManageQuotes));
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -533,6 +534,14 @@ async function bootstrap() {
   if (isAdmin()) state.operativeUsers = await api('/api/users');
   renderStatusOptions();
   renderEmployeeOptions();
+  // Surveyors land on Jobs pre-filtered to their own won jobs, not the whole company's -
+  // they can still switch the same dropdown to someone else or back to "All employees".
+  // Only applies once on load so it doesn't fight a surveyor's own filter choice on every
+  // re-render (see handleLiveJobsChange etc., which call renderJobs() directly, not this).
+  if (isSurveyor()) {
+    const mine = state.employees.find((e) => e.id === state.currentUser.employeeId);
+    if (mine) document.getElementById('jobEmployeeFilter').value = mine.name;
+  }
   renderJobs();
   renderCompletedJobs();
   renderEmployees();
