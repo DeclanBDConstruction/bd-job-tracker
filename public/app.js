@@ -3508,12 +3508,13 @@ function renderHomeDashboard() {
   }
   const todayStr = todayDateStr();
   // Admin/surveyor can be assigned to a job too (see the Jobs tab's "Assign the Team"
-  // checklist) - e.g. going on the tools themselves. Surface it here as an extra card only
-  // when they actually have one, rather than cluttering this already busy dashboard with an
-  // empty "no assignment" card the way the operative-only dashboard below does.
+  // checklist) - e.g. going on the tools themselves. Surface every one of their own current
+  // assignments here, not just the nearest, so this matches what they'd see on My Calendar -
+  // and only appends the card at all when they actually have one, rather than cluttering
+  // this already busy dashboard with an empty "no assignment" card.
   const myUpcoming = [...state.myAssignments]
     .filter((a) => !a.completed)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
   const todaysEvents = eventsOnDate(todayStr).sort((a, b) => a.userName.localeCompare(b.userName));
   const missingRams = jobsMissingRams();
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -3542,7 +3543,7 @@ function renderHomeDashboard() {
     : `<p class="empty-state">All jobs starting soon have RAMS in place. Nice one.</p>`;
 
   container.innerHTML = `
-    ${myUpcoming ? myAssignmentCardHtml(myUpcoming, todayStr) : ''}
+    ${myUpcoming.length ? myAssignmentsCardHtml(myUpcoming, todayStr) : ''}
     <div class="dashboard-card">
       <h3>Today — ${todayLabel}</h3>
       ${todayHtml}
@@ -3562,45 +3563,39 @@ function renderHomeDashboard() {
   container.querySelectorAll('.home-rams-btn[data-job]').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
   });
-  container.querySelectorAll('[data-open-assignment]').forEach((btn) => {
-    btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.openAssignment));
+  container.querySelectorAll('[data-assignment]').forEach((btn) => {
+    btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
   });
 }
 
-// Shared "Your Assignment" dashboard card - used by the operative-only dashboard below
-// (which always shows it, even when empty) and by the admin/surveyor dashboard above
-// (which only appends it when they actually have one).
-function myAssignmentCardHtml(upcoming, todayStr) {
+// Shared "Your Assignments" dashboard card - lists every one of the user's own current
+// (not-completed) assignments, same set My Calendar merges in - not just the nearest one,
+// so this doesn't undersell what's actually been penned in for them. Used by the
+// operative-only dashboard below (which always shows it, even when empty) and by the
+// admin/surveyor dashboard above (which only appends it when they actually have any).
+function myAssignmentsCardHtml(assignments, todayStr) {
   return `
     <div class="dashboard-card">
-      <h3>Your Assignment</h3>
-      <ul class="home-rams-list">
-        <li>
-          <div class="home-rams-info">
-            <strong>${escapeHtml(upcoming.jobReference || upcoming.jobClient)}${upcoming.jobLocation ? ' — ' + escapeHtml(upcoming.jobLocation) : ''}</strong>
-            <span class="home-rams-date">${escapeHtml(upcoming.task)} · ${upcoming.startDate < todayStr ? 'Started ' : 'Starts '}${upcoming.startDate} · ${upcoming.durationDays} day${upcoming.durationDays === 1 ? '' : 's'}</span>
-          </div>
-          <button type="button" class="home-rams-btn" data-open-assignment="${upcoming.id}">View</button>
-        </li>
-      </ul>
+      <h3>Your Assignments</h3>
+      <ul class="home-rams-list">${assignments.map((a) => assignmentRowHtml(a, todayStr)).join('')}</ul>
     </div>
   `;
 }
 
-// Operatives get one small card ("your current/upcoming assignment") instead of the
+// Operatives get one small card (all of their current/upcoming assignments) instead of the
 // company-wide Today/Missing-RAMS cards, which don't apply since they can't see Jobs or
 // the shared Calendar - same reasoning as staff's empty dashboard above.
 function renderOperativeHomeDashboard(container) {
   const todayStr = todayDateStr();
   const upcoming = [...state.myAssignments]
     .filter((a) => !a.completed)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-  container.innerHTML = upcoming
-    ? myAssignmentCardHtml(upcoming, todayStr)
-    : `<div class="dashboard-card"><h3>Your Assignment</h3><p class="empty-state">No current assignment.</p></div>`;
-  container.querySelectorAll('[data-open-assignment]').forEach((btn) => {
-    btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.openAssignment));
+  container.innerHTML = upcoming.length
+    ? myAssignmentsCardHtml(upcoming, todayStr)
+    : `<div class="dashboard-card"><h3>Your Assignments</h3><p class="empty-state">No current assignment.</p></div>`;
+  container.querySelectorAll('[data-assignment]').forEach((btn) => {
+    btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
   });
 }
 
