@@ -73,7 +73,11 @@ function showApp(user) {
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('vehicleHireTabBtn').hidden = !isAdmin();
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
-  document.getElementById('assignmentsTabBtn').hidden = !isOperative();
+  // Admins/surveyors sometimes go on the tools themselves (assigned via the Jobs tab's
+  // "Assign the Team" checklist same as anyone else) - they need the same self-service
+  // Assignments tab an operative gets so they can actually clock in on their own assignment.
+  // Only staff have no route to ever be assigned a job, so they're the sole exclusion.
+  document.getElementById('assignmentsTabBtn').hidden = isStaff();
 
   // Staff and operatives both only get Home, My Calendar and My Diary - everything else
   // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
@@ -177,7 +181,18 @@ async function handleLiveJobAssignmentsChange() {
       await refreshAssignmentTimeLog();
       await refreshAssignmentRams();
     }
-  } else if (currentDetailJobId && !jobDetailModal.hidden) {
+    return;
+  }
+  // Admin/surveyor: keep their own "Your Assignment" card/Assignments tab live too (they
+  // can be assigned a job the same as anyone else), on top of the existing Job Detail refresh.
+  state.myAssignments = await api('/api/job-assignments/mine');
+  renderHomeDashboard();
+  renderMyAssignmentsTab();
+  if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) {
+    await refreshAssignmentTimeLog();
+    await refreshAssignmentRams();
+  }
+  if (currentDetailJobId && !jobDetailModal.hidden) {
     refreshJobDetail();
     if (currentTimeLogAssignmentId && !document.getElementById('timeLogModal').hidden) refreshTimeLogModal();
   }
@@ -490,7 +505,7 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies, myAssignments] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
@@ -500,6 +515,7 @@ async function bootstrap() {
     api('/api/calendar'),
     api('/api/price-list'),
     api('/api/subbies'),
+    api('/api/job-assignments/mine'), // admin/surveyor can be assigned to a job too (see the Jobs tab's "Assign the Team" checklist) - this is how they see it and clock in on it themselves
   ]);
   state.jobs = jobs;
   state.employees = employees;
@@ -510,6 +526,7 @@ async function bootstrap() {
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   state.subbies = subbies;
+  state.myAssignments = myAssignments;
   // Needed for the Job form's "Assign the Team" checklist and the Job Detail Team tab's
   // "+ Assign" row - GET /api/users is admin-only, so surveyors don't get this (fine, since
   // assigning is admin-only too - surveyors only ever view assignments read-only).
@@ -524,6 +541,7 @@ async function bootstrap() {
   renderPriceLists();
   renderSubbies();
   renderHomeDashboard();
+  renderMyAssignmentsTab();
 
   // Split from the Promise.all above: the `signage` table only exists once the Supabase
   // migration has been run. Isolating it means a not-yet-migrated database degrades to
@@ -3478,6 +3496,13 @@ function renderHomeDashboard() {
     return;
   }
   const todayStr = todayDateStr();
+  // Admin/surveyor can be assigned to a job too (see the Jobs tab's "Assign the Team"
+  // checklist) - e.g. going on the tools themselves. Surface it here as an extra card only
+  // when they actually have one, rather than cluttering this already busy dashboard with an
+  // empty "no assignment" card the way the operative-only dashboard below does.
+  const myUpcoming = [...state.myAssignments]
+    .filter((a) => !a.completed)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
   const todaysEvents = eventsOnDate(todayStr).sort((a, b) => a.userName.localeCompare(b.userName));
   const missingRams = jobsMissingRams();
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -3506,6 +3531,7 @@ function renderHomeDashboard() {
     : `<p class="empty-state">All jobs starting soon have RAMS in place. Nice one.</p>`;
 
   container.innerHTML = `
+    ${myUpcoming ? myAssignmentCardHtml(myUpcoming, todayStr) : ''}
     <div class="dashboard-card">
       <h3>Today — ${todayLabel}</h3>
       ${todayHtml}
@@ -3525,6 +3551,29 @@ function renderHomeDashboard() {
   container.querySelectorAll('.home-rams-btn').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
   });
+  container.querySelectorAll('[data-open-assignment]').forEach((btn) => {
+    btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.openAssignment));
+  });
+}
+
+// Shared "Your Assignment" dashboard card - used by the operative-only dashboard below
+// (which always shows it, even when empty) and by the admin/surveyor dashboard above
+// (which only appends it when they actually have one).
+function myAssignmentCardHtml(upcoming, todayStr) {
+  return `
+    <div class="dashboard-card">
+      <h3>Your Assignment</h3>
+      <ul class="home-rams-list">
+        <li>
+          <div class="home-rams-info">
+            <strong>${escapeHtml(upcoming.jobReference || upcoming.jobClient)}${upcoming.jobLocation ? ' — ' + escapeHtml(upcoming.jobLocation) : ''}</strong>
+            <span class="home-rams-date">${escapeHtml(upcoming.task)} · ${upcoming.startDate < todayStr ? 'Started ' : 'Starts '}${upcoming.startDate} · ${upcoming.durationDays} day${upcoming.durationDays === 1 ? '' : 's'}</span>
+          </div>
+          <button type="button" class="home-rams-btn" data-open-assignment="${upcoming.id}">View</button>
+        </li>
+      </ul>
+    </div>
+  `;
 }
 
 // Operatives get one small card ("your current/upcoming assignment") instead of the
@@ -3536,25 +3585,12 @@ function renderOperativeHomeDashboard(container) {
     .filter((a) => !a.completed)
     .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
 
-  container.innerHTML = `
-    <div class="dashboard-card">
-      <h3>Your Assignment</h3>
-      ${upcoming ? `
-        <ul class="home-rams-list">
-          <li>
-            <div class="home-rams-info">
-              <strong>${escapeHtml(upcoming.jobReference || upcoming.jobClient)}${upcoming.jobLocation ? ' — ' + escapeHtml(upcoming.jobLocation) : ''}</strong>
-              <span class="home-rams-date">${escapeHtml(upcoming.task)} · ${upcoming.startDate < todayStr ? 'Started ' : 'Starts '}${upcoming.startDate} · ${upcoming.durationDays} day${upcoming.durationDays === 1 ? '' : 's'}</span>
-            </div>
-            <button type="button" class="home-rams-btn" id="homeGoAssignmentBtn">View</button>
-          </li>
-        </ul>
-      ` : `<p class="empty-state">No current assignment.</p>`}
-    </div>
-  `;
-  if (upcoming) {
-    document.getElementById('homeGoAssignmentBtn').addEventListener('click', () => openAssignmentDetail(upcoming.id));
-  }
+  container.innerHTML = upcoming
+    ? myAssignmentCardHtml(upcoming, todayStr)
+    : `<div class="dashboard-card"><h3>Your Assignment</h3><p class="empty-state">No current assignment.</p></div>`;
+  container.querySelectorAll('[data-open-assignment]').forEach((btn) => {
+    btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.openAssignment));
+  });
 }
 
 // ---------- My Assignments (operative-only tab) ----------
