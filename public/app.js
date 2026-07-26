@@ -4720,11 +4720,21 @@ function focusableElements(container) {
     .filter((el) => el.offsetParent !== null);
 }
 
+// Keeps only the topmost open modal's dim/blur backdrop visible - an earlier one still open
+// underneath (e.g. Assignment Detail while its RAMS form is open on top) gets it suppressed
+// via .modal-stack-behind instead of compounding into a double-dim.
+function updateModalStackDimming() {
+  const visible = visibleModals();
+  document.querySelectorAll('.modal-overlay.modal-stack-behind').forEach((m) => m.classList.remove('modal-stack-behind'));
+  visible.slice(0, -1).forEach((m) => m.classList.add('modal-stack-behind'));
+}
+
 document.querySelectorAll('.modal-overlay').forEach((modal) => {
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
   modal.tabIndex = -1; // fallback focus target if a modal ever has nothing focusable inside
   new MutationObserver(() => {
+    updateModalStackDimming();
     if (!modal.hidden) {
       const focusables = focusableElements(modal);
       (focusables[0] || modal).focus({ preventScroll: true });

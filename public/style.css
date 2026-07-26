@@ -12,6 +12,21 @@
   --radius: 10px;
   --shadow: 0 1px 2px rgba(18,45,66,0.05), 0 4px 14px rgba(18,45,66,0.06);
   --shadow-hover: 0 6px 20px rgba(18,45,66,0.12);
+
+  /* Named scale for the sizes/gaps already used most often throughout this file (13px/12px
+     text, 8/12/16px gaps) - not a retroactive find-replace of every existing value (too risky
+     a change on its own), just a foundation so future additions have a scale to reach for
+     instead of another one-off number. */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-base: 13px;
+  --font-md: 14px;
+  --font-lg: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
 }
 
 * { box-sizing: border-box; }
@@ -895,6 +910,15 @@ button:disabled {
   padding: 40px 16px;
   overflow-y: auto;
   animation: overlayIn 0.15s ease;
+}
+
+/* Applied by JS (see updateModalStackDimming() in app.js) to every visible modal except the
+   topmost, when more than one is open at once (e.g. RAMS form opened from within Assignment
+   Detail) - keeps the earlier one visible underneath without a second, compounding dim/blur
+   layer stacking on top of it. */
+.modal-overlay.modal-stack-behind {
+  background: transparent;
+  backdrop-filter: none;
 }
 
 @keyframes overlayIn {
