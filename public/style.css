@@ -1135,6 +1135,15 @@ button:disabled {
   white-space: nowrap;
 }
 
+.doc-superseded {
+  opacity: 0.6;
+  background: var(--bg);
+}
+
+.doc-superseded a {
+  color: var(--muted);
+}
+
 /* ---------- Job Variations ---------- */
 
 .variation-add-form {

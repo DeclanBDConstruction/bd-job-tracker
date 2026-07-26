@@ -505,6 +505,14 @@ app.delete('/api/jobs/:id/documents/:category/:docId', validateDocumentParams, h
   res.status(204).end();
 }));
 
+// Marks an old drawing/document revision as superseded (or un-marks it) without deleting it -
+// a manual flag, not automatic on upload, since RAMS/photos deliberately keep every one.
+app.put('/api/jobs/:id/documents/:category/:docId/superseded', validateDocumentParams, handle(async (req, res) => {
+  const doc = await db.toggleDocumentSuperseded(req.params.id, req.params.category, req.params.docId, !!req.body.superseded);
+  broadcast('jobs');
+  res.json(doc);
+}));
+
 // Everything on a job (RAMS, drawings, permits, photos) bundled into one zip, named
 // after the job number and location, plus a short info sheet with the start date - built for
 // forwarding on to someone outside the company (e.g. attaching to an email) in one go.

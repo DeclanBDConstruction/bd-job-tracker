@@ -144,6 +144,7 @@ function rowToDocument(row) {
     storedName: row.stored_name,
     size: row.size,
     uploadedAt: row.uploaded_at,
+    superseded: !!row.superseded,
   };
 }
 
@@ -376,6 +377,20 @@ async function deleteJobDocument(jobId, category, docId) {
   const { error } = await supabase.from('job_documents').delete().eq('id', docId);
   check(error);
   return doc;
+}
+
+// Manual "this is an old version" flag - never set automatically on upload, since some
+// categories (RAMS, photos) deliberately keep every one as a running history rather than
+// having a new upload replace the last. Superseded docs stay in place, just visually
+// deprioritised in the Job Detail document list rather than removed.
+async function toggleDocumentSuperseded(jobId, category, docId, superseded) {
+  if (!DOCUMENT_CATEGORIES.includes(category)) throw new Error('Invalid document category');
+  const { data, error } = await supabase.from('job_documents')
+    .update({ superseded: !!superseded })
+    .eq('id', docId).eq('job_id', jobId).eq('category', category).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Document not found');
+  return rowToDocument(data);
 }
 
 // ---------- Job Assignments ----------
@@ -1038,6 +1053,18 @@ function addDaysToDateString(dateStr, days) {
   return dt.toISOString().slice(0, 10);
 }
 
+// Shared compliance-date check (currently used by subby insurance expiry) - null if no date
+// is on file at all, since that's a different situation ("nothing recorded") from an actual
+// expired/expiring one and callers may want to treat it differently.
+const EXPIRY_SOON_DAYS = 30;
+function expiryStatus(expiryDate) {
+  if (!expiryDate) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (expiryDate < today) return 'expired';
+  if (expiryDate <= addDaysToDateString(today, EXPIRY_SOON_DAYS)) return 'expiring-soon';
+  return 'ok';
+}
+
 function rowToEvent(row) {
   return {
     id: row.id,
@@ -1227,6 +1254,8 @@ function rowToSubby(row) {
     formOriginalName: row.form_original_name,
     formStoredName: row.form_stored_name,
     formSize: row.form_size,
+    insuranceExpiry: row.insurance_expiry || null,
+    insuranceStatus: expiryStatus(row.insurance_expiry),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1238,10 +1267,26 @@ async function listSubbies() {
   return data.map(rowToSubby);
 }
 
+// Subbies whose insurance/compliance document is already expired or due within
+// EXPIRY_SOON_DAYS - used by the Home dashboard's compliance card.
+async function listSubbiesExpiring() {
+  const all = await listSubbies();
+  return all
+    .filter((s) => s.insuranceStatus === 'expired' || s.insuranceStatus === 'expiring-soon')
+    .sort((a, b) => (a.insuranceExpiry || '').localeCompare(b.insuranceExpiry || ''));
+}
+
 async function getSubby(id) {
   const { data, error } = await supabase.from('subbies').select('*').eq('id', id).maybeSingle();
   check(error);
   return data ? rowToSubby(data) : null;
+}
+
+function parseOptionalDate(value, label) {
+  const clean = (value || '').trim();
+  if (!clean) return null;
+  if (!DATE_RE.test(clean)) throw new Error(`${label} must be a valid date`);
+  return clean;
 }
 
 async function createSubby(input, fileInfo) {
@@ -1250,6 +1295,7 @@ async function createSubby(input, fileInfo) {
   if (!companyName) throw new Error('Company name is required');
   if (!personName) throw new Error('Person\'s name is required');
   if (!fileInfo || !fileInfo.storedName) throw new Error('Subcontractor form is required');
+  const insuranceExpiry = parseOptionalDate(input.insuranceExpiry, 'Insurance expiry');
 
   const row = {
     id: genId(),
@@ -1257,6 +1303,7 @@ async function createSubby(input, fileInfo) {
     person_name: personName,
     phone: (input.phone || '').trim() || null,
     trade: (input.trade || '').trim() || null,
+    insurance_expiry: insuranceExpiry,
     form_original_name: fileInfo.originalName,
     form_stored_name: fileInfo.storedName,
     form_size: fileInfo.size,
@@ -1273,6 +1320,7 @@ async function updateSubby(id, input) {
   const personName = (input.personName || '').trim();
   if (!companyName) throw new Error('Company name is required');
   if (!personName) throw new Error('Person\'s name is required');
+  const insuranceExpiry = parseOptionalDate(input.insuranceExpiry, 'Insurance expiry');
 
   const { data, error } = await supabase.from('subbies')
     .update({
@@ -1280,6 +1328,7 @@ async function updateSubby(id, input) {
       person_name: personName,
       phone: (input.phone || '').trim() || null,
       trade: (input.trade || '').trim() || null,
+      insurance_expiry: insuranceExpiry,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id).select().maybeSingle();
@@ -1986,6 +2035,7 @@ module.exports = {
   addJobDocument,
   getJobDocument,
   deleteJobDocument,
+  toggleDocumentSuperseded,
   listJobAssignments,
   listMyJobAssignments,
   listJobAssignmentsForJob,
@@ -2021,6 +2071,7 @@ module.exports = {
   updatePriceListItem,
   deletePriceListItem,
   listSubbies,
+  listSubbiesExpiring,
   getSubby,
   createSubby,
   updateSubby,

@@ -93,6 +93,12 @@ create table if not exists job_documents (
   uploaded_at timestamptz not null default now()
 );
 
+-- Manual "this copy is out of date" flag (e.g. a superseded drawing revision) - never set
+-- automatically on a new upload, since RAMS/photos are deliberately meant to accumulate a
+-- running history rather than have each new one replace the last. See toggleDocumentSuperseded
+-- in db.js.
+alter table job_documents add column if not exists superseded boolean not null default false;
+
 -- Who's physically doing the work on a job (installation/manufacturing operatives) - as
 -- opposed to jobs.employee_id, which is who commercially WON the job (sales credit), a
 -- separate concept entirely. One row per operative per stint of work: which job, which
@@ -331,6 +337,11 @@ create table if not exists subbies (
 alter table subbies add column if not exists form_original_name text;
 alter table subbies add column if not exists form_stored_name text;
 alter table subbies add column if not exists form_size bigint;
+
+-- Optional expiry date for the subby's insurance/compliance document - lets the office see
+-- (rather than have nowhere at all to record) when a subcontractor's cover is about to lapse.
+-- See expiryStatus/listSubbiesExpiring in db.js.
+alter table subbies add column if not exists insurance_expiry text;
 
 create index if not exists subbies_company_name_idx on subbies (company_name);
 

@@ -17,6 +17,7 @@ const state = {
   diaryEntries: [],
   jobAssignments: [],
   myAssignments: [],
+  allAssignments: [],
   operativeUsers: [],
   currentUser: null,
 };
@@ -149,6 +150,7 @@ async function handleLivePriceListChange() {
 async function handleLiveSubbiesChange() {
   state.subbies = await api('/api/subbies');
   renderSubbies();
+  renderHomeDashboard();
 }
 
 async function handleLiveHiresChange() {
@@ -186,7 +188,11 @@ async function handleLiveJobAssignmentsChange() {
   }
   // Admin/surveyor: keep their own "Your Assignment" card/Assignments tab live too (they
   // can be assigned a job the same as anyone else), on top of the existing Job Detail refresh.
-  state.myAssignments = await api('/api/job-assignments/mine');
+  // Also refresh the full assignment list so the "Jobs Missing a Permit to Work" dashboard
+  // card (jobsMissingPermit) doesn't go stale when someone elsewhere gets assigned/clocks off.
+  const [mine, all] = await Promise.all([api('/api/job-assignments/mine'), api('/api/job-assignments')]);
+  state.myAssignments = mine;
+  state.allAssignments = all;
   renderHomeDashboard();
   renderMyAssignmentsTab();
   if (currentAssignmentId && !document.getElementById('assignmentDetailModal').hidden) {
@@ -507,7 +513,7 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies, myAssignments] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies, myAssignments, allAssignments] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
@@ -518,6 +524,7 @@ async function bootstrap() {
     api('/api/price-list'),
     api('/api/subbies'),
     api('/api/job-assignments/mine'), // admin/surveyor can be assigned to a job too (see the Jobs tab's "Assign the Team" checklist) - this is how they see it and clock in on it themselves
+    api('/api/job-assignments'), // every assignment across every job - used for the Home dashboard's "missing a permit" flag (see jobsMissingPermit)
   ]);
   state.jobs = jobs;
   state.employees = employees;
@@ -529,6 +536,7 @@ async function bootstrap() {
   state.priceListItems = priceListItems;
   state.subbies = subbies;
   state.myAssignments = myAssignments;
+  state.allAssignments = allAssignments;
   // Needed for the Job form's "Assign the Team" checklist and the Job Detail Team tab's
   // "+ Assign" row - GET /api/users is admin-only, so surveyors don't get this (fine, since
   // assigning is admin-only too - surveyors only ever view assignments read-only).
@@ -1131,10 +1139,14 @@ function renderVariationsSection(variations) {
 
 function renderDocumentSection(category, docs) {
   const container = document.getElementById(`jobDetailSection-${category}`);
-  const items = (docs || []).map((d) => `
-    <li class="doc-list-item">
+  // Superseded copies (a manual "this is an old version" flag - see doc-supersede-btn below)
+  // sort to the bottom and stay visually de-emphasised rather than being hidden or deleted.
+  const sorted = [...(docs || [])].sort((a, b) => (a.superseded === b.superseded ? 0 : a.superseded ? 1 : -1));
+  const items = sorted.map((d) => `
+    <li class="doc-list-item${d.superseded ? ' doc-superseded' : ''}">
       <a href="/api/jobs/${currentDetailJobId}/documents/${category}/${d.id}/file" target="_blank">${escapeHtml(d.originalName)}</a>
-      <span class="doc-meta">${formatBytes(d.size)} · ${new Date(d.uploadedAt).toLocaleDateString('en-GB')}</span>
+      <span class="doc-meta">${formatBytes(d.size)} · ${new Date(d.uploadedAt).toLocaleDateString('en-GB')}${d.superseded ? ' · Old version' : ''}</span>
+      <button type="button" class="link-btn doc-supersede-btn" data-doc="${d.id}" data-superseded="${d.superseded}">${d.superseded ? 'Restore' : 'Mark as old version'}</button>
       <button type="button" class="danger doc-delete-btn" data-doc="${d.id}">Delete</button>
     </li>
   `).join('');
@@ -1166,6 +1178,19 @@ function renderDocumentSection(category, docs) {
       if (!confirm('Delete this file? This cannot be undone.')) return;
       try {
         await api(`/api/jobs/${currentDetailJobId}/documents/${category}/${btn.dataset.doc}`, { method: 'DELETE' });
+        await refreshJobDetail();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  container.querySelectorAll('.doc-supersede-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api(`/api/jobs/${currentDetailJobId}/documents/${category}/${btn.dataset.doc}/superseded`, {
+          method: 'PUT',
+          body: JSON.stringify({ superseded: btn.dataset.superseded !== 'true' }),
+        });
         await refreshJobDetail();
       } catch (err) {
         alert(err.message);
@@ -1377,6 +1402,14 @@ function subbiesList() {
     .sort((a, b) => a.companyName.localeCompare(b.companyName));
 }
 
+const SUBBY_INSURANCE_LABELS = { expired: 'Expired', 'expiring-soon': 'Expiring Soon', ok: 'Valid' };
+
+function subbyInsuranceCell(s) {
+  if (!s.insuranceStatus) return '<span class="hint">Not on file</span>';
+  const pillClass = s.insuranceStatus === 'expired' ? 'overdue' : s.insuranceStatus === 'expiring-soon' ? 'due-soon' : 'returned';
+  return `<span class="hire-status ${pillClass}">${SUBBY_INSURANCE_LABELS[s.insuranceStatus]}</span> <span class="doc-meta">${s.insuranceExpiry}</span>`;
+}
+
 function renderSubbies() {
   const list = subbiesList();
   const tbody = document.querySelector('#subbiesTable tbody');
@@ -1391,6 +1424,7 @@ function renderSubbies() {
           <td><input type="text" class="sb-edit-person" value="${escapeHtml(s.personName)}"></td>
           <td><input type="tel" class="sb-edit-phone" value="${escapeHtml(s.phone || '')}"></td>
           <td><input type="text" class="sb-edit-trade" value="${escapeHtml(s.trade || '')}"></td>
+          <td><input type="date" class="sb-edit-insurance" value="${s.insuranceExpiry || ''}"></td>
           <td>${formCell}</td>
           <td class="row-actions">
             <button type="button" class="primary sb-save-btn">Save</button>
@@ -1404,13 +1438,14 @@ function renderSubbies() {
         <td>${escapeHtml(s.personName)}</td>
         <td>${escapeHtml(s.phone || '')}</td>
         <td>${escapeHtml(s.trade || '')}</td>
+        <td>${subbyInsuranceCell(s)}</td>
         <td>${formCell}</td>
         <td class="row-actions">
           <button type="button" class="sb-edit-btn">Edit</button>
           ${isAdmin() ? '<button type="button" class="danger sb-delete-btn">Delete</button>' : ''}
         </td>
       </tr>`;
-  }).join('') : `<tr><td colspan="6" class="empty-state">${subbiesSearchTerm.trim() ? 'No subbies match your search.' : 'Nothing added yet.'}</td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="empty-state">${subbiesSearchTerm.trim() ? 'No subbies match your search.' : 'Nothing added yet.'}</td></tr>`;
 
   tbody.querySelectorAll('.sb-edit-btn').forEach((btn) => {
     btn.addEventListener('click', () => { editingSubbyId = btn.closest('tr').dataset.id; renderSubbies(); });
@@ -1426,6 +1461,7 @@ function renderSubbies() {
         personName: tr.querySelector('.sb-edit-person').value,
         phone: tr.querySelector('.sb-edit-phone').value,
         trade: tr.querySelector('.sb-edit-trade').value,
+        insuranceExpiry: tr.querySelector('.sb-edit-insurance').value,
       };
       try {
         await api(`/api/subbies/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(payload) });
@@ -1467,6 +1503,7 @@ document.getElementById('addSubbyBtn').addEventListener('click', async () => {
   const personInput = document.getElementById('newSubbyPerson');
   const phoneInput = document.getElementById('newSubbyPhone');
   const tradeInput = document.getElementById('newSubbyTrade');
+  const insuranceInput = document.getElementById('newSubbyInsuranceExpiry');
   const formInput = document.getElementById('newSubbyForm');
   if (!companyInput.value.trim() || !personInput.value.trim()) return;
   if (!formInput.files[0]) { alert('Upload the subcontractor form before adding a subby.'); return; }
@@ -1476,6 +1513,7 @@ document.getElementById('addSubbyBtn').addEventListener('click', async () => {
     formData.append('personName', personInput.value);
     formData.append('phone', phoneInput.value);
     formData.append('trade', tradeInput.value);
+    formData.append('insuranceExpiry', insuranceInput.value);
     formData.append('file', formInput.files[0]);
     const res = await fetch('/api/subbies', { method: 'POST', body: formData });
     if (!res.ok) {
@@ -1486,6 +1524,7 @@ document.getElementById('addSubbyBtn').addEventListener('click', async () => {
     personInput.value = '';
     phoneInput.value = '';
     tradeInput.value = '';
+    insuranceInput.value = '';
     formInput.value = '';
     document.getElementById('newSubbyFormName').textContent = '';
     state.subbies = await api('/api/subbies');
@@ -3548,6 +3587,32 @@ function jobsMissingRams() {
     .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
 }
 
+// Jobs with someone actively assigned on site today that don't have a Permit to Work on
+// file - unlike RAMS, a permit isn't needed for every job, only ones where an assignment is
+// actually in progress right now (see REQUIRED_DOCUMENT_CATEGORIES in db.js, which
+// deliberately excludes 'permit' for the same reason), so this only ever flags jobs where
+// that's genuinely true today, not every job that happens to lack one.
+function jobsMissingPermit() {
+  const todayStr = todayDateStr();
+  const activeJobIds = new Set(
+    state.allAssignments
+      .filter((a) => !a.completed && a.startDate <= todayStr && a.endDate >= todayStr)
+      .map((a) => a.jobId)
+  );
+  return state.jobs
+    .filter((j) => activeJobIds.has(j.id) && !(j.documents && j.documents.permit && j.documents.permit.length))
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+}
+
+// Subbies whose insurance/compliance document is already expired or due soon - mirrors the
+// server-side listSubbiesExpiring but reuses the copy of state.subbies already loaded rather
+// than firing an extra request.
+function subbiesExpiring() {
+  return state.subbies
+    .filter((s) => s.insuranceStatus === 'expired' || s.insuranceStatus === 'expiring-soon')
+    .sort((a, b) => (a.insuranceExpiry || '').localeCompare(b.insuranceExpiry || ''));
+}
+
 function renderHomeDashboard() {
   const container = document.getElementById('homeDashboard');
   if (!container) return;
@@ -3573,6 +3638,8 @@ function renderHomeDashboard() {
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
   const todaysEvents = eventsOnDate(todayStr).sort((a, b) => a.userName.localeCompare(b.userName));
   const missingRams = jobsMissingRams();
+  const missingPermit = jobsMissingPermit();
+  const expiringSubbies = subbiesExpiring();
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const todayHtml = todaysEvents.length
@@ -3598,6 +3665,30 @@ function renderHomeDashboard() {
       `).join('')}</ul>`
     : `<p class="empty-state">All jobs starting soon have RAMS in place. Nice one.</p>`;
 
+  const permitHtml = missingPermit.length
+    ? `<ul class="home-rams-list">${missingPermit.map((j) => `
+        <li>
+          <div class="home-rams-info">
+            <strong>${escapeHtml(j.client)}${j.location ? ' — ' + escapeHtml(j.location) : ''}</strong>
+            <span class="home-rams-date">Someone's on site today, no permit on file</span>
+          </div>
+          <button type="button" class="home-rams-btn" data-job-permit="${j.id}">View Job</button>
+        </li>
+      `).join('')}</ul>`
+    : `<p class="empty-state">Every job with someone on site today has a permit on file.</p>`;
+
+  const subbyHtml = expiringSubbies.length
+    ? `<ul class="home-rams-list">${expiringSubbies.map((s) => `
+        <li>
+          <div class="home-rams-info">
+            <strong>${escapeHtml(s.companyName)}</strong>
+            <span class="home-rams-date">${s.insuranceStatus === 'expired' ? 'Expired ' : 'Expires '}${s.insuranceExpiry}</span>
+          </div>
+          <button type="button" class="home-rams-btn" data-goto-subbies="1">View</button>
+        </li>
+      `).join('')}</ul>`
+    : `<p class="empty-state">No subby insurance documents expiring soon.</p>`;
+
   container.innerHTML = `
     ${myUpcoming.length ? myAssignmentsCardHtml(myUpcoming, todayStr) : ''}
     <div class="dashboard-card">
@@ -3609,6 +3700,14 @@ function renderHomeDashboard() {
       <h3>Jobs Missing RAMS</h3>
       ${ramsHtml}
     </div>
+    <div class="dashboard-card">
+      <h3>Jobs Missing a Permit to Work</h3>
+      ${permitHtml}
+    </div>
+    <div class="dashboard-card">
+      <h3>Subby Insurance Expiring</h3>
+      ${subbyHtml}
+    </div>
   `;
 
   document.getElementById('homeGoCalendarBtn').addEventListener('click', () => {
@@ -3618,6 +3717,12 @@ function renderHomeDashboard() {
 
   container.querySelectorAll('.home-rams-btn[data-job]').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(btn.dataset.job, 'rams'));
+  });
+  container.querySelectorAll('[data-job-permit]').forEach((btn) => {
+    btn.addEventListener('click', () => openJobDetail(btn.dataset.jobPermit, 'permit'));
+  });
+  container.querySelectorAll('[data-goto-subbies]').forEach((btn) => {
+    btn.addEventListener('click', () => goToTab('subbies'));
   });
   container.querySelectorAll('[data-assignment]').forEach((btn) => {
     btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
