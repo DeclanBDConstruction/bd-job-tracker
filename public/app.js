@@ -80,7 +80,16 @@ function showAuthScreen() {
   document.getElementById('authScreen').hidden = false;
 }
 
-function showApp(user) {
+// Removes the splash screen once the real bootstrap data load finishes, with a small floor
+// so it doesn't just flash on a fast connection - see the .splash-hide CSS class this
+// triggers, which replaces the old fixed-timer animation.
+const SPLASH_MIN_DISPLAY_MS = 400;
+function hideSplash() {
+  const splash = document.getElementById('splash');
+  if (splash) splash.classList.add('splash-hide');
+}
+
+async function showApp(user) {
   state.currentUser = user;
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
@@ -114,10 +123,14 @@ function showApp(user) {
   document.getElementById('calendarTabBtn').hidden = restricted;
   document.getElementById('headerSearchWrap').hidden = restricted;
 
-  if (isStaff()) bootstrapStaff();
-  else if (isOperative()) bootstrapOperative();
-  else bootstrap();
+  const bootstrapPromise = isStaff() ? bootstrapStaff() : isOperative() ? bootstrapOperative() : bootstrap();
   connectLiveUpdates();
+  const minDisplay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
+  try {
+    await Promise.all([bootstrapPromise, minDisplay]);
+  } finally {
+    hideSplash();
+  }
 }
 
 // ---------- Live updates ----------
@@ -381,6 +394,17 @@ function positionTabGroupMenu(group) {
   menu.style.left = left + 'px';
 }
 
+// A quick "Loading…" placeholder for tabs that fetch on demand, so switching to one on a
+// slow connection shows something immediately instead of sitting blank until the request
+// resolves - the real render function (loadReports etc.) overwrites this once data arrives.
+function showTabLoading(selector, colspan) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  el.innerHTML = colspan
+    ? `<tr><td colspan="${colspan}" class="empty-state">Loading…</td></tr>`
+    : `<p class="empty-state">Loading…</p>`;
+}
+
 function goToTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
   document.querySelectorAll('.tab-group-btn').forEach((b) => b.classList.remove('active'));
@@ -391,12 +415,12 @@ function goToTab(tab) {
   if (group) group.querySelector('.tab-group-btn').classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');
   closeTabGroups();
-  if (tab === 'reports') loadReports();
-  if (tab === 'clients') loadClients();
+  if (tab === 'reports') { showTabLoading('#reportsContainer'); loadReports(); }
+  if (tab === 'clients') { showTabLoading('#clientsContainer'); loadClients(); }
   if (tab === 'home') renderHomeDashboard();
   if (tab === 'admin') loadAdminUsers();
-  if (tab === 'hire') loadHires();
-  if (tab === 'vehiclehire') loadVehicleHires();
+  if (tab === 'hire') { showTabLoading('#hiresTable tbody', 9); loadHires(); }
+  if (tab === 'vehiclehire') { showTabLoading('#vehicleHiresTable tbody', 8); loadVehicleHires(); }
   if (tab === 'quoting') loadQuotes();
   if (tab === 'assignments') renderMyAssignmentsTab();
   if (tab === 'diary') {
