@@ -534,11 +534,11 @@ async function bootstrap() {
   if (isAdmin()) state.operativeUsers = await api('/api/users');
   renderStatusOptions();
   renderEmployeeOptions();
-  // Surveyors land on Jobs pre-filtered to their own won jobs, not the whole company's -
-  // they can still switch the same dropdown to someone else or back to "All employees".
-  // Only applies once on load so it doesn't fight a surveyor's own filter choice on every
+  // Admins and surveyors land on Jobs pre-filtered to their own won jobs, not the whole
+  // company's - they can still switch the same dropdown to someone else or back to "All
+  // employees". Only applies once on load so it doesn't fight a later filter choice on every
   // re-render (see handleLiveJobsChange etc., which call renderJobs() directly, not this).
-  if (isSurveyor()) {
+  if (isSurveyor() || isAdmin()) {
     const mine = state.employees.find((e) => e.id === state.currentUser.employeeId);
     if (mine) document.getElementById('jobEmployeeFilter').value = mine.name;
   }
