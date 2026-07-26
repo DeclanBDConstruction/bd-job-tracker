@@ -301,6 +301,7 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
         name: document.getElementById('registerName').value,
         email: document.getElementById('registerEmail').value,
         password: document.getElementById('registerPassword').value,
+        accessCode: document.getElementById('registerAccessCode').value,
       }),
     });
     if (!res.ok) {
@@ -4334,6 +4335,11 @@ async function loadAdminUsers() {
           ${state.employees.map((e) => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
         </select>
       </td>
+      <td>
+        ${u.id === state.currentUser.id
+          ? `<span class="status-pill complete">Active</span>`
+          : `<button type="button" class="admin-active-toggle ${u.active ? '' : 'danger'}" data-user="${u.id}" data-name="${escapeHtml(u.name)}" data-active="${u.active}">${u.active ? 'Active' : 'Disabled'}</button>`}
+      </td>
     </tr>
   `).join('');
 
@@ -4369,6 +4375,23 @@ async function loadAdminUsers() {
       } catch (err) {
         alert(err.message);
         loadAdminUsers();
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.admin-active-toggle').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nowActive = btn.dataset.active !== 'true';
+      const verb = nowActive ? 're-enable' : 'disable';
+      if (!confirm(`Are you sure you want to ${verb} ${btn.dataset.name}'s account?`)) return;
+      try {
+        await api(`/api/users/${btn.dataset.user}/active`, {
+          method: 'PUT',
+          body: JSON.stringify({ active: nowActive }),
+        });
+        loadAdminUsers();
+      } catch (err) {
+        alert(err.message);
       }
     });
   });

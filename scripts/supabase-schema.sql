@@ -25,6 +25,11 @@ alter table users add column if not exists color text;
 -- non-admin can be shown only their own figures on the Yearly Reports tab.
 alter table users add column if not exists employee_id uuid references employees(id) on delete set null;
 
+-- Lets an admin disable a leaver's account without deleting it (their name stays intact on
+-- historical jobs/assignments/reports) - see setUserActive/getUserBySession/verifyLogin in
+-- db.js, which treat a disabled account as signed-out immediately, not just blocked at login.
+alter table users add column if not exists active boolean not null default true;
+
 -- Grants specific non-admin users the right to manage the Quoting tab (add/edit/assign/
 -- delete quote jobs) without making them a full admin. Admins can always manage quotes too.
 -- Superseded by the 'surveyor' role below (which grants quoting automatically) - column

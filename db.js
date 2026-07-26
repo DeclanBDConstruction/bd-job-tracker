@@ -1798,6 +1798,8 @@ function sanitizeUser(row) {
     // Derived from role rather than the old can_manage_quotes column - admins and
     // surveyors can always manage quotes, nobody else can.
     canManageQuotes: row.role === 'admin' || row.role === 'surveyor',
+    // Defaults true for rows saved before this column existed (see the schema migration).
+    active: row.active !== false,
     createdAt: row.created_at,
   };
 }
@@ -1854,6 +1856,7 @@ async function verifyLogin(email, password) {
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
     throw new Error('Incorrect email or password');
   }
+  if (user.active === false) throw new Error('This account has been disabled - ask an admin.');
   return sanitizeUser(user);
 }
 
@@ -1879,6 +1882,9 @@ async function getUserBySession(token) {
   if (new Date(session.expires_at).getTime() < Date.now()) return null;
   const { data: user, error: userErr } = await supabase.from('users').select('*').eq('id', session.user_id).maybeSingle();
   check(userErr);
+  // Disabling a user (see setUserActive) should take effect immediately, not just block
+  // their next login - an already-open session gets treated as signed-out right away.
+  if (!user || user.active === false) return null;
   return sanitizeUser(user);
 }
 
@@ -1896,6 +1902,16 @@ async function listUsers() {
 async function setUserRole(id, role) {
   if (!ROLES.includes(role)) throw new Error('Invalid role');
   const { data, error } = await supabase.from('users').update({ role }).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
+// Disabling rather than deleting a leaver's account keeps their name intact on historical
+// jobs/assignments/reports - getUserBySession/verifyLogin both check this and treat a
+// disabled account as signed-out immediately, not just blocked at their next login.
+async function setUserActive(id, active) {
+  const { data, error } = await supabase.from('users').update({ active: !!active }).eq('id', id).select().maybeSingle();
   check(error);
   if (!data) throw new Error('User not found');
   return sanitizeUser(data);
@@ -1948,6 +1964,7 @@ module.exports = {
   deleteSession,
   listUsers,
   setUserRole,
+  setUserActive,
   setUserEmployee,
   ROLES,
   OPERATIVE_ROLES,

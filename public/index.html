@@ -47,6 +47,7 @@
           <label>Name<input type="text" id="registerName" required autocomplete="name"></label>
           <label>Email<input type="email" id="registerEmail" required autocomplete="username"></label>
           <label>Password (min. 6 characters)<input type="password" id="registerPassword" required minlength="6" autocomplete="new-password"></label>
+          <label>Access code<input type="text" id="registerAccessCode" required autocomplete="off" placeholder="Ask the office"></label>
           <p class="auth-error" id="registerError" hidden></p>
           <button type="submit" class="primary">Create Account</button>
         </form>
@@ -582,7 +583,7 @@
     </div>
     <p class="hint">Set each account's role — Admin (full access, can delete jobs and manage the employee list), Staff (general office access), Surveyor (office access plus quoting rights), or Installation/Manufacturing Operative (no office access yet). Link each account to the matching employee so their Yearly Report shows only their own figures — this happens automatically at sign-up when the name matches, but you can fix it here if it didn't (or the account was created before this existed).</p>
     <table class="data-table" id="adminUsersTable">
-      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th></tr></thead>
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Account</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>

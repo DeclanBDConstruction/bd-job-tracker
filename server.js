@@ -2,6 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const archiver = require('archiver');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const importer = require('./import');
 const riskAssessments = require('./riskAssessments');
@@ -10,8 +12,58 @@ const { supabase, DOCUMENTS_BUCKET } = require('./supabaseClient');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-const uploadDocument = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+// Render sits in front of the app behind exactly one reverse-proxy hop, which sets
+// X-Forwarded-For - trusting exactly that one hop (not `true`, which would trust every hop
+// and let a client spoof its own IP) lets the login/register rate limiters below identify
+// real client IPs instead of only ever seeing Render's proxy address for everyone.
+app.set('trust proxy', 1);
+
+// CSP is left off deliberately: the app relies on inline style attributes (e.g. calendar
+// swatch colours) that helmet's default policy would otherwise block.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+function allowlistFilter(allowedRe, expectedLabel) {
+  return (req, file, cb) => {
+    if (!allowedRe.test(file.originalname)) {
+      return cb(new Error(`"${file.originalname}" isn't an allowed file type - expected ${expectedLabel}`));
+    }
+    cb(null, true);
+  };
+}
+
+const IMAGE_FILE_RE = /\.(jpe?g|png|webp|heic|heif|gif)$/i;
+const SPREADSHEET_FILE_RE = /\.xlsx?$/i;
+// Blocklist rather than an allowlist for the general document upload below - drawings, RAMS,
+// permits and subby forms come in enough legitimate formats (CAD exports, scans, office docs)
+// that guessing a safe allowlist risks rejecting something genuinely in use today. This still
+// stops the actual risk (a disguised executable or script filed under a document category)
+// without touching any file type already being uploaded.
+const BLOCKED_FILE_RE = /\.(exe|msi|bat|cmd|sh|com|scr|vbs?|vbe|jse?|jar|ps1|psm1|dll|apk|dmg|iso|reg)$/i;
+
+function blockDangerousFiles(req, file, cb) {
+  if (BLOCKED_FILE_RE.test(file.originalname)) {
+    return cb(new Error(`"${file.originalname}" isn't an allowed file type.`));
+  }
+  cb(null, true);
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: allowlistFilter(SPREADSHEET_FILE_RE, 'an Excel file (.xls/.xlsx)'),
+});
+const uploadDocument = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: blockDangerousFiles,
+});
+// Stricter than uploadDocument - only ever used for the operative's on-site photo upload,
+// which should only ever actually be a photo.
+const uploadImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: allowlistFilter(IMAGE_FILE_RE, 'an image file'),
+});
 
 // ---------- Live updates (Server-Sent Events) ----------
 // Every write in this file goes through this same server, so rather than watching Postgres
@@ -112,20 +164,51 @@ function currentUser(req) {
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, matches db.js session TTL
 
 function setSessionCookie(res, token) {
-  res.cookie('sid', token, { httpOnly: true, sameSite: 'lax', maxAge: SESSION_MAX_AGE_MS });
+  // secure:true is safe unconditionally here - Render only ever serves this app over HTTPS,
+  // so there's no legitimate plain-HTTP request for the cookie to need to ride along on.
+  res.cookie('sid', token, { httpOnly: true, sameSite: 'lax', secure: true, maxAge: SESSION_MAX_AGE_MS });
 }
 
 // ---------- Auth ----------
 // These routes are intentionally registered before the auth-required gate below, since you
 // can't be logged in yet when hitting them.
 
-app.post('/api/auth/register', handle(async (req, res) => {
+// Slows down password-guessing against a real account without adding any extra step for a
+// legitimate sign-in - keyed by IP, generous enough that a real user mistyping their password
+// a few times in a row never hits it.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-in attempts - wait a few minutes and try again.' },
+});
+// Registration is open to anyone who reaches this route (see the access-code check inside),
+// so it gets the same throttle to stop it being hammered for either brute-forcing that code
+// or spamming new accounts.
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts - wait a few minutes and try again.' },
+});
+
+app.post('/api/auth/register', registerLimiter, handle(async (req, res) => {
+  // Registration is otherwise open to anyone who finds the app's URL, so a shared code
+  // (set as the REGISTRATION_CODE env var, same convention as the Supabase config) gates it
+  // to people the office has actually told - no email verification or approval step, just
+  // one more field on the same form.
+  if (!process.env.REGISTRATION_CODE) throw new Error('Registration is not configured - ask an admin to set REGISTRATION_CODE.');
+  if ((req.body.accessCode || '').trim() !== process.env.REGISTRATION_CODE) {
+    throw new Error('That access code is incorrect - check with the office.');
+  }
   const user = await db.registerUser(req.body);
   setSessionCookie(res, await db.createSession(user.id));
   res.status(201).json(user);
 }));
 
-app.post('/api/auth/login', handle(async (req, res) => {
+app.post('/api/auth/login', loginLimiter, handle(async (req, res) => {
   const user = await db.verifyLogin(req.body.email, req.body.password);
   setSessionCookie(res, await db.createSession(user.id));
   res.json(user);
@@ -238,6 +321,12 @@ app.get('/api/users', requireAdmin, handle(async (req, res) => {
 
 app.put('/api/users/:id/role', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserRole(req.params.id, req.body.role);
+  broadcast('users');
+  res.json(user);
+}));
+
+app.put('/api/users/:id/active', requireAdmin, handle(async (req, res) => {
+  const user = await db.setUserActive(req.params.id, !!req.body.active);
   broadcast('users');
   res.json(user);
 }));
@@ -554,7 +643,7 @@ app.get('/api/job-assignments/:id/time-logs', handle(async (req, res) => {
 // the assignment's own job_id + user_id = req.user.id server-side - deliberately NOT the
 // generic /api/jobs/:id/documents/:category route (that one is unrestricted-by-design for
 // office roles across every category on any job, which is too broad to hand to operatives).
-app.post('/api/job-assignments/:id/photo', uploadDocument.single('file'), handle(async (req, res) => {
+app.post('/api/job-assignments/:id/photo', uploadImage.single('file'), handle(async (req, res) => {
   if (!req.file) throw new Error('No file uploaded');
   const assignment = await db.getJobAssignment(req.params.id);
   if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
@@ -1183,6 +1272,15 @@ app.get('/api/reports/clients', requireAdmin, handle(async (req, res) => {
 }));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Catches errors that happen before a route's own handle() wrapper can (multer's file-size/
+// file-type rejections are the main case - they fire in middleware, ahead of the route body),
+// so they reach the browser as the same clean {error} JSON shape as everything else instead
+// of Express's default HTML/stack-trace page.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  res.status(400).json({ error: err.message || 'Request failed' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
