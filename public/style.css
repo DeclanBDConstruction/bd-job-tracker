@@ -2782,3 +2782,118 @@ button:disabled {
 @media (max-width: 720px) {
   .toast-container { left: 12px; right: 12px; bottom: 12px; max-width: none; }
 }
+
+/* ---------- Mini-Game (see app.js's startMinigame() and friends) ---------- */
+
+.minigame-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.minigame-play {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-5);
+  text-align: center;
+}
+
+.minigame-stats {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.minigame-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.minigame-stat-label {
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.minigame-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--blue-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.minigame-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  max-width: 320px;
+  margin: 0 auto var(--space-4);
+}
+
+.minigame-hole {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
+  padding: 0;
+}
+
+.minigame-hole:hover { box-shadow: none; transform: none; }
+
+.minigame-hole.active {
+  background: var(--green);
+  border-color: var(--green-dark);
+  transform: scale(1.08);
+  box-shadow: 0 0 0 6px var(--green-light);
+}
+
+.minigame-start-btn { min-width: 140px; }
+
+.minigame-result {
+  margin: var(--space-3) 0 0;
+  font-weight: 600;
+  color: var(--blue-dark);
+}
+
+.minigame-mybest {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-base);
+  color: var(--muted);
+}
+
+.minigame-boards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.minigame-board {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-4) var(--space-5);
+}
+
+.minigame-board h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-md);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--blue-dark);
+}
+
+.minigame-board .data-table th:first-child,
+.minigame-board .data-table td:first-child { width: 40px; text-align: center; }
+
+.minigame-row-me td { background: var(--green-light); font-weight: 600; }
+
+@media (max-width: 820px) {
+  .minigame-layout { grid-template-columns: 1fr; }
+}

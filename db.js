@@ -2047,6 +2047,98 @@ async function deleteDiaryEntry(id, user) {
   check(error);
 }
 
+// ---------- Mini-Game ----------
+// Daily whack-a-mole for a bit of fun. The target sequence itself is generated client-side
+// (seeded from the date, see buildMinigameSequence in app.js) so this side never needs to
+// know the game's rules - it just records a finished run's time and ranks people by it.
+// Only ever the best time per person per day is kept, both so the "same challenge for
+// everyone" daily leaderboard is a straight list rather than needing a GROUP BY, and so the
+// all-time board (each person's best row across every date) is too.
+
+// A legitimate run needs at least MINIGAME_ROUNDS worth of minimum pop delays back-to-back
+// with zero misses - anything faster than this floor could only be a spoofed/replayed
+// request, not an actual play-through, so it's rejected outright rather than silently
+// distorting the leaderboard.
+const MINIGAME_MIN_TIME_MS = 3000;
+
+function rowToMiniGameScore(row) {
+  return {
+    id: row.id,
+    date: row.game_date,
+    userId: row.user_id,
+    userName: row.user_name,
+    timeMs: row.time_ms,
+    misses: row.misses,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function todayDateStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function getMiniGameToday(user) {
+  const date = todayDateStr();
+  const [daily, allTime] = await Promise.all([
+    supabase.from('minigame_scores').select('*').eq('game_date', date).order('time_ms').limit(20),
+    supabase.from('minigame_scores').select('user_id, user_name, time_ms').order('time_ms'),
+  ]);
+  check(daily.error);
+  check(allTime.error);
+
+  // Best row per person across every date - rows already arrive sorted fastest-first, so
+  // the first time a user_id is seen is their best.
+  const seen = new Set();
+  const allTimeBest = [];
+  for (const row of allTime.data) {
+    if (seen.has(row.user_id)) continue;
+    seen.add(row.user_id);
+    allTimeBest.push({ userId: row.user_id, userName: row.user_name, timeMs: row.time_ms });
+    if (allTimeBest.length >= 20) break;
+  }
+
+  const mine = daily.data.find((row) => row.user_id === user.id);
+  return {
+    date,
+    dailyLeaderboard: daily.data.map(rowToMiniGameScore),
+    allTimeLeaderboard: allTimeBest,
+    myBestToday: mine ? rowToMiniGameScore(mine) : null,
+  };
+}
+
+async function submitMiniGameScore(user, input) {
+  const timeMs = Math.round(Number(input.timeMs));
+  if (!Number.isFinite(timeMs) || timeMs < MINIGAME_MIN_TIME_MS) throw new Error('Invalid time');
+  const misses = Math.round(Number(input.misses) || 0);
+  if (!Number.isFinite(misses) || misses < 0) throw new Error('Invalid miss count');
+  const date = todayDateStr();
+
+  const { data: existing, error: findErr } = await supabase.from('minigame_scores')
+    .select('*').eq('game_date', date).eq('user_id', user.id).maybeSingle();
+  check(findErr);
+
+  if (existing && existing.time_ms <= timeMs) {
+    // Not an improvement on today's existing best - leave it as-is.
+    return { improved: false, best: rowToMiniGameScore(existing) };
+  }
+
+  if (existing) {
+    const { data, error } = await supabase.from('minigame_scores')
+      .update({ time_ms: timeMs, misses, updated_at: new Date().toISOString() })
+      .eq('id', existing.id).select().single();
+    check(error);
+    return { improved: true, best: rowToMiniGameScore(data) };
+  }
+
+  const { data, error } = await supabase.from('minigame_scores').insert({
+    id: genId(), game_date: date, user_id: user.id, user_name: user.name,
+    time_ms: timeMs, misses, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).select().single();
+  check(error);
+  return { improved: true, best: rowToMiniGameScore(data) };
+}
+
 // ---------- Auth ----------
 
 // Office roles get the full app; operative roles (see OPERATIVE_ROLES below) don't have
@@ -2330,6 +2422,8 @@ module.exports = {
   updateDiaryEntry,
   setDiaryEntryCompleted,
   deleteDiaryEntry,
+  getMiniGameToday,
+  submitMiniGameScore,
   // Pure helpers with no Supabase calls - exported so they can be unit-tested directly (see
   // test/db.pure.test.js) without needing a live database connection.
   addDaysToDateString,

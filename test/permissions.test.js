@@ -22,6 +22,13 @@ test('staff can reach calendar/diary routes', () => {
   assert.equal(allowed(STAFF_ALLOWED_ROUTES, 'PUT', '/diary/abc123/complete'), true);
 });
 
+test('staff and operatives can both reach the mini-game routes', () => {
+  assert.equal(allowed(STAFF_ALLOWED_ROUTES, 'GET', '/minigame/today'), true);
+  assert.equal(allowed(STAFF_ALLOWED_ROUTES, 'POST', '/minigame/score'), true);
+  assert.equal(allowed(OPERATIVE_ALLOWED_ROUTES, 'GET', '/minigame/today'), true);
+  assert.equal(allowed(OPERATIVE_ALLOWED_ROUTES, 'POST', '/minigame/score'), true);
+});
+
 test('staff cannot reach Jobs, job-assignments, or admin-only routes', () => {
   assert.equal(allowed(STAFF_ALLOWED_ROUTES, 'GET', '/jobs'), false);
   assert.equal(allowed(STAFF_ALLOWED_ROUTES, 'GET', '/job-assignments/mine'), false);

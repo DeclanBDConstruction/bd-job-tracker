@@ -436,6 +436,25 @@ create table if not exists job_costing_lines (
 );
 create index if not exists job_costing_lines_job_id_idx on job_costing_lines (job_id);
 
+-- Daily mini-game (whack-a-mole) for a bit of fun - everyone gets the exact same target
+-- sequence on a given day (seeded from the date in app.js), so times are directly
+-- comparable. Only the best time per person per day is kept (see submitMiniGameScore in
+-- db.js, which only overwrites an existing row if the new time is faster) - the daily
+-- leaderboard reads straight off this table, and the all-time leaderboard is just each
+-- person's best row across every date.
+create table if not exists minigame_scores (
+  id uuid primary key,
+  game_date text not null,
+  user_id uuid not null references users(id) on delete cascade,
+  user_name text not null,
+  time_ms integer not null,
+  misses integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists minigame_scores_date_user_idx on minigame_scores (game_date, user_id);
+create index if not exists minigame_scores_date_idx on minigame_scores (game_date);
+
 -- Lock every table down by default. The app only ever talks to Supabase using the
 -- service-role key (which bypasses RLS), so these policies exist purely as a safety
 -- net in case the anon/public key were ever exposed - with RLS on and no policies,
@@ -461,6 +480,7 @@ alter table quotes enable row level security;
 alter table signage enable row level security;
 alter table job_costing_labour_overrides enable row level security;
 alter table job_costing_lines enable row level security;
+alter table minigame_scores enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

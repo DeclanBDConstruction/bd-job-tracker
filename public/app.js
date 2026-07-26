@@ -20,6 +20,10 @@ const state = {
   allAssignments: [],
   operativeUsers: [],
   currentUser: null,
+  minigameDate: null,
+  minigameDaily: [],
+  minigameAllTime: [],
+  minigameMyBest: null,
 };
 
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
@@ -166,6 +170,7 @@ function connectLiveUpdates() {
     else if (type === 'vehicleHires') handleLiveVehicleHiresChange();
     else if (type === 'signage') handleLiveSignageChange();
     else if (type === 'diary') handleLiveDiaryChange();
+    else if (type === 'minigame') handleLiveMinigameChange();
     else if (type === 'jobAssignments') handleLiveJobAssignmentsChange();
   };
 }
@@ -427,6 +432,7 @@ function goToTab(tab) {
     setDiaryViewDate(todayDateStr());
     loadDiary();
   }
+  if (tab === 'minigame') loadMinigame();
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -4119,6 +4125,206 @@ function renderMyAssignmentsTab() {
 }
 
 document.getElementById('assignmentsViewSelect').addEventListener('change', renderMyAssignmentsTab);
+
+// ---------- Mini-Game ----------
+// Daily whack-a-mole, just for fun. The target sequence (which hole, and how long it
+// waits before popping up) is generated here from a string seed, deterministically -
+// everyone who plays on the same date gets the exact same sequence, so times are directly
+// comparable, Wordle-style. The server (db.js submitMiniGameScore) never sees or checks the
+// sequence itself, only the resulting time - see MINIGAME_MIN_TIME_MS there for the one
+// sanity check that catches an obviously spoofed time.
+
+const MINIGAME_HOLES = 9;
+const MINIGAME_ROUNDS = 15;
+const MINIGAME_POP_TIMEOUT_MS = 1200; // how long a mole stays up before it's a miss
+const MINIGAME_MISS_PENALTY_MS = 1500; // added to the final time per miss
+
+let minigameRun = null;
+
+// A small string-seeded PRNG (xmur3 hash feeding mulberry32) - not cryptographic, just
+// needs to be deterministic per date and fast, so everyone's browser derives the identical
+// sequence independently without the server needing to generate or transmit it.
+function minigameSeedFn(seedStr) {
+  let h = 1779033703 ^ seedStr.length;
+  for (let i = 0; i < seedStr.length; i++) {
+    h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+function buildMinigameSequence(dateStr) {
+  const rand = minigameSeedFn('minigame-' + dateStr);
+  const sequence = [];
+  let lastHole = -1;
+  for (let i = 0; i < MINIGAME_ROUNDS; i++) {
+    let hole;
+    do { hole = Math.floor(rand() * MINIGAME_HOLES); } while (hole === lastHole);
+    lastHole = hole;
+    sequence.push({ hole, delayMs: 250 + Math.floor(rand() * 500) });
+  }
+  return sequence;
+}
+
+function ensureMinigameGrid() {
+  const grid = document.getElementById('minigameGrid');
+  if (grid.children.length) return;
+  for (let i = 0; i < MINIGAME_HOLES; i++) {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'minigame-hole';
+    cell.dataset.hole = String(i);
+    cell.addEventListener('click', () => handleMinigameHoleClick(i));
+    grid.appendChild(cell);
+  }
+}
+
+function minigameTimeLabel(ms) {
+  return (ms / 1000).toFixed(2) + 's';
+}
+
+async function loadMinigame() {
+  ensureMinigameGrid();
+  document.getElementById('minigameStartBtn').textContent = 'Start';
+  document.getElementById('minigameStartBtn').disabled = false;
+  document.getElementById('minigameResult').hidden = true;
+  document.getElementById('minigameTimer').textContent = '0.00s';
+  document.getElementById('minigameHits').textContent = `0/${MINIGAME_ROUNDS}`;
+  document.getElementById('minigameMisses').textContent = '0';
+  await loadMinigameLeaderboards();
+}
+
+async function loadMinigameLeaderboards() {
+  const data = await api('/api/minigame/today');
+  state.minigameDate = data.date;
+  state.minigameDaily = data.dailyLeaderboard;
+  state.minigameAllTime = data.allTimeLeaderboard;
+  state.minigameMyBest = data.myBestToday;
+  renderMinigameLeaderboards();
+}
+
+async function handleLiveMinigameChange() {
+  if (activeTab() === 'minigame') await loadMinigameLeaderboards();
+}
+
+function minigameLeaderboardRowsHtml(list) {
+  if (!list.length) return `<tr><td colspan="3" class="empty-state">No times yet — be the first!</td></tr>`;
+  return list.map((row, i) => `
+    <tr${row.userId === state.currentUser.id ? ' class="minigame-row-me"' : ''}>
+      <td>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</td>
+      <td>${escapeHtml(row.userName)}</td>
+      <td>${minigameTimeLabel(row.timeMs)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderMinigameLeaderboards() {
+  document.querySelector('#minigameDailyTable tbody').innerHTML = minigameLeaderboardRowsHtml(state.minigameDaily);
+  document.querySelector('#minigameAllTimeTable tbody').innerHTML = minigameLeaderboardRowsHtml(state.minigameAllTime);
+  document.getElementById('minigameMyBest').textContent = state.minigameMyBest
+    ? `Your best today: ${minigameTimeLabel(state.minigameMyBest.timeMs)}`
+    : `You haven't played today yet — give it a go!`;
+}
+
+function startMinigame() {
+  ensureMinigameGrid();
+  document.querySelectorAll('.minigame-hole').forEach((h) => h.classList.remove('active'));
+  document.getElementById('minigameStartBtn').textContent = 'Playing…';
+  document.getElementById('minigameStartBtn').disabled = true;
+  document.getElementById('minigameResult').hidden = true;
+  document.getElementById('minigameTimer').textContent = '0.00s';
+  document.getElementById('minigameHits').textContent = `0/${MINIGAME_ROUNDS}`;
+  document.getElementById('minigameMisses').textContent = '0';
+
+  minigameRun = {
+    sequence: buildMinigameSequence(state.minigameDate || todayDateStr()),
+    round: 0,
+    misses: 0,
+    activeHole: -1,
+    startTime: performance.now(),
+    popTimer: null,
+    timeoutTimer: null,
+    tickTimer: setInterval(updateMinigameTimerDisplay, 100),
+  };
+  scheduleNextMinigameMole();
+}
+
+function updateMinigameTimerDisplay() {
+  if (!minigameRun) return;
+  document.getElementById('minigameTimer').textContent = minigameTimeLabel(performance.now() - minigameRun.startTime);
+}
+
+function scheduleNextMinigameMole() {
+  const step = minigameRun.sequence[minigameRun.round];
+  minigameRun.popTimer = setTimeout(() => {
+    if (!minigameRun) return;
+    minigameRun.activeHole = step.hole;
+    const cell = document.querySelector(`.minigame-hole[data-hole="${step.hole}"]`);
+    if (cell) cell.classList.add('active');
+    minigameRun.timeoutTimer = setTimeout(() => registerMinigameMiss(step.hole), MINIGAME_POP_TIMEOUT_MS);
+  }, step.delayMs);
+}
+
+function registerMinigameMiss(hole) {
+  if (!minigameRun || minigameRun.activeHole !== hole) return;
+  minigameRun.misses++;
+  document.getElementById('minigameMisses').textContent = minigameRun.misses;
+  advanceMinigameRound();
+}
+
+// A click on the wrong hole (or before anything's popped up yet) costs a miss too but
+// doesn't advance the round - the current mole keeps waiting for its own timeout or the
+// correct click, so a spam-clicker can't skip ahead by mashing every hole.
+function handleMinigameHoleClick(hole) {
+  if (!minigameRun) return;
+  if (hole !== minigameRun.activeHole) {
+    minigameRun.misses++;
+    document.getElementById('minigameMisses').textContent = minigameRun.misses;
+    return;
+  }
+  clearTimeout(minigameRun.timeoutTimer);
+  advanceMinigameRound();
+}
+
+function advanceMinigameRound() {
+  const cell = document.querySelector(`.minigame-hole[data-hole="${minigameRun.activeHole}"]`);
+  if (cell) cell.classList.remove('active');
+  minigameRun.activeHole = -1;
+  minigameRun.round++;
+  document.getElementById('minigameHits').textContent = `${minigameRun.round}/${MINIGAME_ROUNDS}`;
+  if (minigameRun.round >= MINIGAME_ROUNDS) finishMinigame();
+  else scheduleNextMinigameMole();
+}
+
+async function finishMinigame() {
+  clearInterval(minigameRun.tickTimer);
+  const totalMs = Math.round((performance.now() - minigameRun.startTime) + minigameRun.misses * MINIGAME_MISS_PENALTY_MS);
+  const misses = minigameRun.misses;
+  minigameRun = null;
+
+  document.getElementById('minigameTimer').textContent = minigameTimeLabel(totalMs);
+  document.getElementById('minigameStartBtn').textContent = 'Play Again';
+  document.getElementById('minigameStartBtn').disabled = false;
+
+  const resultEl = document.getElementById('minigameResult');
+  resultEl.hidden = false;
+  try {
+    const result = await api('/api/minigame/score', { method: 'POST', body: JSON.stringify({ timeMs: totalMs, misses }) });
+    resultEl.textContent = result.improved
+      ? `New best: ${minigameTimeLabel(totalMs)} (${misses} missed) — leaderboard updated!`
+      : `Finished in ${minigameTimeLabel(totalMs)} (${misses} missed) — your best today is still ${minigameTimeLabel(result.best.timeMs)}.`;
+    await loadMinigameLeaderboards();
+  } catch (err) {
+    resultEl.textContent = `Finished in ${minigameTimeLabel(totalMs)}, but couldn't save your score: ${err.message}`;
+  }
+}
+
+document.getElementById('minigameStartBtn').addEventListener('click', startMinigame);
 
 // ---------- Risk Assessments ----------
 // Three kinds of card in the same grid, distinguished by data-kind on their "View & Attach

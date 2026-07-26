@@ -269,6 +269,8 @@ const CALENDAR_DIARY_ROUTES = [
   { method: 'PUT', path: /^\/diary\/[^/]+\/complete$/ },
   { method: 'PUT', path: /^\/diary\/[^/]+$/ },
   { method: 'DELETE', path: /^\/diary\/[^/]+$/ },
+  { method: 'GET', path: /^\/minigame\/today$/ },
+  { method: 'POST', path: /^\/minigame\/score$/ },
 ];
 
 const STAFF_ALLOWED_ROUTES = CALENDAR_DIARY_ROUTES;
@@ -1097,6 +1099,18 @@ app.delete('/api/diary/:id', handle(async (req, res) => {
   await db.deleteDiaryEntry(req.params.id, req.user);
   broadcast('diary');
   res.status(204).end();
+}));
+
+// ---------- Mini-Game ----------
+
+app.get('/api/minigame/today', handle(async (req, res) => {
+  res.json(await db.getMiniGameToday(req.user));
+}));
+
+app.post('/api/minigame/score', handle(async (req, res) => {
+  const result = await db.submitMiniGameScore(req.user, req.body);
+  broadcast('minigame');
+  res.json(result);
 }));
 
 // ---------- Price List (Labour & Materials) ----------

@@ -109,6 +109,7 @@
         <button class="tab-btn" data-tab="calendar" id="calendarTabBtn">Calendar</button>
         <button class="tab-btn" data-tab="mycalendar">My Calendar</button>
         <button class="tab-btn" data-tab="diary">My Diary</button>
+        <button class="tab-btn" data-tab="minigame">🎮 Mini-Game</button>
       </div>
     </div>
 
@@ -553,6 +554,43 @@
     </form>
     <ul class="diary-entries" id="diaryEntries"></ul>
     <p class="empty-state" id="diaryEmptyState" hidden>Nothing added for this day yet.</p>
+  </section>
+
+  <!-- MINI-GAME TAB -->
+  <section id="tab-minigame" class="tab-panel">
+    <div class="panel-header">
+      <h2>🎮 Daily Mini-Game</h2>
+    </div>
+    <p class="hint">Same challenge for everyone today — whack all the moles as fast as you can. Only your best time each day counts, and you can keep retrying to beat it.</p>
+    <div class="minigame-layout">
+      <div class="minigame-play">
+        <div class="minigame-stats">
+          <div class="minigame-stat"><span class="minigame-stat-label">Time</span><span class="minigame-stat-value" id="minigameTimer">0.00s</span></div>
+          <div class="minigame-stat"><span class="minigame-stat-label">Hit</span><span class="minigame-stat-value" id="minigameHits">0/15</span></div>
+          <div class="minigame-stat"><span class="minigame-stat-label">Missed</span><span class="minigame-stat-value" id="minigameMisses">0</span></div>
+        </div>
+        <div class="minigame-grid" id="minigameGrid"></div>
+        <button type="button" class="primary minigame-start-btn" id="minigameStartBtn">Start</button>
+        <p class="minigame-result" id="minigameResult" hidden></p>
+        <p class="minigame-mybest" id="minigameMyBest"></p>
+      </div>
+      <div class="minigame-boards">
+        <div class="minigame-board">
+          <h3>Today's Leaderboard</h3>
+          <table class="data-table" id="minigameDailyTable">
+            <thead><tr><th>#</th><th>Name</th><th>Time</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="minigame-board">
+          <h3>All-Time Best</h3>
+          <table class="data-table" id="minigameAllTimeTable">
+            <thead><tr><th>#</th><th>Name</th><th>Time</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- RISK ASSESSMENTS TAB -->
