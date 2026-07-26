@@ -2674,3 +2674,44 @@ button:disabled {
   .slide figcaption { font-size: 15px; padding: 14px 16px; }
   .slideshow-nav { width: 34px; height: 34px; font-size: 18px; }
 }
+
+/* ---------- Toasts (see toast()/dismissToast() in app.js) ---------- */
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  max-width: 360px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--text);
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-hover);
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: auto;
+}
+
+.toast-in { opacity: 1; transform: translateY(0); }
+.toast-error { background: #a8271f; }
+.toast-success { background: #4c7a1f; }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
+@media (max-width: 720px) {
+  .toast-container { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+}

@@ -33,6 +33,28 @@ const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFr
 const slug = (s) => String(s || '').toLowerCase().replace(/\s+/g, '-');
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : (s || ''));
 
+// Non-blocking replacement for alert() - errors and success confirmations both surface here
+// instead of a blocking browser popup, colour-coded so the two are never confused. Falls back
+// to alert() if the container isn't in the DOM for some reason, so a call site is never
+// silently swallowed. Dismisses itself, or on click.
+function toast(message, type = 'error') {
+  const container = document.getElementById('toastContainer');
+  if (!container) { alert(message); return; }
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = message;
+  el.addEventListener('click', () => dismissToast(el));
+  container.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('toast-in'));
+  setTimeout(() => dismissToast(el), type === 'success' ? 3500 : 6000);
+}
+
+function dismissToast(el) {
+  if (!el.isConnected || !el.classList.contains('toast-in')) return;
+  el.classList.remove('toast-in');
+  el.addEventListener('transitionend', () => el.remove(), { once: true });
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
@@ -732,7 +754,7 @@ async function completeJob(id) {
   try {
     await api(`/api/jobs/${id}/complete`, { method: 'POST' });
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     openJobDetail(id);
     return;
   }
@@ -857,7 +879,7 @@ document.getElementById('importJobSheetFile').addEventListener('change', async (
     }
     openJobModal(targetId, finalPrefill);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     e.target.value = '';
   }
@@ -970,7 +992,7 @@ jobForm.addEventListener('submit', async (e) => {
   const assignStartDate = document.getElementById('fAssignStartDate').value;
   const assignDuration = document.getElementById('fAssignDuration').value || 1;
   if (newlyCheckedTeam.length && (!assignTask || !assignStartDate)) {
-    alert('Fill in a Task and Start Date to assign the team, or untick everyone under Assign the Team.');
+    toast('Fill in a Task and Start Date to assign the team, or untick everyone under Assign the Team.', 'error');
     return;
   }
 
@@ -1006,8 +1028,9 @@ jobForm.addEventListener('submit', async (e) => {
     renderJobs();
     renderEmployees();
     closeJobModal();
+    toast(id ? 'Job updated.' : 'Job created.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -1029,7 +1052,7 @@ async function openJobDetail(id, section) {
   try {
     await refreshJobDetail();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     closeJobDetail();
   }
 }
@@ -1111,8 +1134,8 @@ function renderVariationsSection(variations) {
     e.preventDefault();
     const description = document.getElementById('variationDescInput').value.trim();
     const value = document.getElementById('variationValueInput').value;
-    if (!description) { alert('Enter a description.'); return; }
-    if (value === '' || isNaN(Number(value))) { alert('Enter a valid value.'); return; }
+    if (!description) { toast('Enter a description.', 'error'); return; }
+    if (value === '' || isNaN(Number(value))) { toast('Enter a valid value.', 'error'); return; }
     try {
       await api(`/api/jobs/${currentDetailJobId}/variations`, {
         method: 'POST',
@@ -1120,7 +1143,7 @@ function renderVariationsSection(variations) {
       });
       await refreshJobDetail();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     }
   });
 
@@ -1131,7 +1154,7 @@ function renderVariationsSection(variations) {
         await api(`/api/jobs/${currentDetailJobId}/variations/${btn.dataset.variation}`, { method: 'DELETE' });
         await refreshJobDetail();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1168,7 +1191,7 @@ function renderDocumentSection(category, docs) {
       }
       await refreshJobDetail();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       e.target.value = '';
     }
@@ -1180,7 +1203,7 @@ function renderDocumentSection(category, docs) {
         await api(`/api/jobs/${currentDetailJobId}/documents/${category}/${btn.dataset.doc}`, { method: 'DELETE' });
         await refreshJobDetail();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1193,7 +1216,7 @@ function renderDocumentSection(category, docs) {
         });
         await refreshJobDetail();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1247,8 +1270,9 @@ document.getElementById('addEmployeeBtn').addEventListener('click', async () => 
     state.employees = await api('/api/employees');
     renderEmployeeOptions();
     renderEmployees();
+    toast('Employee added.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -1262,7 +1286,7 @@ document.querySelector('#employeesTable tbody').addEventListener('click', async 
     renderEmployeeOptions();
     renderEmployees();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -1327,7 +1351,7 @@ function createPriceListView({ kind, ids }) {
           editingId = null;
           render();
         } catch (err) {
-          alert(err.message);
+          toast(err.message, 'error');
         }
       });
     });
@@ -1340,7 +1364,7 @@ function createPriceListView({ kind, ids }) {
           state.priceListItems = await api('/api/price-list');
           render();
         } catch (err) {
-          alert(err.message);
+          toast(err.message, 'error');
         }
       });
     });
@@ -1362,7 +1386,7 @@ function createPriceListView({ kind, ids }) {
       state.priceListItems = await api('/api/price-list');
       render();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     }
   });
 
@@ -1469,7 +1493,7 @@ function renderSubbies() {
         editingSubbyId = null;
         renderSubbies();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1482,7 +1506,7 @@ function renderSubbies() {
         state.subbies = await api('/api/subbies');
         renderSubbies();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1506,7 +1530,7 @@ document.getElementById('addSubbyBtn').addEventListener('click', async () => {
   const insuranceInput = document.getElementById('newSubbyInsuranceExpiry');
   const formInput = document.getElementById('newSubbyForm');
   if (!companyInput.value.trim() || !personInput.value.trim()) return;
-  if (!formInput.files[0]) { alert('Upload the subcontractor form before adding a subby.'); return; }
+  if (!formInput.files[0]) { toast('Upload the subcontractor form before adding a subby.', 'error'); return; }
   try {
     const formData = new FormData();
     formData.append('companyName', companyInput.value);
@@ -1529,8 +1553,9 @@ document.getElementById('addSubbyBtn').addEventListener('click', async () => {
     document.getElementById('newSubbyFormName').textContent = '';
     state.subbies = await api('/api/subbies');
     renderSubbies();
+    toast('Subby added.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -1620,7 +1645,7 @@ function renderQuoting() {
         renderQuoting();
       } catch (err) {
         checkbox.checked = !quoted;
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1645,7 +1670,7 @@ function renderQuoting() {
         editingQuoteId = null;
         loadQuotes();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1656,7 +1681,7 @@ function renderQuoting() {
         await api(`/api/quotes/${btn.closest('tr').dataset.id}`, { method: 'DELETE' });
         loadQuotes();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1696,7 +1721,7 @@ document.getElementById('addQuoteBtn').addEventListener('click', async () => {
     dueDateInput.value = '';
     loadQuotes();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -1794,7 +1819,7 @@ function renderJobTeamSection(assignments) {
       const startInput = document.getElementById('teamAssignStartDate');
       const durationInput = document.getElementById('teamAssignDuration');
       if (!userSel.value || !taskInput.value.trim() || !startInput.value) {
-        alert('Choose an employee and fill in the task and start date.');
+        toast('Choose an employee and fill in the task and start date.', 'error');
         return;
       }
       try {
@@ -1810,7 +1835,7 @@ function renderJobTeamSection(assignments) {
         });
         refreshJobDetail();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   }
@@ -1845,7 +1870,7 @@ function renderJobTeamSection(assignments) {
         editingTeamAssignmentId = null;
         refreshJobDetail();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1856,7 +1881,7 @@ function renderJobTeamSection(assignments) {
         await api(`/api/job-assignments/${btn.closest('[data-id]').dataset.id}`, { method: 'DELETE' });
         refreshJobDetail();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -1979,9 +2004,9 @@ document.getElementById('ramsViewModalCloseBtn').addEventListener('click', () =>
 document.getElementById('ramsAttachToJobBtn').addEventListener('click', async () => {
   try {
     await api(`/api/job-assignments/${currentRamsViewAssignmentId}/rams/attach-to-job`, { method: 'POST' });
-    alert('Attached to the job\'s documents - check the Jobs tab.');
+    toast('Attached to the job\'s documents - check the Jobs tab.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -2103,7 +2128,7 @@ function renderHires() {
         await api(`/api/hires/${btn.dataset.delHire}`, { method: 'DELETE' });
         loadHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2137,7 +2162,7 @@ function renderHires() {
         editingHireId = null;
         loadHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2147,7 +2172,7 @@ function renderHires() {
         await api(`/api/hires/${btn.dataset.return}/return`, { method: 'POST' });
         loadHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2158,7 +2183,7 @@ function renderHires() {
         await api(`/api/hires/${btn.dataset.delHire}`, { method: 'DELETE' });
         loadHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2184,7 +2209,7 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
     document.getElementById('hireQuantityInput').value = 1;
     loadHires();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -2318,7 +2343,7 @@ function renderVehicleHires() {
         await api(`/api/vehicle-hires/${btn.dataset.delVh}`, { method: 'DELETE' });
         loadVehicleHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2351,7 +2376,7 @@ function renderVehicleHires() {
         editingVehicleHireId = null;
         loadVehicleHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2380,7 +2405,7 @@ function renderVehicleHires() {
         offHiringVehicleHireId = null;
         loadVehicleHires();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2404,7 +2429,7 @@ document.getElementById('vehicleHireAddForm').addEventListener('submit', async (
     e.target.reset();
     loadVehicleHires();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -2496,7 +2521,7 @@ function renderSignage() {
         state.signage = await api('/api/signage');
         renderSignage();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2508,7 +2533,7 @@ function renderSignage() {
         state.signage = await api('/api/signage');
         renderSignage();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2523,7 +2548,7 @@ document.getElementById('signageAddForm').addEventListener('submit', async (e) =
     state.signage = await api('/api/signage');
     renderSignage();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -2613,7 +2638,7 @@ function renderDiary() {
         renderDiary();
       } catch (err) {
         checkbox.checked = !completed;
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2641,7 +2666,7 @@ function renderDiary() {
         editingDiaryId = null;
         loadDiary();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2652,7 +2677,7 @@ function renderDiary() {
         await api(`/api/diary/${btn.dataset.delDiary}`, { method: 'DELETE' });
         loadDiary();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -2669,7 +2694,7 @@ document.getElementById('diaryAddForm').addEventListener('submit', async (e) => 
     document.getElementById('diaryTextInput').value = '';
     loadDiary();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -2854,7 +2879,7 @@ function createCalendarView({ scope, ids }) {
           renderDayEvents();
           render();
         } catch (err) {
-          alert(err.message);
+          toast(err.message, 'error');
         }
       });
     });
@@ -2951,7 +2976,7 @@ function createCalendarView({ scope, ids }) {
       renderDayEvents();
       render();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     }
   });
 
@@ -3090,12 +3115,15 @@ function renderAssignmentTimeLog() {
   if (clockOutBtn) clockOutBtn.addEventListener('click', () => runTimeLogAction('clock-out'));
 }
 
+const TIME_LOG_ACTION_LABELS = { 'clock-in': 'Clocked in.', arrived: 'Marked as arrived.', 'clock-out': 'Clocked out.' };
+
 async function runTimeLogAction(action) {
   try {
     await api(`/api/job-assignments/${currentAssignmentId}/time/${action}`, { method: 'POST' });
     await refreshAssignmentTimeLog();
+    toast(TIME_LOG_ACTION_LABELS[action] || 'Saved.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 }
 
@@ -3150,9 +3178,9 @@ function renderAssignmentRamsStatus() {
     document.getElementById('assignmentRamsAttachBtn').addEventListener('click', async () => {
       try {
         await api(`/api/job-assignments/${currentAssignmentId}/rams/attach-to-job`, { method: 'POST' });
-        alert('Attached to the job\'s documents.');
+        toast('Attached to the job\'s documents.', 'success');
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
     btn.hidden = false;
@@ -3184,8 +3212,9 @@ document.getElementById('assignmentCompleteBtn').addEventListener('click', async
     renderCalendar();
     renderHomeDashboard();
     renderMyAssignmentsTab();
+    toast(a.completed ? 'Marked as not done.' : 'Marked as done.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -3200,9 +3229,9 @@ document.getElementById('assignmentPhotoInput').addEventListener('change', async
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || 'Upload failed');
     }
-    alert('Photo uploaded.');
+    toast('Photo uploaded.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     e.target.value = '';
   }
@@ -3308,7 +3337,7 @@ document.getElementById('permitFormCancelBtn').addEventListener('click', closePe
 document.getElementById('permitForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (operativeSignaturePad.isEmpty() || managerSignaturePad.isEmpty()) {
-    alert('Both the operative and manager need to sign before saving.');
+    toast('Both the operative and manager need to sign before saving.', 'error');
     return;
   }
   try {
@@ -3326,9 +3355,9 @@ document.getElementById('permitForm').addEventListener('submit', async (e) => {
       }),
     });
     closePermitForm();
-    alert('Permit to Work saved.');
+    toast('Permit to Work saved.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -3506,12 +3535,12 @@ document.getElementById('ramsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (ramsFormLocked) return;
   const methodStatement = document.getElementById('ramsMethodStatement').value.trim();
-  if (!methodStatement) { alert('Fill in the method statement.'); return; }
+  if (!methodStatement) { toast('Fill in the method statement.', 'error'); return; }
   const hazards = readRamsHazardBlocks();
-  if (!hazards.length) { alert('Add at least one hazard.'); return; }
+  if (!hazards.length) { toast('Add at least one hazard.', 'error'); return; }
   const operativeName = document.getElementById('ramsOperativeName').value.trim();
-  if (!operativeName) { alert('Fill in your name.'); return; }
-  if (ramsSignaturePad.isEmpty()) { alert('Sign before saving.'); return; }
+  if (!operativeName) { toast('Fill in your name.', 'error'); return; }
+  if (ramsSignaturePad.isEmpty()) { toast('Sign before saving.', 'error'); return; }
   try {
     await api(`/api/job-assignments/${currentAssignmentId}/rams`, {
       method: 'POST',
@@ -3524,9 +3553,9 @@ document.getElementById('ramsForm').addEventListener('submit', async (e) => {
     });
     closeRamsForm();
     await refreshAssignmentRams();
-    alert('RAMS saved.');
+    toast('RAMS saved.', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -3559,7 +3588,7 @@ function renderColorPicker() {
         renderColorPicker();
         renderCalendar();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
         state.userColors = await api('/api/users/colors');
         renderColorPicker();
       }
@@ -3873,7 +3902,7 @@ function renderRiskAssessments() {
         state.raLibrary = await api('/api/risk-assessments/library');
         renderRiskAssessments();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -3885,7 +3914,7 @@ function renderRiskAssessments() {
         state.raCustom = await api('/api/risk-assessments/custom');
         renderRiskAssessments();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
@@ -3902,8 +3931,8 @@ document.getElementById('raLibraryUploadForm').addEventListener('submit', async 
   e.preventDefault();
   const file = document.getElementById('raLibraryFileInput').files[0];
   const name = document.getElementById('raLibraryNameInput').value.trim();
-  if (!file) { alert('Choose a file to upload.'); return; }
-  if (!name) { alert('Give this risk assessment a name.'); return; }
+  if (!file) { toast('Choose a file to upload.', 'error'); return; }
+  if (!name) { toast('Give this risk assessment a name.', 'error'); return; }
   const formData = new FormData();
   formData.append('file', file);
   formData.append('name', name);
@@ -3918,7 +3947,7 @@ document.getElementById('raLibraryUploadForm').addEventListener('submit', async 
     state.raLibrary = await api('/api/risk-assessments/library');
     renderRiskAssessments();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -4013,8 +4042,8 @@ function openRaModal(kind, id) {
     document.getElementById('raSaveAsBtn').addEventListener('click', async () => {
       const fields = readRaEditForm();
       const name = document.getElementById('raSaveAsName').value.trim();
-      if (!name) { alert('Give the new risk assessment a name.'); return; }
-      if (!fields.currentControls.length) { alert('Add at least one current risk control.'); return; }
+      if (!name) { toast('Give the new risk assessment a name.', 'error'); return; }
+      if (!fields.currentControls.length) { toast('Add at least one current risk control.', 'error'); return; }
       try {
         const saved = await api('/api/risk-assessments/custom', {
           method: 'POST',
@@ -4022,10 +4051,10 @@ function openRaModal(kind, id) {
         });
         state.raCustom = await api('/api/risk-assessments/custom');
         renderRiskAssessments();
-        alert('Saved — you\'ll find it in the Risk Assessments list.');
+        toast('Saved — you\'ll find it in the Risk Assessments list.', 'success');
         openRaModal('custom', saved.id);
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   }
@@ -4054,15 +4083,15 @@ document.getElementById('raModalCloseBtn').addEventListener('click', closeRaModa
 
 document.getElementById('raAttachBtn').addEventListener('click', async () => {
   const jobId = document.getElementById('raAttachJobSelect').value;
-  if (!jobId) { alert('Choose a job to attach this risk assessment to.'); return; }
+  if (!jobId) { toast('Choose a job to attach this risk assessment to.', 'error'); return; }
   const kindPrefix = currentRaKind === 'generic' ? '' : `${currentRaKind}/`;
   const endpoint = `/api/jobs/${jobId}/risk-assessments/${kindPrefix}${currentRaId}/attach`;
   try {
     await api(endpoint, { method: 'POST' });
-    alert('Attached — you\'ll find it in that job\'s RAMS documents.');
+    toast('Attached — you\'ll find it in that job\'s RAMS documents.', 'success');
     closeRaModal();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   }
 });
 
@@ -4462,7 +4491,7 @@ async function loadAdminUsers() {
         });
         loadAdminUsers();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
         loadAdminUsers();
       }
     });
@@ -4478,7 +4507,7 @@ async function loadAdminUsers() {
         state.employees = await api('/api/employees');
         renderEmployees();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
         loadAdminUsers();
       }
     });
@@ -4496,7 +4525,7 @@ async function loadAdminUsers() {
         });
         loadAdminUsers();
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       }
     });
   });
