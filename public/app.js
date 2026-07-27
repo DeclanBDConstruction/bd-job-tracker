@@ -82,6 +82,7 @@ function showAuthScreen() {
   disconnectLiveUpdates();
   document.getElementById('appShell').hidden = true;
   document.getElementById('authScreen').hidden = false;
+  hideSplash();
 }
 
 // Removes the splash screen once the real bootstrap data load finishes, with a small floor
