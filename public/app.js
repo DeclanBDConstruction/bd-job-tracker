@@ -3355,10 +3355,12 @@ function renderAssignmentDetail() {
   `;
   const completeBtn = document.getElementById('assignmentCompleteBtn');
   completeBtn.textContent = a.completed ? 'Mark as Not Done' : 'Mark as Done';
-  // Un-completing is always allowed (no time-log dependency); completing requires today's
-  // arrival to already be logged, since that's what makes the on-site duration meaningful -
-  // see setJobAssignmentCompleted in db.js, which enforces this server-side regardless.
-  const canComplete = a.completed || !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+  // Un-completing is always allowed (no time-log dependency); completing otherwise requires
+  // today's arrival to already be logged, since that's what makes the on-site duration
+  // meaningful - see setJobAssignmentCompleted in db.js, which enforces this server-side
+  // regardless. Admins are exempt (they're not clocking in/out for real, unlike surveyors
+  // and operatives who are tracked the same way as anyone else on the tools).
+  const canComplete = a.completed || isAdmin() || !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
   completeBtn.disabled = !canComplete;
   completeBtn.title = canComplete ? '' : 'Clock in and mark yourself as arrived first';
 }

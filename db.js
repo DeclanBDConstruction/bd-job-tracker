@@ -593,11 +593,13 @@ async function setJobAssignmentCompleted(id, completed, user) {
   // Completing requires today's time log to already show they arrived - that's what makes
   // the "how long they were there" figure (arrivedAt -> completedAt) meaningful. Un-marking
   // (completed: false) has no time-log side effect - it's a status flag, the time log stays
-  // as a historical record of what actually happened that day.
+  // as a historical record of what actually happened that day. Admins are exempt from the
+  // arrival requirement (they're not clocked in/out for real); surveyors and operatives
+  // still need it.
   if (completed) {
     const log = await getTodayTimeLog(id);
-    if (!log || !log.arrivedAt) throw new Error('Clock in and mark yourself as arrived before completing the job');
-    if (!log.completedAt) {
+    if (user.role !== 'admin' && (!log || !log.arrivedAt)) throw new Error('Clock in and mark yourself as arrived before completing the job');
+    if (log && log.arrivedAt && !log.completedAt) {
       const now = new Date().toISOString();
       const { error: logErr } = await supabase.from('assignment_time_logs')
         .update({ completed_at: now, updated_at: now }).eq('id', log.id);
