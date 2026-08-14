@@ -1720,6 +1720,10 @@ button:disabled {
   color: var(--muted);
 }
 
+#calDayAddForm label[hidden], #myCalDayAddForm label[hidden] {
+  display: none;
+}
+
 #calDayAddForm input, #calDayAddForm select, #myCalDayAddForm input, #myCalDayAddForm select {
   font-weight: normal;
   color: var(--text);
