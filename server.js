@@ -478,7 +478,7 @@ app.delete('/api/jobs/:id', requireAdmin, handle(async (req, res) => {
 }));
 
 app.post('/api/jobs/:id/complete', handle(async (req, res) => {
-  const job = await db.completeJob(req.params.id);
+  const job = await db.completeJob(req.params.id, req.user);
   broadcast('jobs');
   res.json(job);
 }));

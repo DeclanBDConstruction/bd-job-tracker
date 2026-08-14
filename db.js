@@ -291,14 +291,19 @@ async function deleteJob(id) {
   if (!data.length) throw new Error('Job not found');
 }
 
-async function completeJob(id) {
-  const { data: docs, error: docErr } = await supabase.from('job_documents').select('category').eq('job_id', id);
-  check(docErr);
-  const counts = { rams: 0, drawings: 0, photos: 0, permit: 0 };
-  docs.forEach((d) => { counts[d.category] += 1; });
-  const missing = REQUIRED_DOCUMENT_CATEGORIES.filter((c) => counts[c] === 0);
-  if (missing.length) {
-    throw new Error(`Cannot complete job: missing ${missing.map((c) => DOCUMENT_LABELS[c]).join(', ')}. Upload these documents to the job first.`);
+async function completeJob(id, user) {
+  // Admins can close a job down without RAMS/photos on file - they're the ones who'd
+  // otherwise have to chase a surveyor to upload a missing document just to unblock
+  // completion. Surveyors still need the documents in place first.
+  if (!user || user.role !== 'admin') {
+    const { data: docs, error: docErr } = await supabase.from('job_documents').select('category').eq('job_id', id);
+    check(docErr);
+    const counts = { rams: 0, drawings: 0, photos: 0, permit: 0 };
+    docs.forEach((d) => { counts[d.category] += 1; });
+    const missing = REQUIRED_DOCUMENT_CATEGORIES.filter((c) => counts[c] === 0);
+    if (missing.length) {
+      throw new Error(`Cannot complete job: missing ${missing.map((c) => DOCUMENT_LABELS[c]).join(', ')}. Upload these documents to the job first.`);
+    }
   }
   const { data, error } = await supabase.from('jobs')
     .update({ completed_at: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() })
@@ -593,13 +598,11 @@ async function setJobAssignmentCompleted(id, completed, user) {
   // Completing requires today's time log to already show they arrived - that's what makes
   // the "how long they were there" figure (arrivedAt -> completedAt) meaningful. Un-marking
   // (completed: false) has no time-log side effect - it's a status flag, the time log stays
-  // as a historical record of what actually happened that day. Admins are exempt from the
-  // arrival requirement (they're not clocked in/out for real); surveyors and operatives
-  // still need it.
+  // as a historical record of what actually happened that day.
   if (completed) {
     const log = await getTodayTimeLog(id);
-    if (user.role !== 'admin' && (!log || !log.arrivedAt)) throw new Error('Clock in and mark yourself as arrived before completing the job');
-    if (log && log.arrivedAt && !log.completedAt) {
+    if (!log || !log.arrivedAt) throw new Error('Clock in and mark yourself as arrived before completing the job');
+    if (!log.completedAt) {
       const now = new Date().toISOString();
       const { error: logErr } = await supabase.from('assignment_time_logs')
         .update({ completed_at: now, updated_at: now }).eq('id', log.id);
