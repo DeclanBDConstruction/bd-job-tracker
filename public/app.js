@@ -3100,15 +3100,23 @@ function createCalendarView({ scope, ids }) {
       const ds = calDateStr(viewYear, viewMonth, d);
       const dayEvents = eventsOnDate(ds);
       const isToday = ds === todayStr;
-      const chips = dayEvents.slice(0, MAX_CHIPS).map((e) => e.isAssignment
+      // Holidays get folded into a single summary chip rather than one chip per person -
+      // with ~20 staff, everyone booking leave on the same day would otherwise bury the
+      // actual jobs/meetings behind a wall of "+N more".
+      const holidayEvents = dayEvents.filter((e) => e.isHoliday);
+      const otherEvents = dayEvents.filter((e) => !e.isHoliday);
+      const chips = otherEvents.slice(0, MAX_CHIPS).map((e) => e.isAssignment
         ? `<div class="cal-chip cal-chip-assignment" title="${escapeHtml(e.title)} (${e.completed ? 'Done' : 'Pending'})">${escapeHtml(truncate(e.title, 20))}</div>`
-        : `<div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${e.isHoliday ? '🏖 ' : ''}${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>`
+        : `<div class="cal-chip" style="background:${userColor(e)}" title="${escapeHtml(e.userName)}: ${escapeHtml(e.title)} (${formatWhen(e)})">${scope === 'private' ? escapeHtml(truncate(e.title, 20)) : `${escapeHtml(e.userName)}: ${escapeHtml(truncate(e.title, 16))}`}</div>`
       ).join('');
-      const more = dayEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${dayEvents.length - MAX_CHIPS} more</div>` : '';
+      const more = otherEvents.length > MAX_CHIPS ? `<div class="cal-chip-more">+${otherEvents.length - MAX_CHIPS} more</div>` : '';
+      const holidayChip = holidayEvents.length === 0 ? '' : holidayEvents.length === 1
+        ? `<div class="cal-chip cal-chip-holiday" title="${escapeHtml(holidayEvents[0].userName)}: ${escapeHtml(holidayEvents[0].title)}">🏖 ${scope === 'private' ? escapeHtml(truncate(holidayEvents[0].title, 20)) : escapeHtml(holidayEvents[0].userName)}</div>`
+        : `<div class="cal-chip cal-chip-holiday" title="${escapeHtml(holidayEvents.map((e) => e.userName).join(', '))}">🏖 ${holidayEvents.length} on holiday</div>`;
       return `
         <div class="cal-cell${isToday ? ' cal-cell-today' : ''}" data-date="${ds}" role="button" tabindex="0" aria-label="${ds}${isToday ? ', today' : ''}">
           <div class="cal-cell-date">${d}${isToday ? '<span class="cal-today-badge">Today</span>' : ''}</div>
-          <div class="cal-cell-events">${chips}${more}</div>
+          <div class="cal-cell-events">${holidayChip}${chips}${more}</div>
         </div>
       `;
     }).join('');
@@ -3222,14 +3230,14 @@ function createCalendarView({ scope, ids }) {
   // hides the "When" picker entirely and forces it to "days" rather than asking. Admins
   // additionally get a "Holiday for" picker to log one on someone else's behalf.
   function syncHolidayFields() {
-    const isHoliday = document.getElementById(ids.holidayCheck).checked;
+    const isHoliday = document.getElementById(ids.typeSelect).value === 'holiday';
     const kindSelect = document.getElementById(ids.kind);
     kindSelect.closest('label').hidden = isHoliday;
     if (isHoliday) kindSelect.value = 'days';
     syncKindFields();
     document.getElementById(ids.holidayForWrap).hidden = !isHoliday || !isAdmin();
   }
-  document.getElementById(ids.holidayCheck).addEventListener('change', syncHolidayFields);
+  document.getElementById(ids.typeSelect).addEventListener('change', syncHolidayFields);
 
   document.getElementById(ids.addCancelBtn).addEventListener('click', () => {
     document.getElementById(ids.addForm).reset();
@@ -3240,7 +3248,7 @@ function createCalendarView({ scope, ids }) {
 
   document.getElementById(ids.addForm).addEventListener('submit', async (e) => {
     e.preventDefault();
-    const isHoliday = document.getElementById(ids.holidayCheck).checked;
+    const isHoliday = document.getElementById(ids.typeSelect).value === 'holiday';
     const kind = isHoliday ? 'days' : document.getElementById(ids.kind).value;
     const payload = {
       date: selectedDate,
@@ -3289,7 +3297,7 @@ const teamCalendar = createCalendarView({
     kind: 'calDayAddKind', timeFields: 'calDayAddTimeFields', daysFields: 'calDayAddDaysFields',
     addStartTime: 'calDayAddStartTime', addEndTime: 'calDayAddEndTime',
     addDurationValue: 'calDayAddDurationValue', addCancelBtn: 'calDayAddCancelBtn',
-    holidayCheck: 'calDayAddHoliday', holidayForWrap: 'calDayAddHolidayForWrap', holidayFor: 'calDayAddHolidayFor',
+    typeSelect: 'calDayAddType', holidayForWrap: 'calDayAddHolidayForWrap', holidayFor: 'calDayAddHolidayFor',
   },
 });
 
@@ -3302,7 +3310,7 @@ const myCalendar = createCalendarView({
     kind: 'myCalDayAddKind', timeFields: 'myCalDayAddTimeFields', daysFields: 'myCalDayAddDaysFields',
     addStartTime: 'myCalDayAddStartTime', addEndTime: 'myCalDayAddEndTime',
     addDurationValue: 'myCalDayAddDurationValue', addCancelBtn: 'myCalDayAddCancelBtn',
-    holidayCheck: 'myCalDayAddHoliday', holidayForWrap: 'myCalDayAddHolidayForWrap', holidayFor: 'myCalDayAddHolidayFor',
+    typeSelect: 'myCalDayAddType', holidayForWrap: 'myCalDayAddHolidayForWrap', holidayFor: 'myCalDayAddHolidayFor',
   },
 });
 

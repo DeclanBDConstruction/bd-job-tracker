@@ -734,7 +734,12 @@
     <button type="button" id="calDayAddBtn">+ Add</button>
     <form id="calDayAddForm" hidden>
       <label>What are you doing? *<input type="text" id="calDayAddTitle" required placeholder="e.g. Site visit – Beehive Carlisle"></label>
-      <label class="assign-team-checkbox-item"><input type="checkbox" id="calDayAddHoliday"> This is a holiday (all day, visible to the whole team)</label>
+      <label>What are you booking? *
+        <select id="calDayAddType">
+          <option value="event">Meeting / task</option>
+          <option value="holiday">Holiday</option>
+        </select>
+      </label>
       <label id="calDayAddHolidayForWrap" hidden>Holiday for
         <select id="calDayAddHolidayFor"><option value="">Myself</option></select>
       </label>
@@ -781,7 +786,12 @@
     <button type="button" id="myCalDayAddBtn">+ Add</button>
     <form id="myCalDayAddForm" hidden>
       <label>What are you doing? *<input type="text" id="myCalDayAddTitle" required placeholder="e.g. Dentist appointment"></label>
-      <label class="assign-team-checkbox-item"><input type="checkbox" id="myCalDayAddHoliday"> This is a holiday (all day, visible to the whole team)</label>
+      <label>What are you booking? *
+        <select id="myCalDayAddType">
+          <option value="event">Meeting / task</option>
+          <option value="holiday">Holiday</option>
+        </select>
+      </label>
       <label id="myCalDayAddHolidayForWrap" hidden>Holiday for
         <select id="myCalDayAddHolidayFor"><option value="">Myself</option></select>
       </label>

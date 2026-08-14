@@ -1651,6 +1651,12 @@ button:disabled {
   border: 1px dashed rgba(255, 255, 255, 0.8);
 }
 
+/* Holidays share one summary chip per day (see render() in app.js) rather than the
+   per-person colour used for ordinary entries, so it needs its own fixed look. */
+.cal-chip-holiday {
+  background: #c9722b;
+}
+
 .cal-day-event-assignment {
   border-left: 3px solid var(--blue-dark);
 }
