@@ -467,7 +467,21 @@ async function listMyJobAssignments(user) {
   check(error);
   const rows = data.map(rowToJobAssignment);
   await attachJobAssignmentContext(rows);
+  await attachTodayTimeLog(rows);
   return rows;
+}
+
+// One batched query for today's clock-in status across every assignment, rather than a
+// per-assignment round trip - lets the Home dashboard offer a direct "Clock In" button
+// without needing to open each assignment's detail modal first.
+async function attachTodayTimeLog(assignments) {
+  if (!assignments.length) return assignments;
+  const { data, error } = await supabase.from('assignment_time_logs').select('*')
+    .in('assignment_id', assignments.map((a) => a.id)).eq('log_date', timeLogDateStr());
+  check(error);
+  const logByAssignment = Object.fromEntries(data.map((row) => [row.assignment_id, rowToTimeLog(row)]));
+  assignments.forEach((a) => { a.todayTimeLog = logByAssignment[a.id] || null; });
+  return assignments;
 }
 
 // Every assignment against one job, regardless of which operative - used by the Jobs tab's

@@ -3340,8 +3340,7 @@ async function openAssignmentDetail(id) {
   renderAssignmentTimeLog();
   renderAssignmentRamsStatus();
   document.getElementById('assignmentDetailModal').hidden = false;
-  await refreshAssignmentTimeLog();
-  await refreshAssignmentRams();
+  await Promise.all([refreshAssignmentTimeLog(), refreshAssignmentRams()]);
 }
 
 function renderAssignmentDetail() {
@@ -3673,6 +3672,46 @@ let ramsHazardBlocks = [];
 let ramsLocalIdSeq = 0;
 let ramsFormLocked = false;
 
+// Filling this form out (per-hazard controls, L/C ratings, PPE, method statement, signature)
+// takes several minutes of one-thumb typing on site, and Close/Cancel used to discard it
+// outright with no warning. Rather than add a confirm-to-discard prompt, we just keep it
+// saved locally as they type and restore it next time they open the form for this
+// assignment - so an accidental tap, dropped signal, or closed tab never loses the work.
+function ramsDraftKey(assignmentId) {
+  return `ramsDraft:${assignmentId}`;
+}
+
+function saveRamsDraft() {
+  if (ramsFormLocked || !currentAssignmentId) return;
+  const draft = {
+    methodStatement: document.getElementById('ramsMethodStatement').value,
+    operativeName: document.getElementById('ramsOperativeName').value,
+    hazards: readRamsHazardBlocks(),
+  };
+  try {
+    localStorage.setItem(ramsDraftKey(currentAssignmentId), JSON.stringify(draft));
+  } catch {
+    // localStorage unavailable/full - autosave is a convenience, not a hard requirement
+  }
+}
+
+function loadRamsDraft(assignmentId) {
+  try {
+    const raw = localStorage.getItem(ramsDraftKey(assignmentId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearRamsDraft(assignmentId) {
+  try {
+    localStorage.removeItem(ramsDraftKey(assignmentId));
+  } catch {
+    // ignore
+  }
+}
+
 function ramsHazardBlockHtml(h) {
   return `
     <div class="rams-hazard-block" data-local-id="${h.localId}">
@@ -3732,6 +3771,7 @@ function renderRamsHazardBlocks() {
     btn.addEventListener('click', () => {
       ramsHazardBlocks = ramsHazardBlocks.filter((h) => h.localId !== btn.dataset.localId);
       renderRamsHazardBlocks();
+      saveRamsDraft();
     });
   });
   // Pure DOM toggle, deliberately not a re-render - re-rendering would rebuild every block's
@@ -3791,7 +3831,12 @@ document.getElementById('ramsAddHazardBtn').addEventListener('click', () => {
   });
   picker.value = '';
   renderRamsHazardBlocks();
+  saveRamsDraft();
 });
+
+// Delegated so it covers every hazard block's fields (re-rendered per add/remove) plus the
+// method statement and name, without wiring a listener to each one individually.
+document.getElementById('ramsForm').addEventListener('input', saveRamsDraft);
 
 document.getElementById('assignmentRamsBtn').addEventListener('click', () => {
   const a = findMyAssignment(currentAssignmentId);
@@ -3810,6 +3855,16 @@ document.getElementById('assignmentRamsBtn').addEventListener('click', () => {
     document.getElementById('ramsOperativeName').value = state.currentUser.name || '';
     ramsHazardBlocks = [];
   }
+
+  // An unsaved draft (see saveRamsDraft) always wins over the last-submitted server copy -
+  // it can only exist if they typed something after that, so it's the more recent state.
+  const draft = ramsFormLocked ? null : loadRamsDraft(currentAssignmentId);
+  if (draft) {
+    document.getElementById('ramsMethodStatement').value = draft.methodStatement;
+    document.getElementById('ramsOperativeName').value = draft.operativeName;
+    ramsHazardBlocks = draft.hazards.map((h) => ({ localId: String(ramsLocalIdSeq++), ...h }));
+  }
+
   renderRamsHazardBlocks();
   ramsSignaturePad.clear();
 
@@ -3852,6 +3907,7 @@ document.getElementById('ramsForm').addEventListener('submit', async (e) => {
         signatureImage: ramsSignaturePad.toDataUrl(),
       }),
     });
+    clearRamsDraft(currentAssignmentId);
     closeRamsForm();
     await refreshAssignmentRams();
     toast('RAMS saved.', 'success');
@@ -4057,6 +4113,9 @@ function renderHomeDashboard() {
   container.querySelectorAll('[data-assignment]').forEach((btn) => {
     btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
   });
+  container.querySelectorAll('[data-quick-clockin]').forEach((btn) => {
+    btn.addEventListener('click', () => quickClockIn(btn.dataset.quickClockin));
+  });
 }
 
 // Shared "Your Assignments" dashboard card - lists every one of the user's own current
@@ -4088,6 +4147,9 @@ function renderOperativeHomeDashboard(container) {
   container.querySelectorAll('[data-assignment]').forEach((btn) => {
     btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
   });
+  container.querySelectorAll('[data-quick-clockin]').forEach((btn) => {
+    btn.addEventListener('click', () => quickClockIn(btn.dataset.quickClockin));
+  });
 }
 
 // ---------- My Assignments (operative-only tab) ----------
@@ -4096,15 +4158,35 @@ function renderOperativeHomeDashboard(container) {
 // they mark it done via the assignment detail modal (see assignmentCompleteBtn above).
 
 function assignmentRowHtml(a, todayStr) {
+  const clockedInToday = !!(a.todayTimeLog && a.todayTimeLog.clockInAt);
+  // Clock-in has no RAMS dependency (only "Mark Arrived" does, see runTimeLogAction/db.js
+  // markArrived) so it's safe to offer as a single tap right here, rather than making this
+  // the most-repeated action of the day always cost a trip through the detail modal.
+  const canQuickClockIn = !a.completed && !clockedInToday && todayStr >= a.startDate && todayStr <= a.endDate;
   return `
     <li>
       <div class="home-rams-info">
         <strong>${escapeHtml(a.jobReference || a.jobClient)}${a.jobLocation ? ' — ' + escapeHtml(a.jobLocation) : ''}</strong>
-        <span class="home-rams-date">${escapeHtml(a.task)} · ${a.startDate < todayStr ? 'Started ' : 'Starts '}${a.startDate} · ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span>
+        <span class="home-rams-date">${escapeHtml(a.task)} · ${a.startDate < todayStr ? 'Started ' : 'Starts '}${a.startDate} · ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}${clockedInToday ? ' · Clocked in' : ''}</span>
       </div>
-      <button type="button" class="home-rams-btn" data-assignment="${a.id}">View</button>
+      <div class="home-rams-actions">
+        ${canQuickClockIn ? `<button type="button" class="primary home-rams-btn" data-quick-clockin="${a.id}">Clock In</button>` : ''}
+        <button type="button" class="home-rams-btn" data-assignment="${a.id}">View</button>
+      </div>
     </li>
   `;
+}
+
+async function quickClockIn(id) {
+  try {
+    await api(`/api/job-assignments/${id}/time/clock-in`, { method: 'POST' });
+    state.myAssignments = await api('/api/job-assignments/mine');
+    renderHomeDashboard();
+    renderMyAssignmentsTab();
+    toast('Clocked in.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 function renderMyAssignmentsTab() {
@@ -4129,6 +4211,9 @@ function renderMyAssignmentsTab() {
   [currentList, pastList].forEach((list) => {
     list.querySelectorAll('[data-assignment]').forEach((btn) => {
       btn.addEventListener('click', () => openAssignmentDetail(btn.dataset.assignment));
+    });
+    list.querySelectorAll('[data-quick-clockin]').forEach((btn) => {
+      btn.addEventListener('click', () => quickClockIn(btn.dataset.quickClockin));
     });
   });
 }

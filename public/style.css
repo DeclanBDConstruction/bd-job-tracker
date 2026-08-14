@@ -1346,6 +1346,12 @@ button:disabled {
   font-size: 12px;
 }
 
+.home-rams-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .home-hero {
   text-align: center;
   padding: 30px 20px 40px;
