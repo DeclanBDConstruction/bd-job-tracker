@@ -644,9 +644,23 @@
     </div>
 
     <div id="cadEditorView" class="cad-editor" hidden>
-      <div class="cad-toolbar">
-        <button type="button" id="cadBackBtn" class="link-btn">&larr; Back to list</button>
+      <div class="cad-toolbar-row cad-toolbar-row-top">
+        <button type="button" id="cadBackBtn" class="cad-back-btn">&larr; Back to list</button>
         <input type="text" id="cadNameInput" class="cad-name-input" placeholder="Drawing name">
+        <span id="cadSaveStatus" class="cad-save-status">Saved</span>
+        <div class="cad-tool-group cad-export-group">
+          <button type="button" id="cadSaveBtn" class="upload-btn">Save</button>
+          <div class="tab-group cad-export-menu">
+            <button type="button" class="tab-group-btn cad-export-btn">Export &#9662;</button>
+            <div class="tab-group-menu">
+              <a id="cadExportDxfLink" href="#" download>DXF</a>
+              <a id="cadExportPdfLink" href="#" download>PDF</a>
+              <button type="button" id="cadExportPngBtn">PNG</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cad-toolbar-row cad-toolbar-row-tools">
         <div class="cad-tool-group" id="cadToolGroup">
           <button type="button" class="cad-tool-btn active" data-tool="select" title="Select (Esc)">Select</button>
           <button type="button" class="cad-tool-btn" data-tool="pan" title="Pan">Pan</button>
@@ -658,24 +672,16 @@
           <button type="button" class="cad-tool-btn" data-tool="text" title="Text">Text</button>
           <button type="button" class="cad-tool-btn" data-tool="dimension" title="Linear dimension">Dimension</button>
         </div>
+        <span class="cad-toolbar-divider"></span>
         <div class="cad-tool-group">
-          <button type="button" id="cadUndoBtn" class="link-btn" title="Undo (Ctrl+Z)">Undo</button>
-          <button type="button" id="cadRedoBtn" class="link-btn" title="Redo (Ctrl+Y)">Redo</button>
-          <button type="button" id="cadZoomExtentsBtn" class="link-btn" title="Zoom to fit">Zoom Extents</button>
+          <button type="button" id="cadUndoBtn" class="cad-tool-btn" title="Undo (Ctrl+Z)">Undo</button>
+          <button type="button" id="cadRedoBtn" class="cad-tool-btn" title="Redo (Ctrl+Y)">Redo</button>
+          <button type="button" id="cadZoomExtentsBtn" class="cad-tool-btn" title="Zoom to fit">Zoom Extents</button>
+        </div>
+        <span class="cad-toolbar-divider"></span>
+        <div class="cad-tool-group">
           <label class="cad-snap-toggle"><input type="checkbox" id="cadGridSnapToggle" checked> Grid Snap</label>
           <label class="cad-snap-toggle"><input type="checkbox" id="cadObjectSnapToggle" checked> Object Snap</label>
-        </div>
-        <span id="cadSaveStatus" class="cad-save-status">Saved</span>
-        <div class="cad-tool-group cad-export-group">
-          <button type="button" id="cadSaveBtn" class="upload-btn">Save</button>
-          <div class="tab-group cad-export-menu">
-            <button type="button" class="tab-group-btn">Export &#9662;</button>
-            <div class="tab-group-menu">
-              <a id="cadExportDxfLink" href="#" download>DXF</a>
-              <a id="cadExportPdfLink" href="#" download>PDF</a>
-              <button type="button" id="cadExportPngBtn">PNG</button>
-            </div>
-          </div>
         </div>
       </div>
       <div class="cad-body">

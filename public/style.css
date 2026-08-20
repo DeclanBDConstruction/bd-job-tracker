@@ -2943,21 +2943,49 @@ button:disabled {
   flex-direction: column;
 }
 
-.cad-toolbar {
+/* Two fixed rows (top action bar + tool ribbon) rather than one big flex-wrap bag - a
+   drawing editor has too many controls to fit on one line at any reasonable width, and
+   letting them wrap unpredictably read as "uneven" rather than intentional. */
+.cad-toolbar-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow);
   flex: 0 0 auto;
 }
+
+.cad-toolbar-row-top {
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.cad-toolbar-row-tools {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.cad-back-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--blue);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cad-back-btn:hover { color: var(--blue-dark); }
 
 .cad-name-input {
   font-weight: 600;
   min-width: 160px;
   max-width: 260px;
+}
+
+.cad-toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
 }
 
 .cad-tool-group {
@@ -3003,14 +3031,26 @@ button:disabled {
   white-space: nowrap;
 }
 
-.cad-export-group { position: relative; }
+.cad-export-group { position: relative; display: flex; align-items: center; gap: var(--space-2); }
 
-.cad-export-menu .tab-group-btn {
+/* Reuses the top-nav's .tab-group/.tab-group-btn dropdown mechanics (same open/close JS in
+   app.js) but that base style is white text for the dark nav bar - explicitly overridden
+   here for a white background, since without a color override it was invisible. */
+.cad-export-btn.tab-group-btn {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: white;
+  color: var(--text);
   padding: 8px 14px;
   font-size: var(--font-sm);
+  font-weight: 500;
+}
+.cad-export-btn.tab-group-btn:hover,
+.cad-export-btn.tab-group-btn.active {
+  background: var(--blue-light);
+  color: var(--blue-dark);
+  box-shadow: none;
+  transform: none;
 }
 
 .cad-export-menu .tab-group-menu a,
@@ -3127,5 +3167,6 @@ button:disabled {
 
 @media (max-width: 900px) {
   .cad-side-panel { flex-basis: 200px; }
-  .cad-toolbar { gap: var(--space-2); }
+  .cad-toolbar-row { gap: var(--space-2); }
+  .cad-toolbar-divider { display: none; }
 }

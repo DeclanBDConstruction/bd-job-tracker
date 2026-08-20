@@ -1312,6 +1312,13 @@ function cadZoomExtents() {
 document.getElementById('cadZoomExtentsBtn').addEventListener('click', cadZoomExtents);
 
 // ---------- Pan + zoom interaction ----------
+// Pointer Events (not mouse-only events) so this works the same for mouse, touch and pen -
+// a plain mousedown/mouseup pair never fires for a tap on a touchscreen once the canvas has
+// `touch-action: none` (needed to stop the page itself panning/zooming while drawing), so
+// mouse-only handling here would leave the whole tool unresponsive on any touch device.
+// setPointerCapture keeps every event for a gesture routed to the canvas even if the pointer
+// strays outside it mid-drag, so everything lives on one element instead of split
+// canvas/window listeners.
 
 (function setupCadCanvasInteraction() {
   const canvas = document.getElementById('cadCanvas');
@@ -1338,12 +1345,13 @@ document.getElementById('cadZoomExtentsBtn').addEventListener('click', cadZoomEx
     canvas.style.cursor = cadState.tool === 'pan' ? 'grab' : (cadState.tool === 'select' ? 'default' : 'crosshair');
   }
 
-  let cadMouseDownPos = null;
+  let cadPointerDownPos = null;
 
-  canvas.addEventListener('mousedown', (e) => {
-    if (!cadState.current) return;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!cadState.current || !e.isPrimary) return;
     if (shouldPan(e)) {
       e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
       cadState.panDrag = { startScreenX: e.clientX, startScreenY: e.clientY, startPanX: cadState.view.panX, startPanY: cadState.view.panY };
       canvas.style.cursor = 'grabbing';
       return;
@@ -1351,6 +1359,7 @@ document.getElementById('cadZoomExtentsBtn').addEventListener('click', cadZoomEx
     if (e.button !== 0) return;
 
     if (cadState.tool === 'select') {
+      canvas.setPointerCapture(e.pointerId);
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       const hit = cadFindEntityAt(sx, sy);
@@ -1375,26 +1384,22 @@ document.getElementById('cadZoomExtentsBtn').addEventListener('click', cadZoomEx
       return;
     }
 
-    cadMouseDownPos = { x: e.clientX, y: e.clientY };
+    canvas.setPointerCapture(e.pointerId);
+    cadPointerDownPos = { x: e.clientX, y: e.clientY };
   });
 
-  // Cursor/snap tracking, live tool-preview - separate from the pan drag above (window-level
-  // so panning stays smooth even if the cursor leaves the canvas mid-drag).
-  canvas.addEventListener('mousemove', (e) => {
-    if (!cadState.current || cadState.panDrag) return;
-    const rect = canvas.getBoundingClientRect();
-    cadCursorPoint = cadComputeCursorPoint(e.clientX - rect.left, e.clientY - rect.top);
-    if (isCadDrawTool(cadState.tool)) cadRender();
-  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!cadState.current) return;
 
-  window.addEventListener('mousemove', (e) => {
     if (cadState.panDrag) {
       cadState.view.panX = cadState.panDrag.startPanX + (e.clientX - cadState.panDrag.startScreenX);
       cadState.view.panY = cadState.panDrag.startPanY + (e.clientY - cadState.panDrag.startScreenY);
       cadRender();
       return;
     }
+
     const rect = canvas.getBoundingClientRect();
+
     if (cadMoveDrag) {
       const world = cadScreenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const dx = world.x - cadMoveDrag.anchor.x, dy = world.y - cadMoveDrag.anchor.y;
@@ -1406,21 +1411,27 @@ document.getElementById('cadZoomExtentsBtn').addEventListener('click', cadZoomEx
       cadRender();
       return;
     }
+
     if (cadMarquee) {
       cadMarquee.x2 = e.clientX - rect.left;
       cadMarquee.y2 = e.clientY - rect.top;
       cadRender();
+      return;
     }
+
+    // Cursor/snap tracking + live tool-preview.
+    cadCursorPoint = cadComputeCursorPoint(e.clientX - rect.left, e.clientY - rect.top);
+    if (isCadDrawTool(cadState.tool)) cadRender();
   });
 
-  // A left-click that didn't move (beyond a small jitter tolerance) commits a draw-tool
+  // A tap/click that didn't move (beyond a small jitter tolerance) commits a draw-tool
   // point; one that did was a pan/select-drag, not a click. Deliberately not using the
   // native 'click' event, since that alone can't tell those two apart.
-  window.addEventListener('mouseup', (e) => {
+  function finishPointer(e) {
     if (cadState.panDrag) {
       cadState.panDrag = null;
       restCursor();
-      cadMouseDownPos = null;
+      cadPointerDownPos = null;
       return;
     }
 
@@ -1447,14 +1458,31 @@ document.getElementById('cadZoomExtentsBtn').addEventListener('click', cadZoomEx
       return;
     }
 
-    if (e.button !== 0 || !cadMouseDownPos) return;
-    const moved = Math.hypot(e.clientX - cadMouseDownPos.x, e.clientY - cadMouseDownPos.y) > 3;
-    cadMouseDownPos = null;
+    if (e.button !== 0 || !cadPointerDownPos) return;
+    const moved = Math.hypot(e.clientX - cadPointerDownPos.x, e.clientY - cadPointerDownPos.y) > 3;
+    cadPointerDownPos = null;
     if (moved || !cadState.current || !isCadDrawTool(cadState.tool)) return;
     const rect = canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     if (sx < 0 || sy < 0 || sx > rect.width || sy > rect.height) return;
     cadHandleDrawClick(cadComputeCursorPoint(sx, sy));
+  }
+
+  canvas.addEventListener('pointerup', (e) => {
+    if (!e.isPrimary) return;
+    finishPointer(e);
+  });
+  // A touch gesture (or pen) can be cancelled by the browser mid-interaction (e.g. an
+  // incoming call, a system gesture) - clean up the same as a normal release rather than
+  // leaving a stale drag/marquee behind with nothing left listening to end it.
+  canvas.addEventListener('pointercancel', (e) => {
+    if (!e.isPrimary) return;
+    cadState.panDrag = null;
+    cadMoveDrag = null;
+    cadMarquee = null;
+    cadPointerDownPos = null;
+    restCursor();
+    cadRender();
   });
 
   canvas.addEventListener('dblclick', () => {
