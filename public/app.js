@@ -107,6 +107,7 @@ async function showApp(user) {
   document.querySelector('.topbar h1 .brand-sub').classList.add('animate-in');
 
   document.getElementById('adminTabBtn').hidden = !isAdmin();
+  document.getElementById('cadTabBtn').hidden = !(isAdmin() || isSurveyor());
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('vehicleHireTabBtn').hidden = !isAdmin();
@@ -434,6 +435,11 @@ function goToTab(tab) {
     loadDiary();
   }
   if (tab === 'minigame') loadMinigame();
+  if (tab === 'cad') {
+    document.getElementById('cadGridEmpty').hidden = true;
+    showTabLoading('#cadGrid');
+    loadCadDrawings();
+  }
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {

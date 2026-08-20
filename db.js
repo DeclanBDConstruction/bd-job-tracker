@@ -886,6 +886,105 @@ async function deleteSavedRiskAssessment(id) {
   return ra;
 }
 
+// ---------- CAD Drawings ----------
+// Admin/surveyor-only 2D drafting tool. Unlike the library tables above, the drawing itself
+// (geometry, layers, dimensions) is stored as JSON in scene_data so it can be reopened and
+// edited, not just downloaded - see public/cad.js for the shape of that JSON.
+
+function rowToCadDrawing(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    jobId: row.job_id || null,
+    sceneData: row.scene_data || {},
+    thumbnailStoredName: row.thumbnail_stored_name || null,
+    createdBy: row.created_by || '',
+    updatedBy: row.updated_by || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Summary rows (used by the list view) deliberately omit scene_data - a drawing's full
+// geometry can be sizeable, and the list only ever needs the metadata to render its cards.
+function rowToCadDrawingSummary(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    jobId: row.job_id || null,
+    thumbnailStoredName: row.thumbnail_stored_name || null,
+    createdBy: row.created_by || '',
+    updatedBy: row.updated_by || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listCadDrawings() {
+  const { data, error } = await supabase
+    .from('cad_drawings')
+    .select('id, name, job_id, thumbnail_stored_name, created_by, updated_by, created_at, updated_at')
+    .order('updated_at', { ascending: false });
+  check(error);
+  return data.map(rowToCadDrawingSummary);
+}
+
+async function getCadDrawing(id) {
+  const { data, error } = await supabase.from('cad_drawings').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToCadDrawing(data) : null;
+}
+
+async function addCadDrawing({ name, sceneData, createdBy }) {
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) throw new Error('Name is required');
+  const row = {
+    id: genId(),
+    name: trimmedName,
+    scene_data: sceneData || {},
+    created_by: createdBy || null,
+    updated_by: createdBy || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('cad_drawings').insert(row).select().single();
+  check(error);
+  return rowToCadDrawing(data);
+}
+
+async function updateCadDrawing(id, { name, sceneData, updatedBy }) {
+  const patch = { updated_by: updatedBy || null, updated_at: new Date().toISOString() };
+  if (name !== undefined) {
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) throw new Error('Name is required');
+    patch.name = trimmedName;
+  }
+  if (sceneData !== undefined) patch.scene_data = sceneData;
+  const { data, error } = await supabase.from('cad_drawings').update(patch).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) return null;
+  return rowToCadDrawing(data);
+}
+
+async function setCadDrawingThumbnail(id, storedName) {
+  const { data, error } = await supabase
+    .from('cad_drawings')
+    .update({ thumbnail_stored_name: storedName })
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+  check(error);
+  return data ? rowToCadDrawing(data) : null;
+}
+
+async function deleteCadDrawing(id) {
+  const drawing = await getCadDrawing(id);
+  if (!drawing) return null;
+  const { error } = await supabase.from('cad_drawings').delete().eq('id', id);
+  check(error);
+  return drawing;
+}
+
 // ---------- Custom Risk Assessments (edited "Save As" copies) ----------
 // Staff can open any risk assessment (a generic in-code template or another custom one),
 // edit it, and "Save As" a new copy here - never overwrites the original, so the in-code
@@ -2388,6 +2487,12 @@ module.exports = {
   getSavedRiskAssessment,
   addSavedRiskAssessment,
   deleteSavedRiskAssessment,
+  listCadDrawings,
+  getCadDrawing,
+  addCadDrawing,
+  updateCadDrawing,
+  setCadDrawingThumbnail,
+  deleteCadDrawing,
   listCustomRiskAssessments,
   getCustomRiskAssessment,
   createCustomRiskAssessment,

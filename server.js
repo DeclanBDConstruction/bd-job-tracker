@@ -8,6 +8,8 @@ const db = require('./db');
 const importer = require('./import');
 const riskAssessments = require('./riskAssessments');
 const permitPdf = require('./permitPdf');
+const cadDxf = require('./cadDxf');
+const cadPdf = require('./cadPdf');
 const { supabase, DOCUMENTS_BUCKET } = require('./supabaseClient');
 
 const app = express();
@@ -106,6 +108,12 @@ function libraryStoragePath(storedName) {
 // Signed subcontractor forms live under this fixed prefix in the same bucket.
 function subbyFormStoragePath(storedName) {
   return `_library/subbies/${storedName}`;
+}
+
+// CAD drawing thumbnails (the drawing itself lives in Postgres as JSON - see db.js) live
+// under this fixed prefix in the same bucket.
+function cadDrawingStoragePath(storedName) {
+  return `_library/cad/${storedName}`;
 }
 
 function makeStoredName(originalName) {
@@ -244,6 +252,13 @@ app.use('/api', async (req, res, next) => {
 
 function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+  next();
+}
+
+// The CAD section is a surveyor tool as much as an admin one - unlike most admin-gated
+// features, surveyors need full read/write here, not just view.
+function requireAdminOrSurveyor(req, res, next) {
+  if (!['admin', 'surveyor'].includes(req.user.role)) return res.status(403).json({ error: 'Admins and surveyors only' });
   next();
 }
 
@@ -1051,6 +1066,98 @@ app.post('/api/jobs/:id/risk-assessments/custom/:raId/attach', handle(async (req
   });
   broadcast('jobs');
   res.status(201).json(doc);
+}));
+
+// ---------- CAD Drawings ----------
+// Standalone 2D drafting tool for admins/surveyors (floor plans, elevations, dimensioned
+// site layouts) - see public/cad.js for the editor and scripts/supabase-schema.sql for the
+// scene_data JSON shape. Every route here is admin/surveyor only; delete is admin-only,
+// matching how the saved-risk-assessments library treats delete as more sensitive than
+// create/read/update.
+
+app.get('/api/cad-drawings', requireAdminOrSurveyor, handle(async (req, res) => {
+  res.json(await db.listCadDrawings());
+}));
+
+app.get('/api/cad-drawings/:id', requireAdminOrSurveyor, handle(async (req, res) => {
+  const drawing = await db.getCadDrawing(req.params.id);
+  if (!drawing) return res.status(404).json({ error: 'Drawing not found' });
+  res.json(drawing);
+}));
+
+app.post('/api/cad-drawings', requireAdminOrSurveyor, handle(async (req, res) => {
+  const drawing = await db.addCadDrawing({
+    name: req.body.name,
+    sceneData: req.body.sceneData,
+    createdBy: req.user.name,
+  });
+  res.status(201).json(drawing);
+}));
+
+app.put('/api/cad-drawings/:id', requireAdminOrSurveyor, handle(async (req, res) => {
+  const drawing = await db.updateCadDrawing(req.params.id, {
+    name: req.body.name,
+    sceneData: req.body.sceneData,
+    updatedBy: req.user.name,
+  });
+  if (!drawing) return res.status(404).json({ error: 'Drawing not found' });
+  res.json(drawing);
+}));
+
+app.delete('/api/cad-drawings/:id', requireAdmin, handle(async (req, res) => {
+  const drawing = await db.deleteCadDrawing(req.params.id);
+  if (!drawing) return res.status(404).json({ error: 'Drawing not found' });
+  if (drawing.thumbnailStoredName) {
+    await supabase.storage.from(DOCUMENTS_BUCKET).remove([cadDrawingStoragePath(drawing.thumbnailStoredName)]);
+  }
+  res.status(204).end();
+}));
+
+app.post('/api/cad-drawings/:id/thumbnail', requireAdminOrSurveyor, uploadImage.single('file'), handle(async (req, res) => {
+  if (!req.file) throw new Error('No file uploaded');
+  const drawing = await db.getCadDrawing(req.params.id);
+  if (!drawing) return res.status(404).json({ error: 'Drawing not found' });
+  const storedName = makeStoredName('thumbnail.png');
+  const { error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(cadDrawingStoragePath(storedName), req.file.buffer, { contentType: 'image/png' });
+  if (error) throw new Error(error.message);
+  if (drawing.thumbnailStoredName) {
+    await supabase.storage.from(DOCUMENTS_BUCKET).remove([cadDrawingStoragePath(drawing.thumbnailStoredName)]);
+  }
+  const updated = await db.setCadDrawingThumbnail(req.params.id, storedName);
+  res.status(201).json(updated);
+}));
+
+app.get('/api/cad-drawings/:id/thumbnail', requireAdminOrSurveyor, handle(async (req, res) => {
+  const drawing = await db.getCadDrawing(req.params.id);
+  if (!drawing || !drawing.thumbnailStoredName) return res.status(404).json({ error: 'No thumbnail' });
+  const { data, error } = await supabase.storage.from(DOCUMENTS_BUCKET).download(cadDrawingStoragePath(drawing.thumbnailStoredName));
+  if (error) return res.status(404).json({ error: 'File not found in storage' });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(buffer);
+}));
+
+app.get('/api/cad-drawings/:id/export/dxf', requireAdminOrSurveyor, handle(async (req, res) => {
+  const drawing = await db.getCadDrawing(req.params.id);
+  if (!drawing) return res.status(404).json({ error: 'Drawing not found' });
+  const dxf = cadDxf.sceneToDxf(drawing.sceneData);
+  const filename = drawing.name.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
+  res.setHeader('Content-Type', 'application/dxf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.dxf"`);
+  res.send(dxf);
+}));
+
+app.get('/api/cad-drawings/:id/export/pdf', requireAdminOrSurveyor, handle(async (req, res) => {
+  const drawing = await db.getCadDrawing(req.params.id);
+  if (!drawing) return res.status(404).json({ error: 'Drawing not found' });
+  const pdfBuffer = await cadPdf.generateCadPdf(drawing);
+  const filename = drawing.name.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+  res.send(pdfBuffer);
 }));
 
 // ---------- Calendar ----------

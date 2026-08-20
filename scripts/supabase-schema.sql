@@ -273,6 +273,27 @@ create table if not exists saved_risk_assessments (
   created_at timestamptz not null default now()
 );
 
+-- Saved CAD drawings (floor plans, elevations, dimensioned site layouts) - admins/surveyors
+-- only. Unlike the library tables above, the drawing itself (geometry, layers, dimensions)
+-- is stored as JSON here so it can be reopened and edited, not just downloaded. `job_id` is
+-- optional and unused by the app today - kept nullable so a future "link this drawing to a
+-- job" feature is additive, not a rework. `thumbnail_stored_name` points at a small PNG in
+-- the same `job-documents` bucket (under `_library/cad/`), captured client-side from the
+-- canvas so the list view has a preview without re-rendering the scene server-side.
+create table if not exists cad_drawings (
+  id uuid primary key,
+  name text not null,
+  job_id uuid references jobs(id) on delete set null,
+  scene_data jsonb not null default '{}'::jsonb,
+  thumbnail_stored_name text,
+  created_by text,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists cad_drawings_name_idx on cad_drawings (name);
+create index if not exists cad_drawings_job_id_idx on cad_drawings (job_id);
+
 -- Staff-edited copies of a risk assessment (either a generic in-code template or another
 -- custom one), tweaked and "Save As"-ed under a new title - never overwrites the original,
 -- so the in-code generic templates stay untouched and nothing already saved is lost.
@@ -470,6 +491,7 @@ alter table assignment_time_logs enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
+alter table cad_drawings enable row level security;
 alter table custom_risk_assessments enable row level security;
 alter table hires enable row level security;
 alter table vehicle_hires enable row level security;

@@ -122,6 +122,7 @@
       </div>
     </div>
 
+    <button class="tab-btn" data-tab="cad" id="cadTabBtn" hidden>CAD</button>
     <button class="tab-btn" data-tab="admin" id="adminTabBtn" hidden>Admin</button>
   </nav>
 </header>
@@ -630,6 +631,72 @@
     <div id="clientsContainer"></div>
   </section>
 
+  <!-- CAD TAB (admin/surveyor 2D drafting tool) -->
+  <section id="tab-cad" class="tab-panel">
+    <div id="cadListView">
+      <div class="panel-header">
+        <h2>CAD Drawings</h2>
+        <button type="button" id="cadNewBtn" class="primary">New Drawing</button>
+      </div>
+      <p class="hint">Floor plans, elevations and dimensioned site layouts - draw, save and reopen here, then export to DXF, PDF or PNG for your own files.</p>
+      <div class="ra-grid" id="cadGrid"></div>
+      <p class="empty-state" id="cadGridEmpty" hidden>No saved drawings yet - click "New Drawing" to start one.</p>
+    </div>
+
+    <div id="cadEditorView" class="cad-editor" hidden>
+      <div class="cad-toolbar">
+        <button type="button" id="cadBackBtn" class="link-btn">&larr; Back to list</button>
+        <input type="text" id="cadNameInput" class="cad-name-input" placeholder="Drawing name">
+        <div class="cad-tool-group" id="cadToolGroup">
+          <button type="button" class="cad-tool-btn active" data-tool="select" title="Select (Esc)">Select</button>
+          <button type="button" class="cad-tool-btn" data-tool="pan" title="Pan">Pan</button>
+          <button type="button" class="cad-tool-btn" data-tool="line" title="Line">Line</button>
+          <button type="button" class="cad-tool-btn" data-tool="polyline" title="Polyline">Polyline</button>
+          <button type="button" class="cad-tool-btn" data-tool="rectangle" title="Rectangle">Rect</button>
+          <button type="button" class="cad-tool-btn" data-tool="circle" title="Circle">Circle</button>
+          <button type="button" class="cad-tool-btn" data-tool="arc" title="Arc">Arc</button>
+          <button type="button" class="cad-tool-btn" data-tool="text" title="Text">Text</button>
+          <button type="button" class="cad-tool-btn" data-tool="dimension" title="Linear dimension">Dimension</button>
+        </div>
+        <div class="cad-tool-group">
+          <button type="button" id="cadUndoBtn" class="link-btn" title="Undo (Ctrl+Z)">Undo</button>
+          <button type="button" id="cadRedoBtn" class="link-btn" title="Redo (Ctrl+Y)">Redo</button>
+          <button type="button" id="cadZoomExtentsBtn" class="link-btn" title="Zoom to fit">Zoom Extents</button>
+          <label class="cad-snap-toggle"><input type="checkbox" id="cadGridSnapToggle" checked> Grid Snap</label>
+          <label class="cad-snap-toggle"><input type="checkbox" id="cadObjectSnapToggle" checked> Object Snap</label>
+        </div>
+        <span id="cadSaveStatus" class="cad-save-status">Saved</span>
+        <div class="cad-tool-group cad-export-group">
+          <button type="button" id="cadSaveBtn" class="upload-btn">Save</button>
+          <div class="tab-group cad-export-menu">
+            <button type="button" class="tab-group-btn">Export &#9662;</button>
+            <div class="tab-group-menu">
+              <a id="cadExportDxfLink" href="#" download>DXF</a>
+              <a id="cadExportPdfLink" href="#" download>PDF</a>
+              <button type="button" id="cadExportPngBtn">PNG</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cad-body">
+        <canvas id="cadCanvas"></canvas>
+        <div class="cad-side-panel">
+          <div class="cad-panel-section">
+            <h3>Layers</h3>
+            <div id="cadLayerList" class="cad-layer-list"></div>
+            <button type="button" id="cadAddLayerBtn" class="link-btn">+ Add Layer</button>
+          </div>
+          <div class="cad-panel-section">
+            <h3>Properties</h3>
+            <div id="cadPropertiesPanel" class="cad-properties-panel">
+              <p class="empty-state">Nothing selected.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ADMIN TAB -->
   <section id="tab-admin" class="tab-panel">
     <div class="panel-header">
@@ -963,5 +1030,6 @@
 <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
 <script src="app.js"></script>
+<script src="cad.js"></script>
 </body>
 </html>
