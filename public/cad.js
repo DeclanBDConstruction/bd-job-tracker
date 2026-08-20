@@ -667,7 +667,7 @@ function cadDrawGrid(ctx, rect) {
   const endY = Math.ceil(topLeft.y / spacing) * spacing;
 
   ctx.save();
-  ctx.strokeStyle = '#e4e9ed';
+  ctx.strokeStyle = '#d7dee6';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = startX; x <= endX; x += spacing) {
@@ -684,7 +684,7 @@ function cadDrawGrid(ctx, rect) {
 
   // Origin cross, so there's always a fixed reference point to orient by.
   const origin = cadWorldToScreen(0, 0);
-  ctx.strokeStyle = '#b9c2cb';
+  ctx.strokeStyle = '#94a1ae';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(origin.x - 10, origin.y);

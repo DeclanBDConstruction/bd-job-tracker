@@ -2932,6 +2932,10 @@ button:disabled {
 
 .cad-card-thumb-placeholder { color: var(--muted); font-size: var(--font-sm); }
 
+.cad-editor[hidden] {
+  display: none;
+}
+
 /* Breaks out of <main>'s max-width/margin - the editor needs real screen space, not a
    modal-constrained column. */
 .cad-editor {
@@ -3074,6 +3078,7 @@ button:disabled {
   flex: 1 1 auto;
   display: flex;
   min-height: 0;
+  background: var(--bg);
 }
 
 #cadCanvas {
@@ -3081,6 +3086,7 @@ button:disabled {
   width: 100%;
   height: 100%;
   display: block;
+  box-shadow: inset 0 0 0 1px var(--border);
   touch-action: none;
 }
 
