@@ -55,6 +55,7 @@ const cadState = {
   tool: 'select',
   gridSnap: true,
   objectSnap: true,
+  ortho: true,
   dirty: false,
   saving: false,
   spaceDown: false,
@@ -177,10 +178,24 @@ function openCadEditor(drawing) {
   document.getElementById('cadListView').hidden = true;
   document.getElementById('cadEditorView').hidden = false;
 
-  requestAnimationFrame(() => {
+  cadWaitForCanvasSizeThenInit(drawing.id);
+}
+
+// The canvas only gets its real on-screen size once the browser has laid out the now-visible
+// editor - a single requestAnimationFrame after unhiding it isn't reliably enough frames later
+// for that layout to have settled (varies by browser/load), so a zoom-to-extents computed off
+// a still-zero-size rect divides by ~0 and produces a near-invisible view - a blank canvas that
+// never recovers until the window is manually resized. Retry every frame until the rect is real.
+function cadWaitForCanvasSizeThenInit(drawingId) {
+  if (!cadState.current || cadState.current.id !== drawingId || document.getElementById('cadEditorView').hidden) return;
+  const canvas = document.getElementById('cadCanvas');
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
     resizeCadCanvas();
     cadZoomExtents();
-  });
+  } else {
+    requestAnimationFrame(() => cadWaitForCanvasSizeThenInit(drawingId));
+  }
 }
 
 document.getElementById('cadBackBtn').addEventListener('click', async () => {
@@ -499,6 +514,7 @@ function isCadDrawTool(tool) {
 
 document.getElementById('cadGridSnapToggle').addEventListener('change', (e) => { cadState.gridSnap = e.target.checked; });
 document.getElementById('cadObjectSnapToggle').addEventListener('change', (e) => { cadState.objectSnap = e.target.checked; });
+document.getElementById('cadOrthoToggle').addEventListener('change', (e) => { cadState.ortho = e.target.checked; });
 
 // ---------- Undo/redo command stack ----------
 // Commands store minimal diffs (an added/removed entity, or a before/after clone of just the
@@ -600,6 +616,18 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
     e.preventDefault();
     cadRedo();
+  } else if (e.key === 'F8') {
+    e.preventDefault();
+    cadState.ortho = !cadState.ortho;
+    document.getElementById('cadOrthoToggle').checked = cadState.ortho;
+  } else if (e.key === 'F9') {
+    e.preventDefault();
+    cadState.gridSnap = !cadState.gridSnap;
+    document.getElementById('cadGridSnapToggle').checked = cadState.gridSnap;
+  } else if (e.key === 'F3') {
+    e.preventDefault();
+    cadState.objectSnap = !cadState.objectSnap;
+    document.getElementById('cadObjectSnapToggle').checked = cadState.objectSnap;
   }
 });
 document.addEventListener('keyup', (e) => {
@@ -898,15 +926,39 @@ function cadFindObjectSnap(screenX, screenY) {
   return best;
 }
 
+// Ortho mode (AutoCAD F8): while chaining points for line/polyline/dimension, locks the
+// next point to a horizontal or vertical line through the last placed point, so dragging
+// the mouse freely still produces a dead-straight segment instead of whatever angle the
+// hand happens to move at. Independent of grid snap - either can be on, off, or both.
+function cadOrthoAnchor() {
+  if (!cadDrawPoints.length) return null;
+  if (cadState.tool === 'line' || cadState.tool === 'polyline') return cadDrawPoints[cadDrawPoints.length - 1];
+  if (cadState.tool === 'dimension' && cadDrawPoints.length === 1) return cadDrawPoints[0];
+  return null;
+}
+
 function cadComputeCursorPoint(screenX, screenY) {
   const objSnap = cadFindObjectSnap(screenX, screenY);
   if (objSnap) return { x: objSnap.x, y: objSnap.y, snapType: objSnap.type };
-  const world = cadScreenToWorld(screenX, screenY);
+  let world = cadScreenToWorld(screenX, screenY);
+
+  const anchor = cadState.ortho ? cadOrthoAnchor() : null;
+  let lockedAxis = null; // axis held exactly at the anchor's coordinate, if ortho is constraining
+  if (anchor) {
+    const dx = world.x - anchor.x, dy = world.y - anchor.y;
+    if (Math.abs(dx) >= Math.abs(dy)) { world = { x: world.x, y: anchor.y }; lockedAxis = 'y'; }
+    else { world = { x: anchor.x, y: world.y }; lockedAxis = 'x'; }
+  }
+
   if (cadState.gridSnap) {
     const spacing = cadNiceGridSpacing(cadState.view.zoom);
-    return { x: Math.round(world.x / spacing) * spacing, y: Math.round(world.y / spacing) * spacing, snapType: 'grid' };
+    // Only round the axis that's still free - rounding the locked axis too could nudge it
+    // off the anchor's exact coordinate and break the straight line ortho just enforced.
+    const x = lockedAxis === 'x' ? world.x : Math.round(world.x / spacing) * spacing;
+    const y = lockedAxis === 'y' ? world.y : Math.round(world.y / spacing) * spacing;
+    return { x, y, snapType: lockedAxis ? 'ortho' : 'grid' };
   }
-  return { x: world.x, y: world.y, snapType: null };
+  return { x: world.x, y: world.y, snapType: lockedAxis ? 'ortho' : null };
 }
 
 function cadDrawSnapMarker(ctx) {
@@ -919,6 +971,16 @@ function cadDrawSnapMarker(ctx) {
     ctx.beginPath();
     ctx.arc(s.x, s.y, 2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (type === 'ortho') {
+    ctx.strokeStyle = '#186a9c';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(s.x - 6, s.y); ctx.lineTo(s.x + 6, s.y);
+    ctx.moveTo(s.x, s.y - 6); ctx.lineTo(s.x, s.y + 6);
+    ctx.stroke();
     ctx.restore();
     return;
   }
@@ -1074,6 +1136,58 @@ function cadHandleDimensionClick(pt) {
   cadRender();
 }
 
+// Dynamic input, AutoCAD-style: a small live readout of length/angle (or width x height,
+// or radius) next to the cursor while a draw tool has at least one point placed, so you can
+// see the size you're drawing to before committing the click.
+function cadComputeToolMeasurementText(scene) {
+  const tool = cadState.tool;
+  const cp = cadCursorPoint;
+  if (!cp || !cadDrawPoints.length) return null;
+  const fmt = (len) => cadFormatDimensionLength(len, scene.units);
+  const deg = (rad) => (((rad * 180 / Math.PI) % 360) + 360) % 360;
+
+  if (tool === 'line' || tool === 'polyline' || (tool === 'dimension' && cadDrawPoints.length === 1)) {
+    const last = cadDrawPoints[cadDrawPoints.length - 1];
+    const dx = cp.x - last.x, dy = cp.y - last.y;
+    return `${fmt(Math.hypot(dx, dy))}  ∠${deg(Math.atan2(dy, dx)).toFixed(1)}°`;
+  }
+  if (tool === 'rectangle' && cadDrawPoints.length === 1) {
+    const a = cadDrawPoints[0];
+    return `${fmt(Math.abs(cp.x - a.x))} × ${fmt(Math.abs(cp.y - a.y))}`;
+  }
+  if (tool === 'circle' && cadDrawPoints.length === 1) {
+    const c = cadDrawPoints[0];
+    return `R ${fmt(Math.hypot(cp.x - c.x, cp.y - c.y))}`;
+  }
+  if (tool === 'arc' && cadDrawPoints.length === 1) {
+    const c = cadDrawPoints[0];
+    return `R ${fmt(Math.hypot(cp.x - c.x, cp.y - c.y))}`;
+  }
+  if (tool === 'arc' && cadDrawPoints.length === 2) {
+    const [c, sp] = cadDrawPoints;
+    const r = Math.hypot(sp.x - c.x, sp.y - c.y);
+    const startAngle = Math.atan2(sp.y - c.y, sp.x - c.x);
+    const endAngle = Math.atan2(cp.y - c.y, cp.x - c.x);
+    return `R ${fmt(r)}  ∠${deg(endAngle - startAngle).toFixed(1)}°`;
+  }
+  return null;
+}
+
+function cadDrawMeasurementLabel(ctx, screenX, screenY, text) {
+  ctx.save();
+  ctx.font = '12px "Segoe UI", sans-serif';
+  ctx.textBaseline = 'top';
+  const paddingX = 6, paddingY = 4;
+  const boxW = ctx.measureText(text).width + paddingX * 2;
+  const boxH = 16 + paddingY;
+  const x = screenX + 14, y = screenY + 14;
+  ctx.fillStyle = 'rgba(24,106,156,0.92)';
+  ctx.fillRect(x, y, boxW, boxH);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, x + paddingX, y + paddingY - 1);
+  ctx.restore();
+}
+
 function cadDrawToolPreview(ctx) {
   if (!cadCursorPoint || !cadState.current) return;
   const tool = cadState.tool;
@@ -1125,6 +1239,12 @@ function cadDrawToolPreview(ctx) {
   }
   ctx.setLineDash([]);
   ctx.restore();
+
+  const text = cadComputeToolMeasurementText(cadState.current.sceneData);
+  if (text) {
+    const labelPos = cadWorldToScreen(cadCursorPoint.x, cadCursorPoint.y);
+    cadDrawMeasurementLabel(ctx, labelPos.x, labelPos.y, text);
+  }
 }
 
 // ---------- Bounds (used by Zoom Extents) ----------
