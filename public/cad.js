@@ -64,7 +64,8 @@ const cadState = {
 
 let cadAutosaveTimer = null;
 let cadDrawPoints = []; // in-progress points for whatever draw tool is active
-let cadCursorPoint = null; // last computed { x, y, snapType } cursor world position
+let cadCursorPoint = null; // last computed { x, y, snapType, guides } cursor world position
+let cadTypedLength = ''; // dynamic-input distance buffer (digits typed while a draw tool has an anchor point)
 let cadMoveDrag = null; // { anchor: {x,y}, entries: [{ id, before }] } while dragging a selection
 let cadMarquee = null; // { x1, y1, x2, y2 } screen-space rubber-band rectangle, while active
 const cadHistory = { undo: [], redo: [] }; // command stack - see cadPushCommand/cadUndo/cadRedo
@@ -162,6 +163,7 @@ function openCadEditor(drawing) {
   cadState.dirty = false;
   cadDrawPoints = [];
   cadCursorPoint = null;
+  cadTypedLength = '';
   cadMoveDrag = null;
   cadMarquee = null;
   cadHistory.undo = [];
@@ -498,6 +500,7 @@ function renderCadPropertiesPanel() {
 function cadSetTool(tool) {
   cadState.tool = tool;
   cadDrawPoints = [];
+  cadTypedLength = '';
   document.querySelectorAll('.cad-tool-btn').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
   const canvas = document.getElementById('cadCanvas');
   canvas.style.cursor = tool === 'pan' ? 'grab' : (tool === 'select' ? 'default' : 'crosshair');
@@ -592,6 +595,36 @@ function cadIsTypingInField() {
 document.addEventListener('keydown', (e) => {
   if (!cadState.current || document.getElementById('cadEditorView').hidden) return;
   if (cadIsTypingInField()) return;
+
+  // Dynamic-input distance entry (AutoCAD convention): with an anchor point placed, typing
+  // digits sets an exact distance along whatever direction the mouse is currently pointing,
+  // in place of clicking a point by eye. Handled before everything else below so it can't be
+  // shadowed by the Escape/Enter handling those tools also bind (e.g. polyline's Enter-to-
+  // finish, which only fires once there's no pending typed value to commit instead).
+  if (cadTypedLengthApplicable() && /^[0-9.]$/.test(e.key)) {
+    e.preventDefault();
+    cadTypedLength += e.key;
+    cadRender();
+    return;
+  }
+  if (cadTypedLength && e.key === 'Backspace') {
+    e.preventDefault();
+    cadTypedLength = cadTypedLength.slice(0, -1);
+    cadRender();
+    return;
+  }
+  if (cadTypedLength && e.key === 'Enter') {
+    e.preventDefault();
+    cadCommitTypedLength();
+    return;
+  }
+  if (cadTypedLength && e.key === 'Escape') {
+    e.preventDefault();
+    cadTypedLength = '';
+    cadRender();
+    return;
+  }
+
   if (e.key === ' ' && !cadState.spaceDown) {
     cadState.spaceDown = true;
     const canvas = document.getElementById('cadCanvas');
@@ -734,6 +767,7 @@ function cadRender() {
   cadDrawGrid(ctx, rect);
   cadDrawEntities(ctx);
   cadDrawSelectionHighlight(ctx);
+  cadDrawTrackingGuides(ctx);
   cadDrawToolPreview(ctx);
   cadDrawSnapMarker(ctx);
   cadDrawMarquee(ctx);
@@ -937,28 +971,74 @@ function cadOrthoAnchor() {
   return null;
 }
 
+// Alignment/object-snap tracking (AutoCAD's OTRACK): while drawing, if the cursor comes level
+// - horizontally or vertically - with an existing snap point (or an earlier vertex of the
+// polyline being drawn right now), pull it exactly onto that line and show a dashed guide
+// through it, the same way Illustrator/Figma "smart guides" or SketchUp's inference lines
+// work. Rides on the Object Snap toggle, same as AutoCAD ties OTRACK to OSNAP being on.
+const CAD_TRACK_PIXEL_RADIUS = 6;
+
+function cadCollectTrackingCandidates() {
+  const pts = cadCollectSnapCandidates();
+  // Earlier vertices of the polyline/line chain in progress - excludes the last one, which
+  // is the ortho anchor and already handled below.
+  for (let i = 0; i < cadDrawPoints.length - 1; i++) {
+    pts.push({ x: cadDrawPoints[i].x, y: cadDrawPoints[i].y, type: 'endpoint' });
+  }
+  return pts;
+}
+
+function cadFindAlignmentGuides(screenX, screenY) {
+  if (!cadState.objectSnap) return { x: null, y: null };
+  let bestX = null, bestY = null;
+  for (const c of cadCollectTrackingCandidates()) {
+    const s = cadWorldToScreen(c.x, c.y);
+    const dx = Math.abs(s.x - screenX);
+    const dy = Math.abs(s.y - screenY);
+    if (dx <= CAD_TRACK_PIXEL_RADIUS && (!bestX || dx < bestX.dist)) bestX = { axis: 'x', value: c.x, from: c, dist: dx };
+    if (dy <= CAD_TRACK_PIXEL_RADIUS && (!bestY || dy < bestY.dist)) bestY = { axis: 'y', value: c.y, from: c, dist: dy };
+  }
+  return { x: bestX, y: bestY };
+}
+
 function cadComputeCursorPoint(screenX, screenY) {
   const objSnap = cadFindObjectSnap(screenX, screenY);
-  if (objSnap) return { x: objSnap.x, y: objSnap.y, snapType: objSnap.type };
+  if (objSnap) return { x: objSnap.x, y: objSnap.y, snapType: objSnap.type, guides: [] };
   let world = cadScreenToWorld(screenX, screenY);
+
+  const guides = [];
+  if (isCadDrawTool(cadState.tool)) {
+    const track = cadFindAlignmentGuides(screenX, screenY);
+    if (track.x) { world = { x: track.x.value, y: world.y }; guides.push(track.x); }
+    if (track.y) { world = { x: world.x, y: track.y.value }; guides.push(track.y); }
+  }
+  const trackedAxes = new Set(guides.map((g) => g.axis));
 
   const anchor = cadState.ortho ? cadOrthoAnchor() : null;
   let lockedAxis = null; // axis held exactly at the anchor's coordinate, if ortho is constraining
-  if (anchor) {
-    const dx = world.x - anchor.x, dy = world.y - anchor.y;
-    if (Math.abs(dx) >= Math.abs(dy)) { world = { x: world.x, y: anchor.y }; lockedAxis = 'y'; }
-    else { world = { x: anchor.x, y: world.y }; lockedAxis = 'x'; }
+  if (anchor && !(trackedAxes.has('x') && trackedAxes.has('y'))) {
+    if (trackedAxes.has('x')) {
+      world = { x: world.x, y: anchor.y }; lockedAxis = 'y';
+    } else if (trackedAxes.has('y')) {
+      world = { x: anchor.x, y: world.y }; lockedAxis = 'x';
+    } else {
+      const dx = world.x - anchor.x, dy = world.y - anchor.y;
+      if (Math.abs(dx) >= Math.abs(dy)) { world = { x: world.x, y: anchor.y }; lockedAxis = 'y'; }
+      else { world = { x: anchor.x, y: world.y }; lockedAxis = 'x'; }
+    }
   }
+  if (lockedAxis) trackedAxes.add(lockedAxis);
 
+  const snapType = guides.length ? 'track' : (lockedAxis ? 'ortho' : null);
   if (cadState.gridSnap) {
     const spacing = cadNiceGridSpacing(cadState.view.zoom);
-    // Only round the axis that's still free - rounding the locked axis too could nudge it
-    // off the anchor's exact coordinate and break the straight line ortho just enforced.
-    const x = lockedAxis === 'x' ? world.x : Math.round(world.x / spacing) * spacing;
-    const y = lockedAxis === 'y' ? world.y : Math.round(world.y / spacing) * spacing;
-    return { x, y, snapType: lockedAxis ? 'ortho' : 'grid' };
+    // Only round axes that aren't already pinned exactly by tracking/ortho - rounding those
+    // too could nudge them off the point they're aligned to.
+    const x = trackedAxes.has('x') ? world.x : Math.round(world.x / spacing) * spacing;
+    const y = trackedAxes.has('y') ? world.y : Math.round(world.y / spacing) * spacing;
+    return { x, y, snapType: snapType || 'grid', guides };
   }
-  return { x: world.x, y: world.y, snapType: lockedAxis ? 'ortho' : null };
+  return { x: world.x, y: world.y, snapType, guides };
 }
 
 function cadDrawSnapMarker(ctx) {
@@ -984,6 +1064,16 @@ function cadDrawSnapMarker(ctx) {
     ctx.restore();
     return;
   }
+  if (type === 'track') {
+    ctx.strokeStyle = '#e08a1e';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(s.x - 6, s.y - 6); ctx.lineTo(s.x + 6, s.y + 6);
+    ctx.moveTo(s.x - 6, s.y + 6); ctx.lineTo(s.x + 6, s.y - 6);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   ctx.strokeStyle = '#e08a1e';
   ctx.lineWidth = 1.5;
   const sz = 6;
@@ -998,6 +1088,39 @@ function cadDrawSnapMarker(ctx) {
     ctx.arc(s.x, s.y, sz, 0, Math.PI * 2);
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+// Full-canvas dashed lines through whatever point(s) the cursor is currently tracking-aligned
+// with, plus a small dot at the source point - so it's obvious *what* it lined up with, not
+// just that it did.
+function cadDrawTrackingGuides(ctx) {
+  if (!cadCursorPoint || !cadCursorPoint.guides || !cadCursorPoint.guides.length || !isCadDrawTool(cadState.tool)) return;
+  const canvas = document.getElementById('cadCanvas');
+  const rect = canvas.getBoundingClientRect();
+  ctx.save();
+  ctx.strokeStyle = '#e08a1e';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  for (const g of cadCursorPoint.guides) {
+    ctx.beginPath();
+    if (g.axis === 'x') {
+      const sx = cadWorldToScreen(g.value, 0).x;
+      ctx.moveTo(sx + 0.5, 0);
+      ctx.lineTo(sx + 0.5, rect.height);
+    } else {
+      const sy = cadWorldToScreen(0, g.value).y;
+      ctx.moveTo(0, sy + 0.5);
+      ctx.lineTo(rect.width, sy + 0.5);
+    }
+    ctx.stroke();
+    const s = cadWorldToScreen(g.from.x, g.from.y);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#e08a1e';
+    ctx.fill();
+  }
+  ctx.setLineDash([]);
   ctx.restore();
 }
 
@@ -1039,6 +1162,7 @@ function cadDeleteSelection() {
 
 function cadHandleDrawClick(pt) {
   if (!pt) return;
+  cadTypedLength = ''; // an actual click always takes precedence over a half-typed distance
   const scene = cadState.current.sceneData;
   const layer = scene.layers.find((l) => l.id === cadActiveLayerIdOrDefault());
   if (layer && layer.locked) { toast('The active layer is locked - unlock it or pick another layer first.', 'error'); return; }
@@ -1050,6 +1174,65 @@ function cadHandleDrawClick(pt) {
   else if (tool === 'arc') cadHandleArcClick(pt);
   else if (tool === 'text') cadHandleTextClick(pt);
   else if (tool === 'dimension') cadHandleDimensionClick(pt);
+}
+
+// ---------- Dynamic-input distance entry ----------
+// Applies to any tool where the next click is "some distance from the last anchor point"
+// (a straight line/segment, or a radius) - not rectangle, where a single typed number would
+// be ambiguous between width and height.
+function cadTypedLengthApplicable() {
+  if (!cadDrawPoints.length) return false;
+  const tool = cadState.tool;
+  if (tool === 'line' || tool === 'polyline') return true;
+  if ((tool === 'circle' || tool === 'arc') && cadDrawPoints.length === 1) return true;
+  if (tool === 'dimension' && cadDrawPoints.length === 1) return true;
+  return false;
+}
+
+function cadUnitSuffix(units) {
+  if (units === 'm') return 'm';
+  if (units === 'ft') return 'ft';
+  if (units === 'in') return 'in';
+  return 'mm';
+}
+
+// Inverse of cadFormatDimensionLength - entities are always stored in mm regardless of the
+// scene's display unit, so a typed value in "current display unit" has to be converted up
+// front before it's usable as world-space geometry.
+function cadParseTypedLength(str, units) {
+  const n = parseFloat(str);
+  if (!isFinite(n) || n <= 0) return null;
+  if (units === 'm') return n * 1000;
+  if (units === 'ft') return n * 304.8;
+  if (units === 'in') return n * 25.4;
+  return n;
+}
+
+// The point at the typed distance from the current anchor, along whatever direction the
+// mouse is currently pointing - direction comes from the mouse, magnitude from the keyboard.
+function cadTypedLengthPoint() {
+  if (!cadTypedLength || !cadState.current || !cadDrawPoints.length) return null;
+  const len = cadParseTypedLength(cadTypedLength, cadState.current.sceneData.units);
+  if (len === null) return null;
+  const anchor = cadDrawPoints[cadDrawPoints.length - 1];
+  const cursor = cadCursorPoint || anchor;
+  let dx = cursor.x - anchor.x, dy = cursor.y - anchor.y;
+  const mag = Math.hypot(dx, dy);
+  if (mag < 1e-9) { dx = 1; dy = 0; } else { dx /= mag; dy /= mag; }
+  return { x: anchor.x + dx * len, y: anchor.y + dy * len, snapType: null };
+}
+
+// What the tool preview and measurement label should actually draw to - the typed-distance
+// point while one's being entered, otherwise the real (snapped/tracked/ortho'd) cursor point.
+function cadEffectiveCursorPoint() {
+  return cadTypedLengthPoint() || cadCursorPoint;
+}
+
+function cadCommitTypedLength() {
+  const pt = cadTypedLengthPoint();
+  cadTypedLength = '';
+  if (pt) cadHandleDrawClick(pt);
+  else cadRender();
 }
 
 function cadHandleLineClick(pt) {
@@ -1141,6 +1324,7 @@ function cadHandleDimensionClick(pt) {
 // see the size you're drawing to before committing the click.
 function cadComputeToolMeasurementText(scene) {
   const tool = cadState.tool;
+  if (cadTypedLength && cadTypedLengthApplicable()) return `${cadTypedLength}${cadUnitSuffix(scene.units)}_`;
   const cp = cadCursorPoint;
   if (!cp || !cadDrawPoints.length) return null;
   const fmt = (len) => cadFormatDimensionLength(len, scene.units);
@@ -1193,27 +1377,28 @@ function cadDrawToolPreview(ctx) {
   const tool = cadState.tool;
   if (!isCadDrawTool(tool) || !cadDrawPoints.length) return;
   const zoom = cadState.view.zoom;
+  const cp = cadEffectiveCursorPoint(); // typed-distance point while one's being entered, else the real cursor
   ctx.save();
   ctx.strokeStyle = '#186a9c';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([5, 4]);
 
   if (tool === 'rectangle' && cadDrawPoints.length === 1) {
-    const a = cadDrawPoints[0], b = cadCursorPoint;
+    const a = cadDrawPoints[0], b = cp;
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     const s1 = cadWorldToScreen(x, y + h);
     const s2 = cadWorldToScreen(x + w, y);
     ctx.strokeRect(s1.x, s1.y, s2.x - s1.x, s2.y - s1.y);
   } else if (tool === 'circle' && cadDrawPoints.length === 1) {
     const c = cadDrawPoints[0];
-    const r = Math.hypot(cadCursorPoint.x - c.x, cadCursorPoint.y - c.y);
+    const r = Math.hypot(cp.x - c.x, cp.y - c.y);
     const s = cadWorldToScreen(c.x, c.y);
     ctx.beginPath();
     ctx.arc(s.x, s.y, r * zoom, 0, Math.PI * 2);
     ctx.stroke();
   } else if (tool === 'arc' && cadDrawPoints.length === 1) {
     const c = cadDrawPoints[0];
-    const r = Math.hypot(cadCursorPoint.x - c.x, cadCursorPoint.y - c.y);
+    const r = Math.hypot(cp.x - c.x, cp.y - c.y);
     const s = cadWorldToScreen(c.x, c.y);
     ctx.beginPath();
     ctx.arc(s.x, s.y, r * zoom, 0, Math.PI * 2);
@@ -1222,7 +1407,7 @@ function cadDrawToolPreview(ctx) {
     const [c, sp] = cadDrawPoints;
     const radius = Math.hypot(sp.x - c.x, sp.y - c.y);
     const startAngle = Math.atan2(sp.y - c.y, sp.x - c.x);
-    const endAngle = Math.atan2(cadCursorPoint.y - c.y, cadCursorPoint.x - c.x);
+    const endAngle = Math.atan2(cp.y - c.y, cp.x - c.x);
     const s = cadWorldToScreen(c.x, c.y);
     ctx.beginPath();
     ctx.arc(s.x, s.y, radius * zoom, -startAngle, -endAngle, true);
@@ -1233,7 +1418,7 @@ function cadDrawToolPreview(ctx) {
       const s = cadWorldToScreen(p.x, p.y);
       if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
     });
-    const s = cadWorldToScreen(cadCursorPoint.x, cadCursorPoint.y);
+    const s = cadWorldToScreen(cp.x, cp.y);
     ctx.lineTo(s.x, s.y);
     ctx.stroke();
   }
