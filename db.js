@@ -1,10 +1,13 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { authenticator } = require('otplib');
+const QRCode = require('qrcode');
 const { supabase } = require('./supabaseClient');
 const { riskBand } = require('./riskAssessments');
 
 const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 'Cancelled'];
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes - just long enough to open an authenticator app
 const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'photos', 'permit'];
 const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', photos: 'Photos', permit: 'Permit to Work' };
 // Drawings aren't needed for every job (e.g. no design changes involved), and not every
@@ -2280,6 +2283,7 @@ function sanitizeUser(row) {
     canManageQuotes: row.role === 'admin' || row.role === 'surveyor',
     // Defaults true for rows saved before this column existed (see the schema migration).
     active: row.active !== false,
+    mfaEnabled: !!row.mfa_enabled,
     createdAt: row.created_at,
   };
 }
@@ -2373,6 +2377,90 @@ async function deleteSession(token) {
   check(error);
 }
 
+// First step of turning MFA on: hand back a fresh secret (as a QR code for an authenticator
+// app, plus the raw text for manual entry) without switching mfa_enabled on yet - that only
+// happens once confirmMfaSetup proves the person actually scanned it correctly. Calling this
+// again before confirming just overwrites the unused secret with a new one, which is fine.
+async function startMfaSetup(userId, email) {
+  const secret = authenticator.generateSecret();
+  const { error } = await supabase.from('users').update({ mfa_secret: secret }).eq('id', userId);
+  check(error);
+  const otpauth = authenticator.keyuri(email, 'BD Construction Job Tracker', secret);
+  const qrDataUrl = await QRCode.toDataURL(otpauth);
+  return { secret, qrDataUrl };
+}
+
+async function confirmMfaSetup(userId, code) {
+  const { data: user, error } = await supabase.from('users').select('mfa_secret').eq('id', userId).maybeSingle();
+  check(error);
+  if (!user || !user.mfa_secret) throw new Error('Start setup again before entering a code.');
+  if (!authenticator.check(String(code || '').trim(), user.mfa_secret)) {
+    throw new Error('Incorrect code - check the app and try again.');
+  }
+  const { data, error: updErr } = await supabase.from('users').update({ mfa_enabled: true }).eq('id', userId).select().maybeSingle();
+  check(updErr);
+  return sanitizeUser(data);
+}
+
+// Requires the account's own password again (not just an active session) so someone who
+// walks up to an unlocked, already-signed-in browser can't turn off the one thing protecting
+// it. Losing access to the authenticator app instead is recovered via adminResetMfa.
+async function disableMfa(userId, password) {
+  const { data: user, error } = await supabase.from('users').select('password_hash').eq('id', userId).maybeSingle();
+  check(error);
+  if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
+    throw new Error('Incorrect password.');
+  }
+  const { data, error: updErr } = await supabase.from('users').update({ mfa_enabled: false, mfa_secret: null }).eq('id', userId).select().maybeSingle();
+  check(updErr);
+  return sanitizeUser(data);
+}
+
+// Lost-phone recovery: an admin clears someone else's MFA so they can sign in with just their
+// password and set it up again. No password check needed here - it's gated by requireAdmin
+// on the route instead, same as setUserRole/setUserActive.
+async function adminResetMfa(userId) {
+  const { data, error } = await supabase.from('users').update({ mfa_enabled: false, mfa_secret: null }).eq('id', userId).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
+// Bridges "password was correct" and "a real session exists" for MFA accounts - see the
+// /api/auth/login and /api/auth/mfa/verify-login routes in server.js. No session cookie is
+// issued until verifyMfaChallenge succeeds, so this token alone can't authenticate anything.
+async function createMfaChallenge(userId) {
+  const now = Date.now();
+  await supabase.from('mfa_challenges').delete().lt('expires_at', new Date(now).toISOString());
+  const token = crypto.randomBytes(32).toString('hex');
+  const { error } = await supabase.from('mfa_challenges').insert({
+    token,
+    user_id: userId,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + MFA_CHALLENGE_TTL_MS).toISOString(),
+  });
+  check(error);
+  return token;
+}
+
+async function verifyMfaChallenge(token, code) {
+  const { data: challenge, error } = await supabase.from('mfa_challenges').select('*').eq('token', token || '').maybeSingle();
+  check(error);
+  if (!challenge || new Date(challenge.expires_at).getTime() < Date.now()) {
+    throw new Error('That sign-in attempt has expired - go back and sign in again.');
+  }
+  const { data: user, error: userErr } = await supabase.from('users').select('*').eq('id', challenge.user_id).maybeSingle();
+  check(userErr);
+  if (!user || user.active === false || !user.mfa_enabled) {
+    throw new Error('That sign-in attempt is no longer valid - go back and sign in again.');
+  }
+  if (!authenticator.check(String(code || '').trim(), user.mfa_secret)) {
+    throw new Error('Incorrect code - check the app and try again.');
+  }
+  await supabase.from('mfa_challenges').delete().eq('token', token);
+  return sanitizeUser(user);
+}
+
 async function listUsers() {
   const { data, error } = await supabase.from('users').select('*').order('name');
   check(error);
@@ -2442,6 +2530,12 @@ module.exports = {
   createSession,
   getUserBySession,
   deleteSession,
+  startMfaSetup,
+  confirmMfaSetup,
+  disableMfa,
+  adminResetMfa,
+  createMfaChallenge,
+  verifyMfaChallenge,
   listUsers,
   setUserRole,
   setUserActive,

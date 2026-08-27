@@ -81,6 +81,13 @@ There's no "forgot password" flow (no email is sent from this app). If someone f
 theirs, delete their row from the `users` table in Supabase and have them create the
 account again — ask if you'd like help with that.
 
+**Two-factor authentication (optional):** anyone can turn on 2FA for their own account from
+the **Two-Factor Auth** button next to Sign Out — scan the QR code with an authenticator app
+(Microsoft Authenticator, Google Authenticator, etc.) and enter the code it shows to confirm.
+Once it's on, signing in asks for a fresh 6-digit code after the password. If someone loses
+their phone, an admin can turn 2FA back off for them from the Admin tab (Two-Factor column) so
+they can sign in with just their password and set it up again.
+
 ## Importing a job from a job costing sheet
 
 If you've got a BD Construction job costing sheet (one job per file, like

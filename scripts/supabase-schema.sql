@@ -48,7 +48,25 @@ update users set role = 'surveyor' where can_manage_quotes = true and role = 'st
 create unique index if not exists users_color_unique_idx on users (color) where color is not null;
 create index if not exists users_employee_id_idx on users (employee_id);
 
+-- Two-factor auth (TOTP, e.g. Microsoft/Google Authenticator). mfa_secret is written as soon
+-- as someone starts setup (see startMfaSetup in db.js) but mfa_enabled only flips to true once
+-- they've proven they scanned it right by entering a real code back (confirmMfaSetup) - an
+-- abandoned setup just leaves an unused secret sitting there, harmless.
+alter table users add column if not exists mfa_secret text;
+alter table users add column if not exists mfa_enabled boolean not null default false;
+
 create table if not exists sessions (
+  token text primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
+-- Short-lived bridge between "password was correct" and "session created" for accounts with
+-- MFA on - see createMfaChallenge/verifyMfaChallenge in db.js. Nothing is authenticated by a
+-- challenge token alone (no session cookie is set until the code checks out), so unlike
+-- sessions this table doesn't need to survive a server restart or last more than a few minutes.
+create table if not exists mfa_challenges (
   token text primary key,
   user_id uuid not null references users(id) on delete cascade,
   created_at timestamptz not null default now(),

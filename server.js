@@ -221,6 +221,21 @@ app.post('/api/auth/register', registerLimiter, handle(async (req, res) => {
 
 app.post('/api/auth/login', loginLimiter, handle(async (req, res) => {
   const user = await db.verifyLogin(req.body.email, req.body.password);
+  // Password's right, but that's only half the story for an MFA account - hand back a
+  // short-lived challenge token instead of a session, so the browser knows to prompt for a
+  // code next. No cookie is set until /api/auth/mfa/verify-login confirms it.
+  if (user.mfaEnabled) {
+    const mfaToken = await db.createMfaChallenge(user.id);
+    return res.json({ mfaRequired: true, mfaToken });
+  }
+  setSessionCookie(res, await db.createSession(user.id));
+  res.json(user);
+}));
+
+// Same throttle as the password step - keyed by IP, generous for a real user fumbling their
+// authenticator app but slow going for anyone trying to brute-force a 6-digit code.
+app.post('/api/auth/mfa/verify-login', loginLimiter, handle(async (req, res) => {
+  const user = await db.verifyMfaChallenge(req.body.mfaToken, req.body.code);
   setSessionCookie(res, await db.createSession(user.id));
   res.json(user);
 }));
@@ -279,6 +294,10 @@ const CALENDAR_DIARY_ROUTES = [
   { method: 'GET', path: /^\/calendar-colors$/ },
   { method: 'GET', path: /^\/users\/colors$/ },
   { method: 'PUT', path: /^\/users\/me\/color$/ },
+  // Every role gets to protect their own account, same reasoning as the colour picker above.
+  { method: 'POST', path: /^\/auth\/mfa\/setup$/ },
+  { method: 'POST', path: /^\/auth\/mfa\/confirm$/ },
+  { method: 'POST', path: /^\/auth\/mfa\/disable$/ },
   { method: 'GET', path: /^\/diary$/ },
   { method: 'POST', path: /^\/diary$/ },
   { method: 'PUT', path: /^\/diary\/[^/]+\/complete$/ },
@@ -353,6 +372,32 @@ app.put('/api/users/:id/active', requireAdmin, handle(async (req, res) => {
 
 app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserEmployee(req.params.id, req.body.employeeId || null);
+  broadcast('users');
+  res.json(user);
+}));
+
+// Lost-phone recovery for someone else's MFA - see adminResetMfa in db.js. Turning your own
+// MFA off goes through /api/auth/mfa/disable below instead, which requires your password.
+app.put('/api/users/:id/mfa-reset', requireAdmin, handle(async (req, res) => {
+  const user = await db.adminResetMfa(req.params.id);
+  broadcast('users');
+  res.json(user);
+}));
+
+// ---------- MFA (self-service) ----------
+
+app.post('/api/auth/mfa/setup', handle(async (req, res) => {
+  res.json(await db.startMfaSetup(req.user.id, req.user.email));
+}));
+
+app.post('/api/auth/mfa/confirm', handle(async (req, res) => {
+  const user = await db.confirmMfaSetup(req.user.id, req.body.code);
+  broadcast('users');
+  res.json(user);
+}));
+
+app.post('/api/auth/mfa/disable', handle(async (req, res) => {
+  const user = await db.disableMfa(req.user.id, req.body.password);
   broadcast('users');
   res.json(user);
 }));

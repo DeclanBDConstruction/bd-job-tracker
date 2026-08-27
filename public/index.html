@@ -53,6 +53,17 @@
         </form>
         <p class="auth-switch">Already have an account? <button type="button" id="showLoginBtn" class="link-btn">Sign in</button></p>
       </div>
+
+      <div id="mfaView" hidden>
+        <h2>Enter Your Code</h2>
+        <p class="auth-subtitle">Open your authenticator app (Microsoft Authenticator, Google Authenticator, etc.) and enter the 6-digit code for this account.</p>
+        <form id="mfaLoginForm">
+          <label>Code<input type="text" id="mfaLoginCode" inputmode="numeric" autocomplete="one-time-code" required autofocus placeholder="000000"></label>
+          <p class="auth-error" id="mfaLoginError" hidden></p>
+          <button type="submit" class="primary">Verify</button>
+        </form>
+        <p class="auth-switch"><button type="button" id="mfaBackToLoginBtn" class="link-btn">Back to sign in</button></p>
+      </div>
     </div>
   </div>
 </div>
@@ -73,6 +84,7 @@
     <div class="topbar-user">
       <span class="user-avatar" id="userAvatar"></span>
       <span id="currentUserName"></span>
+      <button type="button" id="mfaSettingsBtn" class="link-btn">Two-Factor Auth</button>
       <button id="logoutBtn">Sign Out</button>
     </div>
   </div>
@@ -711,7 +723,7 @@
     </div>
     <p class="hint">Set each account's role — Admin (full access, can delete jobs and manage the employee list), Staff (general office access), Surveyor (office access plus quoting rights), or Installation/Manufacturing Operative (no office access yet). Link each account to the matching employee so their Yearly Report shows only their own figures — this happens automatically at sign-up when the name matches, but you can fix it here if it didn't (or the account was created before this existed).</p>
     <table class="data-table" id="adminUsersTable">
-      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Account</th></tr></thead>
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Account</th><th>Two-Factor</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
@@ -1030,6 +1042,41 @@
       <a id="raDownloadLink" class="ra-download-btn" href="#">Download</a>
       <select id="raAttachJobSelect"><option value="">Attach to job…</option></select>
       <button type="button" id="raAttachBtn" class="primary">Attach to Job</button>
+    </div>
+  </div>
+</div>
+
+<!-- Two-Factor Auth Modal -->
+<div id="mfaModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2>Two-Factor Authentication</h2>
+      <button type="button" id="mfaModalCloseBtn" class="link-btn">Close</button>
+    </div>
+
+    <div id="mfaStatusOff">
+      <p class="hint">Add a second step to signing in using an authenticator app (Microsoft Authenticator, Google Authenticator, etc.) — even if someone learns your password, they can't sign in without your phone too.</p>
+      <button type="button" id="mfaStartSetupBtn" class="primary">Set Up Two-Factor Auth</button>
+    </div>
+
+    <div id="mfaStatusOn" hidden>
+      <p class="hint">Two-factor authentication is <strong>enabled</strong> on your account.</p>
+      <form id="mfaDisableForm">
+        <label>Enter your password to turn it off<input type="password" id="mfaDisablePassword" required autocomplete="current-password"></label>
+        <p class="auth-error" id="mfaDisableError" hidden></p>
+        <button type="submit" class="danger">Turn Off Two-Factor Auth</button>
+      </form>
+    </div>
+
+    <div id="mfaSetupPanel" hidden>
+      <p class="hint">Scan this QR code with your authenticator app, then enter the 6-digit code it shows you to confirm.</p>
+      <img id="mfaQrImage" alt="Two-factor setup QR code" class="mfa-qr">
+      <p class="hint">Can't scan it? Enter this key manually instead: <code id="mfaManualSecret"></code></p>
+      <form id="mfaConfirmForm">
+        <label>Code<input type="text" id="mfaConfirmCode" inputmode="numeric" autocomplete="one-time-code" required placeholder="000000"></label>
+        <p class="auth-error" id="mfaConfirmError" hidden></p>
+        <button type="submit" class="primary">Confirm &amp; Enable</button>
+      </form>
     </div>
   </div>
 </div>

@@ -631,6 +631,8 @@ h3 { color: var(--blue-dark); }
 
 .hint { color: var(--muted); max-width: 700px; line-height: 1.6; }
 
+.mfa-qr { display: block; width: 200px; height: 200px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; }
+
 /* ---------- Form controls ---------- */
 
 input, select, textarea, button {

@@ -311,6 +311,15 @@ document.getElementById('showLoginBtn').addEventListener('click', () => {
   document.getElementById('loginView').hidden = false;
 });
 
+let pendingMfaToken = null;
+
+function showMfaView() {
+  document.getElementById('loginView').hidden = true;
+  document.getElementById('registerView').hidden = true;
+  document.getElementById('mfaView').hidden = false;
+  document.getElementById('mfaLoginCode').focus();
+}
+
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const errorEl = document.getElementById('loginError');
@@ -328,13 +337,54 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || 'Sign in failed');
     }
-    const user = await res.json();
+    const body = await res.json();
+    if (body.mfaRequired) {
+      pendingMfaToken = body.mfaToken;
+      document.getElementById('mfaLoginForm').reset();
+      showMfaView();
+      return;
+    }
     document.getElementById('loginForm').reset();
+    showApp(body);
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
+});
+
+document.getElementById('mfaLoginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('mfaLoginError');
+  errorEl.hidden = true;
+  try {
+    const res = await fetch('/api/auth/mfa/verify-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mfaToken: pendingMfaToken,
+        code: document.getElementById('mfaLoginCode').value,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Verification failed');
+    }
+    const user = await res.json();
+    pendingMfaToken = null;
+    document.getElementById('mfaLoginForm').reset();
+    document.getElementById('mfaView').hidden = true;
     showApp(user);
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.hidden = false;
   }
+});
+
+document.getElementById('mfaBackToLoginBtn').addEventListener('click', () => {
+  pendingMfaToken = null;
+  document.getElementById('mfaLoginForm').reset();
+  document.getElementById('mfaView').hidden = true;
+  document.getElementById('loginView').hidden = false;
 });
 
 document.getElementById('registerForm').addEventListener('submit', async (e) => {
@@ -369,8 +419,76 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
   document.getElementById('loginForm').reset();
   document.getElementById('registerView').hidden = true;
+  document.getElementById('mfaView').hidden = true;
   document.getElementById('loginView').hidden = false;
   showAuthScreen();
+});
+
+// ---------- Two-factor auth (self-service) ----------
+
+function renderMfaStatus() {
+  const enabled = !!(state.currentUser && state.currentUser.mfaEnabled);
+  document.getElementById('mfaStatusOff').hidden = enabled;
+  document.getElementById('mfaStatusOn').hidden = !enabled;
+  document.getElementById('mfaSetupPanel').hidden = true;
+}
+
+document.getElementById('mfaSettingsBtn').addEventListener('click', () => {
+  renderMfaStatus();
+  document.getElementById('mfaModal').hidden = false;
+});
+
+document.getElementById('mfaModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('mfaModal').hidden = true;
+});
+
+document.getElementById('mfaStartSetupBtn').addEventListener('click', async () => {
+  try {
+    const { qrDataUrl, secret } = await api('/api/auth/mfa/setup', { method: 'POST' });
+    document.getElementById('mfaQrImage').src = qrDataUrl;
+    document.getElementById('mfaManualSecret').textContent = secret;
+    document.getElementById('mfaConfirmForm').reset();
+    document.getElementById('mfaConfirmError').hidden = true;
+    document.getElementById('mfaStatusOff').hidden = true;
+    document.getElementById('mfaSetupPanel').hidden = false;
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+document.getElementById('mfaConfirmForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('mfaConfirmError');
+  errorEl.hidden = true;
+  try {
+    state.currentUser = await api('/api/auth/mfa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ code: document.getElementById('mfaConfirmCode').value }),
+    });
+    toast('Two-factor authentication is now on.', 'success');
+    renderMfaStatus();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
+});
+
+document.getElementById('mfaDisableForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('mfaDisableError');
+  errorEl.hidden = true;
+  try {
+    state.currentUser = await api('/api/auth/mfa/disable', {
+      method: 'POST',
+      body: JSON.stringify({ password: document.getElementById('mfaDisablePassword').value }),
+    });
+    document.getElementById('mfaDisableForm').reset();
+    toast('Two-factor authentication is now off.', 'success');
+    renderMfaStatus();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
 });
 
 // ---------- Tabs ----------
@@ -5127,6 +5245,11 @@ async function loadAdminUsers() {
           ? `<span class="status-pill complete">Active</span>`
           : `<button type="button" class="admin-active-toggle ${u.active ? '' : 'danger'}" data-user="${u.id}" data-name="${escapeHtml(u.name)}" data-active="${u.active}">${u.active ? 'Active' : 'Disabled'}</button>`}
       </td>
+      <td>
+        ${u.mfaEnabled
+          ? `<button type="button" class="admin-mfa-reset" data-user="${u.id}" data-name="${escapeHtml(u.name)}">On — Reset</button>`
+          : `<span class="status-pill">Off</span>`}
+      </td>
     </tr>
   `).join('');
 
@@ -5176,6 +5299,18 @@ async function loadAdminUsers() {
           method: 'PUT',
           body: JSON.stringify({ active: nowActive }),
         });
+        loadAdminUsers();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.admin-mfa-reset').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Turn off two-factor authentication for ${btn.dataset.name}? They'll be able to sign in with just their password until they set it up again — use this for a lost or replaced phone.`)) return;
+      try {
+        await api(`/api/users/${btn.dataset.user}/mfa-reset`, { method: 'PUT' });
         loadAdminUsers();
       } catch (err) {
         toast(err.message, 'error');
