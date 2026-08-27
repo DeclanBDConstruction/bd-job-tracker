@@ -2406,19 +2406,9 @@ async function confirmMfaSetup(userId, code) {
   return sanitizeUser(data);
 }
 
-// Requires the account's own password again (not just an active session) so someone who
-// walks up to an unlocked, already-signed-in browser can't turn off the one thing protecting
-// it. Losing access to the authenticator app instead is recovered via adminResetMfa.
-async function disableMfa(userId, password) {
-  const { data: user, error } = await supabase.from('users').select('password_hash').eq('id', userId).maybeSingle();
-  check(error);
-  if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
-    throw new Error('Incorrect password.');
-  }
-  const { data, error: updErr } = await supabase.from('users').update({ mfa_enabled: false, mfa_secret: null }).eq('id', userId).select().maybeSingle();
-  check(updErr);
-  return sanitizeUser(data);
-}
+// Deliberately no self-service "disable" - a password alone (something you know) must never
+// be enough to turn off the thing that's supposed to require something you *have* too, or the
+// second factor isn't really a second factor. Only adminResetMfa below can clear it.
 
 // Lost-phone recovery: an admin clears someone else's MFA so they can sign in with just their
 // password and set it up again. No password check needed here - it's gated by requireAdmin
@@ -2536,7 +2526,6 @@ module.exports = {
   deleteSession,
   startMfaSetup,
   confirmMfaSetup,
-  disableMfa,
   adminResetMfa,
   createMfaChallenge,
   verifyMfaChallenge,

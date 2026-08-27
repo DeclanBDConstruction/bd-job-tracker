@@ -319,7 +319,6 @@ const CALENDAR_DIARY_ROUTES = [
   // Every role gets to protect their own account, same reasoning as the colour picker above.
   { method: 'POST', path: /^\/auth\/mfa\/setup$/ },
   { method: 'POST', path: /^\/auth\/mfa\/confirm$/ },
-  { method: 'POST', path: /^\/auth\/mfa\/disable$/ },
   { method: 'GET', path: /^\/diary$/ },
   { method: 'POST', path: /^\/diary$/ },
   { method: 'PUT', path: /^\/diary\/[^/]+\/complete$/ },
@@ -398,8 +397,8 @@ app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
   res.json(user);
 }));
 
-// Lost-phone recovery for someone else's MFA - see adminResetMfa in db.js. Turning your own
-// MFA off goes through /api/auth/mfa/disable below instead, which requires your password.
+// Lost-phone recovery for someone else's MFA - see adminResetMfa in db.js. This is the only
+// way to clear an account's 2FA; there's no self-service disable (see the note in db.js).
 app.put('/api/users/:id/mfa-reset', requireAdmin, handle(async (req, res) => {
   const user = await db.adminResetMfa(req.params.id);
   broadcast('users');
@@ -414,12 +413,6 @@ app.post('/api/auth/mfa/setup', handle(async (req, res) => {
 
 app.post('/api/auth/mfa/confirm', handle(async (req, res) => {
   const user = await db.confirmMfaSetup(req.user.id, req.body.code);
-  broadcast('users');
-  res.json(user);
-}));
-
-app.post('/api/auth/mfa/disable', handle(async (req, res) => {
-  const user = await db.disableMfa(req.user.id, req.body.password);
   broadcast('users');
   res.json(user);
 }));

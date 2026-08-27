@@ -1068,23 +1068,7 @@
     </div>
 
     <div id="mfaStatusOn">
-      <p class="hint">Two-factor authentication is <strong>on</strong> for your account. Getting a new phone or lost the old one? Reset it below and you'll be walked through scanning a fresh code straight away.</p>
-      <form id="mfaDisableForm">
-        <label>Enter your password to reset it<input type="password" id="mfaDisablePassword" required autocomplete="current-password"></label>
-        <p class="auth-error" id="mfaDisableError" hidden></p>
-        <button type="submit" class="danger">Reset Two-Factor Auth</button>
-      </form>
-    </div>
-
-    <div id="mfaSetupPanel" hidden>
-      <p class="hint">Scan this QR code with your authenticator app, then enter the 6-digit code it shows you to confirm.</p>
-      <img id="mfaQrImage" alt="Two-factor setup QR code" class="mfa-qr">
-      <p class="hint">Can't scan it? Enter this key manually instead: <code id="mfaManualSecret"></code></p>
-      <form id="mfaConfirmForm">
-        <label>Code<input type="text" id="mfaConfirmCode" inputmode="numeric" autocomplete="one-time-code" required placeholder="000000"></label>
-        <p class="auth-error" id="mfaConfirmError" hidden></p>
-        <button type="submit" class="primary">Confirm &amp; Enable</button>
-      </form>
+      <p class="hint">Two-factor authentication is <strong>on</strong> for your account. It can't be turned off from here - if you lose your phone or get a new one, ask an admin to reset it for you from the Admin tab, and you'll be walked through setting up a new code the next time you sign in.</p>
     </div>
   </div>
 </div>

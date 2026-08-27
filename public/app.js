@@ -70,10 +70,9 @@ async function api(path, options = {}) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    // Someone's mid-way through resetting their own 2FA (see the mfaDisableForm handler
-    // below) and something else fired a request in the gap between disabling the old code
-    // and confirming a new one - or an admin reset their 2FA while they were mid-session.
-    // Either way, route them into the forced setup screen instead of just toasting an error.
+    // An admin reset this person's 2FA (lost phone, etc.) while they still had an open
+    // session elsewhere - route them into the forced setup screen instead of just toasting
+    // an error on whatever request happened to be the first to notice.
     if (body.mfaSetupRequired) {
       const me = await fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (me) showMfaSetupRequired(me);
@@ -504,70 +503,17 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 // ---------- Two-factor auth (self-service) ----------
 
-// 2FA is mandatory (see handleAuthenticated/showMfaSetupRequired above), so this modal is
-// only ever reachable from inside the app - which itself requires mfaEnabled to be true to
-// get past the forced setup screen. So there's no "off" state to show here, only "on" plus
-// the option to reset it (e.g. a new phone) - which re-runs setup inline via mfaSetupPanel
-// rather than leaving the account without 2FA for any real length of time.
-function renderMfaStatus() {
-  document.getElementById('mfaStatusOn').hidden = false;
-  document.getElementById('mfaSetupPanel').hidden = true;
-}
-
+// 2FA is mandatory and can't be turned off from inside the app - a stolen password alone
+// shouldn't be enough to swap out someone's second factor, which is exactly what a
+// password-only self-service "disable" would let an attacker do. The only way to reset it is
+// an admin doing it from the Admin tab (adminResetMfa in db.js), which drops the account back
+// into the forced setup screen next time they sign in. This modal is read-only status.
 document.getElementById('mfaSettingsBtn').addEventListener('click', () => {
-  renderMfaStatus();
   document.getElementById('mfaModal').hidden = false;
 });
 
 document.getElementById('mfaModalCloseBtn').addEventListener('click', () => {
   document.getElementById('mfaModal').hidden = true;
-});
-
-async function startInlineMfaSetup() {
-  const { qrDataUrl, secret } = await api('/api/auth/mfa/setup', { method: 'POST' });
-  document.getElementById('mfaQrImage').src = qrDataUrl;
-  document.getElementById('mfaManualSecret').textContent = secret;
-  document.getElementById('mfaConfirmForm').reset();
-  document.getElementById('mfaConfirmError').hidden = true;
-  document.getElementById('mfaStatusOn').hidden = true;
-  document.getElementById('mfaSetupPanel').hidden = false;
-}
-
-document.getElementById('mfaConfirmForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const errorEl = document.getElementById('mfaConfirmError');
-  errorEl.hidden = true;
-  try {
-    state.currentUser = await api('/api/auth/mfa/confirm', {
-      method: 'POST',
-      body: JSON.stringify({ code: document.getElementById('mfaConfirmCode').value }),
-    });
-    toast('Two-factor authentication is set up.', 'success');
-    renderMfaStatus();
-  } catch (err) {
-    errorEl.textContent = err.message;
-    errorEl.hidden = false;
-  }
-});
-
-document.getElementById('mfaDisableForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const errorEl = document.getElementById('mfaDisableError');
-  errorEl.hidden = true;
-  try {
-    await api('/api/auth/mfa/disable', {
-      method: 'POST',
-      body: JSON.stringify({ password: document.getElementById('mfaDisablePassword').value }),
-    });
-    document.getElementById('mfaDisableForm').reset();
-    // Straight into scanning a new code - mfaEnabled is false again for the few seconds
-    // until they confirm, so leaving them looking at a blank "off" state isn't useful when
-    // the whole point was to set up a replacement, not to actually stop using 2FA.
-    await startInlineMfaSetup();
-  } catch (err) {
-    errorEl.textContent = err.message;
-    errorEl.hidden = false;
-  }
 });
 
 // ---------- Tabs ----------

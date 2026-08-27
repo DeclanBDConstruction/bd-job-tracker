@@ -89,11 +89,11 @@ account again — ask if you'd like help with that.
 used — scan the QR code shown at sign-up (or on first sign-in for an existing account) with
 an authenticator app (Microsoft Authenticator, Google Authenticator, etc.) and enter the code
 it shows to confirm. From then on, every sign-in asks for a fresh 6-digit code after the
-password. Already-signed-in users can reset their own 2FA (e.g. for a new phone) from the
-**Two-Factor Auth** button next to Sign Out — it asks for your password, then walks you
-through scanning a new code straight away. If someone loses their phone and can't get in at
-all, an admin can reset 2FA for them from the Admin tab (Two-Factor column), which drops them
-back into the setup screen next time they sign in.
+password. It can't be turned off from inside the app — a password alone (something you know)
+should never be enough to disable the thing that's supposed to require something you *have*
+too. If someone loses their phone or gets a new one, an admin resets 2FA for them from the
+Admin tab (Two-Factor column), which drops them back into the setup screen next time they
+sign in.
 
 ## Importing a job from a job costing sheet
 
