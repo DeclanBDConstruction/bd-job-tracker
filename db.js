@@ -6,7 +6,11 @@ const { supabase } = require('./supabaseClient');
 const { riskBand } = require('./riskAssessments');
 
 const DEFAULT_STATUSES = ['Won', 'In Progress', 'Complete', 'Invoiced', 'Lost', 'Cancelled'];
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// The session cookie itself (see setSessionCookie in server.js) is what makes people sign in
+// again on every fresh app open - it has no maxAge, so it dies with the browser/tab. This is
+// just a server-side safety net in case a browser or PWA holds onto the cookie longer than it
+// should, so a session can't ride along forever even then.
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes - just long enough to open an authenticator app
 const DOCUMENT_CATEGORIES = ['rams', 'drawings', 'photos', 'permit'];
 const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', photos: 'Photos', permit: 'Permit to Work' };

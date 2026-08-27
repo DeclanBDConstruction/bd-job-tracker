@@ -64,6 +64,19 @@
         </form>
         <p class="auth-switch"><button type="button" id="mfaBackToLoginBtn" class="link-btn">Back to sign in</button></p>
       </div>
+
+      <div id="mfaSetupView" hidden>
+        <h2>Set Up Two-Factor Authentication</h2>
+        <p class="auth-subtitle">Every account needs this before it can be used. Scan this QR code with an authenticator app (Microsoft Authenticator, Google Authenticator, etc.), then enter the 6-digit code it shows you to continue.</p>
+        <img id="mfaSetupQrImage" alt="Two-factor setup QR code" class="mfa-qr">
+        <p class="auth-subtitle">Can't scan it? Enter this key manually instead: <code id="mfaSetupManualSecret"></code></p>
+        <form id="mfaSetupConfirmForm">
+          <label>Code<input type="text" id="mfaSetupConfirmCode" inputmode="numeric" autocomplete="one-time-code" required placeholder="000000"></label>
+          <p class="auth-error" id="mfaSetupConfirmError" hidden></p>
+          <button type="submit" class="primary">Confirm &amp; Continue</button>
+        </form>
+        <p class="auth-switch"><button type="button" id="mfaSetupSignOutBtn" class="link-btn">Wrong account? Sign out</button></p>
+      </div>
     </div>
   </div>
 </div>
@@ -1054,17 +1067,12 @@
       <button type="button" id="mfaModalCloseBtn" class="link-btn">Close</button>
     </div>
 
-    <div id="mfaStatusOff">
-      <p class="hint">Add a second step to signing in using an authenticator app (Microsoft Authenticator, Google Authenticator, etc.) — even if someone learns your password, they can't sign in without your phone too.</p>
-      <button type="button" id="mfaStartSetupBtn" class="primary">Set Up Two-Factor Auth</button>
-    </div>
-
-    <div id="mfaStatusOn" hidden>
-      <p class="hint">Two-factor authentication is <strong>enabled</strong> on your account.</p>
+    <div id="mfaStatusOn">
+      <p class="hint">Two-factor authentication is <strong>on</strong> for your account. Getting a new phone or lost the old one? Reset it below and you'll be walked through scanning a fresh code straight away.</p>
       <form id="mfaDisableForm">
-        <label>Enter your password to turn it off<input type="password" id="mfaDisablePassword" required autocomplete="current-password"></label>
+        <label>Enter your password to reset it<input type="password" id="mfaDisablePassword" required autocomplete="current-password"></label>
         <p class="auth-error" id="mfaDisableError" hidden></p>
-        <button type="submit" class="danger">Turn Off Two-Factor Auth</button>
+        <button type="submit" class="danger">Reset Two-Factor Auth</button>
       </form>
     </div>
 

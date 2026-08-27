@@ -172,12 +172,14 @@ function currentUser(req) {
   return db.getUserBySession(parseCookies(req).sid);
 }
 
-const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, matches db.js session TTL
-
 function setSessionCookie(res, token) {
   // secure:true is safe unconditionally here - Render only ever serves this app over HTTPS,
   // so there's no legitimate plain-HTTP request for the cookie to need to ride along on.
-  res.cookie('sid', token, { httpOnly: true, sameSite: 'lax', secure: true, maxAge: SESSION_MAX_AGE_MS });
+  // No maxAge - this is deliberately a browser-session cookie (dies when the browser/tab is
+  // fully closed), not a "stay signed in" one, so opening the app fresh always means signing
+  // in and entering a 2FA code again. db.js's SESSION_TTL_MS backs this up server-side in
+  // case a browser or PWA holds onto the cookie longer than it should.
+  res.cookie('sid', token, { httpOnly: true, sameSite: 'lax', secure: true });
 }
 
 // ---------- Auth ----------
@@ -263,6 +265,26 @@ app.use('/api', async (req, res, next) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// MFA is mandatory for every account, regardless of role - until someone's completed setup
+// (mfa_enabled true), the only things they can do are check who they are (/auth/me, above -
+// already reachable pre-gate), sign out (/auth/logout, also pre-gate), or finish setting it
+// up. See startMfaSetup/confirmMfaSetup in db.js and the forced setup screen in app.js that
+// routes people here until they've done it.
+const MFA_SETUP_ROUTES = [
+  { method: 'POST', path: /^\/auth\/mfa\/setup$/ },
+  { method: 'POST', path: /^\/auth\/mfa\/confirm$/ },
+];
+
+app.use('/api', (req, res, next) => {
+  if (!req.user.mfaEnabled && !MFA_SETUP_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
+    // mfaSetupRequired is a distinct flag (not just the 403 status) so the frontend can tell
+    // this apart from an ordinary role-based 403 like "Admins only" and route to the forced
+    // setup screen instead of just toasting an error - see the api() helper in app.js.
+    return res.status(403).json({ error: 'Set up two-factor authentication to continue.', mfaSetupRequired: true });
+  }
+  next();
 });
 
 function requireAdmin(req, res, next) {

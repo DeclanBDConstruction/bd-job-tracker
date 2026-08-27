@@ -69,9 +69,13 @@ needs restarting, or whether a fresh deployment is simpler.*
 ### Signing in
 
 Each person needs their own account to use the tracker. The first time someone opens it,
-they click **Create an account** (name, email, password) and are signed in straight away —
-after that they use **Sign In** with the same email/password. Sign-in stays active for 30
-days per device, and there's a **Sign Out** button top-right of the header.
+they click **Create an account** (name, email, password) and are walked straight into setting
+up two-factor authentication — after that they use **Sign In** with the same email/password
+plus a 6-digit code. There's a **Sign Out** button top-right of the header.
+
+Sign-in doesn't persist between visits — closing the browser or app fully and reopening it
+always means signing in again (password + code), even on the same device. A plain page
+refresh without closing the app stays signed in.
 
 Accounts are stored in Supabase, same as everything else — there's no email sent as part
 of sign-up. The very first account created becomes an "admin", which grants extra
@@ -81,12 +85,15 @@ There's no "forgot password" flow (no email is sent from this app). If someone f
 theirs, delete their row from the `users` table in Supabase and have them create the
 account again — ask if you'd like help with that.
 
-**Two-factor authentication (optional):** anyone can turn on 2FA for their own account from
-the **Two-Factor Auth** button next to Sign Out — scan the QR code with an authenticator app
-(Microsoft Authenticator, Google Authenticator, etc.) and enter the code it shows to confirm.
-Once it's on, signing in asks for a fresh 6-digit code after the password. If someone loses
-their phone, an admin can turn 2FA back off for them from the Admin tab (Two-Factor column) so
-they can sign in with just their password and set it up again.
+**Two-factor authentication (mandatory):** every account must set up 2FA before it can be
+used — scan the QR code shown at sign-up (or on first sign-in for an existing account) with
+an authenticator app (Microsoft Authenticator, Google Authenticator, etc.) and enter the code
+it shows to confirm. From then on, every sign-in asks for a fresh 6-digit code after the
+password. Already-signed-in users can reset their own 2FA (e.g. for a new phone) from the
+**Two-Factor Auth** button next to Sign Out — it asks for your password, then walks you
+through scanning a new code straight away. If someone loses their phone and can't get in at
+all, an admin can reset 2FA for them from the Admin tab (Two-Factor column), which drops them
+back into the setup screen next time they sign in.
 
 ## Importing a job from a job costing sheet
 

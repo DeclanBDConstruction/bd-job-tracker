@@ -70,6 +70,14 @@ async function api(path, options = {}) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    // Someone's mid-way through resetting their own 2FA (see the mfaDisableForm handler
+    // below) and something else fired a request in the gap between disabling the old code
+    // and confirming a new one - or an admin reset their 2FA while they were mid-session.
+    // Either way, route them into the forced setup screen instead of just toasting an error.
+    if (body.mfaSetupRequired) {
+      const me = await fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (me) showMfaSetupRequired(me);
+    }
     throw new Error(body.error || `Request failed (${res.status})`);
   }
   if (res.status === 204) return null;
@@ -295,11 +303,81 @@ async function handleLiveUsersChange() {
 async function checkAuth() {
   const res = await fetch('/api/auth/me');
   if (res.ok) {
-    showApp(await res.json());
+    handleAuthenticated(await res.json());
   } else {
     showAuthScreen();
   }
 }
+
+// Routes a freshly-authenticated user (register/login/mfa-verify-login all end up here)
+// either into the real app, or - since 2FA is mandatory for every account - into the forced
+// setup screen first if they haven't completed it yet. Also the fallback the api() helper
+// below reaches for when some other request 403s for the same reason.
+function handleAuthenticated(user) {
+  if (user.mfaEnabled) {
+    showApp(user);
+  } else {
+    showMfaSetupRequired(user);
+  }
+}
+
+async function showMfaSetupRequired(user) {
+  state.currentUser = user;
+  document.getElementById('appShell').hidden = true;
+  document.getElementById('authScreen').hidden = false;
+  document.getElementById('loginView').hidden = true;
+  document.getElementById('registerView').hidden = true;
+  document.getElementById('mfaView').hidden = true;
+  document.getElementById('mfaSetupView').hidden = false;
+  hideSplash();
+  const errorEl = document.getElementById('mfaSetupConfirmError');
+  errorEl.hidden = true;
+  document.getElementById('mfaSetupConfirmForm').reset();
+  try {
+    const res = await fetch('/api/auth/mfa/setup', { method: 'POST' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Could not start two-factor setup');
+    }
+    const { qrDataUrl, secret } = await res.json();
+    document.getElementById('mfaSetupQrImage').src = qrDataUrl;
+    document.getElementById('mfaSetupManualSecret').textContent = secret;
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
+}
+
+document.getElementById('mfaSetupConfirmForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('mfaSetupConfirmError');
+  errorEl.hidden = true;
+  try {
+    const res = await fetch('/api/auth/mfa/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: document.getElementById('mfaSetupConfirmCode').value }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Verification failed');
+    }
+    const user = await res.json();
+    document.getElementById('mfaSetupConfirmForm').reset();
+    document.getElementById('mfaSetupView').hidden = true;
+    showApp(user);
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
+});
+
+document.getElementById('mfaSetupSignOutBtn').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  document.getElementById('mfaSetupView').hidden = true;
+  document.getElementById('loginView').hidden = false;
+  showAuthScreen();
+});
 
 document.getElementById('showRegisterBtn').addEventListener('click', () => {
   document.getElementById('loginView').hidden = true;
@@ -345,7 +423,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       return;
     }
     document.getElementById('loginForm').reset();
-    showApp(body);
+    handleAuthenticated(body);
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.hidden = false;
@@ -373,7 +451,7 @@ document.getElementById('mfaLoginForm').addEventListener('submit', async (e) => 
     pendingMfaToken = null;
     document.getElementById('mfaLoginForm').reset();
     document.getElementById('mfaView').hidden = true;
-    showApp(user);
+    handleAuthenticated(user);
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.hidden = false;
@@ -408,7 +486,7 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     }
     const user = await res.json();
     document.getElementById('registerForm').reset();
-    showApp(user);
+    handleAuthenticated(user);
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.hidden = false;
@@ -426,10 +504,13 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 // ---------- Two-factor auth (self-service) ----------
 
+// 2FA is mandatory (see handleAuthenticated/showMfaSetupRequired above), so this modal is
+// only ever reachable from inside the app - which itself requires mfaEnabled to be true to
+// get past the forced setup screen. So there's no "off" state to show here, only "on" plus
+// the option to reset it (e.g. a new phone) - which re-runs setup inline via mfaSetupPanel
+// rather than leaving the account without 2FA for any real length of time.
 function renderMfaStatus() {
-  const enabled = !!(state.currentUser && state.currentUser.mfaEnabled);
-  document.getElementById('mfaStatusOff').hidden = enabled;
-  document.getElementById('mfaStatusOn').hidden = !enabled;
+  document.getElementById('mfaStatusOn').hidden = false;
   document.getElementById('mfaSetupPanel').hidden = true;
 }
 
@@ -442,19 +523,15 @@ document.getElementById('mfaModalCloseBtn').addEventListener('click', () => {
   document.getElementById('mfaModal').hidden = true;
 });
 
-document.getElementById('mfaStartSetupBtn').addEventListener('click', async () => {
-  try {
-    const { qrDataUrl, secret } = await api('/api/auth/mfa/setup', { method: 'POST' });
-    document.getElementById('mfaQrImage').src = qrDataUrl;
-    document.getElementById('mfaManualSecret').textContent = secret;
-    document.getElementById('mfaConfirmForm').reset();
-    document.getElementById('mfaConfirmError').hidden = true;
-    document.getElementById('mfaStatusOff').hidden = true;
-    document.getElementById('mfaSetupPanel').hidden = false;
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
+async function startInlineMfaSetup() {
+  const { qrDataUrl, secret } = await api('/api/auth/mfa/setup', { method: 'POST' });
+  document.getElementById('mfaQrImage').src = qrDataUrl;
+  document.getElementById('mfaManualSecret').textContent = secret;
+  document.getElementById('mfaConfirmForm').reset();
+  document.getElementById('mfaConfirmError').hidden = true;
+  document.getElementById('mfaStatusOn').hidden = true;
+  document.getElementById('mfaSetupPanel').hidden = false;
+}
 
 document.getElementById('mfaConfirmForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -465,7 +542,7 @@ document.getElementById('mfaConfirmForm').addEventListener('submit', async (e) =
       method: 'POST',
       body: JSON.stringify({ code: document.getElementById('mfaConfirmCode').value }),
     });
-    toast('Two-factor authentication is now on.', 'success');
+    toast('Two-factor authentication is set up.', 'success');
     renderMfaStatus();
   } catch (err) {
     errorEl.textContent = err.message;
@@ -478,13 +555,15 @@ document.getElementById('mfaDisableForm').addEventListener('submit', async (e) =
   const errorEl = document.getElementById('mfaDisableError');
   errorEl.hidden = true;
   try {
-    state.currentUser = await api('/api/auth/mfa/disable', {
+    await api('/api/auth/mfa/disable', {
       method: 'POST',
       body: JSON.stringify({ password: document.getElementById('mfaDisablePassword').value }),
     });
     document.getElementById('mfaDisableForm').reset();
-    toast('Two-factor authentication is now off.', 'success');
-    renderMfaStatus();
+    // Straight into scanning a new code - mfaEnabled is false again for the few seconds
+    // until they confirm, so leaving them looking at a blank "off" state isn't useful when
+    // the whole point was to set up a replacement, not to actually stop using 2FA.
+    await startInlineMfaSetup();
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.hidden = false;
