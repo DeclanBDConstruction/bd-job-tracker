@@ -98,7 +98,7 @@ body {
 }
 
 .splash-bar-fill {
-  height: 40%;
+  height: 100%;
   width: 40%;
   background: var(--green);
   border-radius: 999px;
