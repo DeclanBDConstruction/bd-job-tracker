@@ -61,6 +61,13 @@ alter table users add column if not exists mfa_enabled boolean not null default 
 -- photo yet - the app falls back to initials, same as before this column existed.
 alter table users add column if not exists avatar_stored_name text;
 
+-- Free cosmetic profile customisation - an avatar border colour and a background theme for
+-- the profile card, picked from a fixed set each (see PROFILE_BORDER_STYLES/
+-- PROFILE_BACKGROUND_THEMES in db.js). Null/'none' means no customisation, same as before
+-- these columns existed. Purely decorative - no gameplay/unlock system behind it.
+alter table users add column if not exists profile_border text;
+alter table users add column if not exists profile_background text;
+
 -- Qualifications/certifications a person holds (e.g. CSCS card, First Aid) shown on their
 -- Profile tab - expiry_date is optional free-text (not every qualification expires) so the
 -- office can see at a glance what's coming up for renewal.

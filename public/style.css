@@ -290,6 +290,76 @@ body {
   margin-bottom: 20px;
 }
 
+/* ---------- Profile customisation (avatar border + profile card background) ---------- */
+/* Purely cosmetic, free pick - see PROFILE_BORDER_STYLES/PROFILE_BACKGROUND_THEMES in db.js.
+   A ring via `outline` (not box-shadow) so it sits cleanly around the circular avatar without
+   any z-index/stacking tricks, and follows border-radius in every current browser. */
+
+.user-avatar, .profile-photo-large {
+  outline-width: 3px;
+  outline-style: solid;
+  outline-color: transparent;
+  outline-offset: 3px;
+}
+.avatar-border-gold { outline-color: #d4af37; }
+.avatar-border-blue { outline-color: #1c6e9c; }
+.avatar-border-green { outline-color: #4c7a1f; }
+.avatar-border-purple { outline-color: #7a4fb0; }
+.avatar-border-red { outline-color: #b6402e; }
+.avatar-border-rainbow { animation: avatarBorderRainbow 3s linear infinite; }
+@keyframes avatarBorderRainbow {
+  0% { outline-color: #e0403a; }
+  16% { outline-color: #e08a2e; }
+  33% { outline-color: #d4c72e; }
+  50% { outline-color: #4c9a4c; }
+  66% { outline-color: #2e7ad4; }
+  83% { outline-color: #7a4fb0; }
+  100% { outline-color: #e0403a; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-border-rainbow { animation: none; outline-color: #7a4fb0; }
+}
+
+.profile-card-themed {
+  padding: 16px;
+  border-radius: 12px;
+  color: #fff;
+}
+.profile-card-themed .hint { color: rgba(255,255,255,0.85); }
+.profile-bg-ocean { background: linear-gradient(135deg, #0f4c75, #3282b8); }
+.profile-bg-sunset { background: linear-gradient(135deg, #c24d1f, #e0a63a); }
+.profile-bg-forest { background: linear-gradient(135deg, #14401e, #4c8a4c); }
+.profile-bg-slate { background: linear-gradient(135deg, #2c3e50, #57708a); }
+.profile-bg-berry { background: linear-gradient(135deg, #5c1a5c, #a8327a); }
+
+.profile-style-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.profile-style-swatch-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 0 1px var(--border);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.profile-style-swatch-btn:hover { transform: translateY(-1px) scale(1.08); box-shadow: 0 0 0 2px var(--blue); }
+.profile-style-swatch-btn.selected { box-shadow: 0 0 0 2px var(--blue-dark); }
+.profile-style-swatch-btn.style-none { background: #e3e9ef; color: var(--muted); font-size: 10px; }
+.profile-style-swatch-btn.style-gold { background: #d4af37; }
+.profile-style-swatch-btn.style-blue { background: #1c6e9c; }
+.profile-style-swatch-btn.style-green { background: #4c7a1f; }
+.profile-style-swatch-btn.style-purple { background: #7a4fb0; }
+.profile-style-swatch-btn.style-red { background: #b6402e; }
+.profile-style-swatch-btn.style-rainbow { background: conic-gradient(#e0403a, #e08a2e, #d4c72e, #4c9a4c, #2e7ad4, #7a4fb0, #e0403a); }
+.profile-style-swatch-btn.style-ocean { background: linear-gradient(135deg, #0f4c75, #3282b8); }
+.profile-style-swatch-btn.style-sunset { background: linear-gradient(135deg, #c24d1f, #e0a63a); }
+.profile-style-swatch-btn.style-forest { background: linear-gradient(135deg, #14401e, #4c8a4c); }
+.profile-style-swatch-btn.style-slate { background: linear-gradient(135deg, #2c3e50, #57708a); }
+.profile-style-swatch-btn.style-berry { background: linear-gradient(135deg, #5c1a5c, #a8327a); }
+
 .profile-photo-wrap {
   display: flex;
   flex-direction: column;

@@ -120,8 +120,10 @@ function avatarInitials(name) {
 
 // Shared by the topbar avatar, the Team directory, and the profile view/edit cards - shows the
 // uploaded photo (proxied through the authenticated /api/users/:id/photo route, never a public
-// URL) when one exists, falling back to initials otherwise.
-function renderAvatar(el, { id, name, hasPhoto }) {
+// URL) when one exists, falling back to initials otherwise. Also applies that person's chosen
+// avatar border (see PROFILE_BORDER_STYLES in db.js) - purely cosmetic, follows them wherever
+// their avatar shows up.
+function renderAvatar(el, { id, name, hasPhoto, profileBorder }) {
   if (!el) return;
   if (hasPhoto && id) {
     el.textContent = '';
@@ -129,6 +131,20 @@ function renderAvatar(el, { id, name, hasPhoto }) {
   } else {
     el.innerHTML = '';
     el.textContent = avatarInitials(name);
+  }
+  el.className = el.className.replace(/\bavatar-border-\S+/g, '').trim();
+  if (profileBorder && profileBorder !== 'none') el.classList.add(`avatar-border-${profileBorder}`);
+}
+
+// Applies a person's chosen profile-card background theme (see PROFILE_BACKGROUND_THEMES in
+// db.js) to the card wrapping their photo/name on My Profile and the read-only profile view -
+// same "follows them around" cosmetic as the avatar border, just scoped to their own card.
+function applyProfileBackground(el, profileBackground) {
+  if (!el) return;
+  el.classList.remove('profile-card-themed');
+  el.className = el.className.replace(/\bprofile-bg-\S+/g, '').trim();
+  if (profileBackground && profileBackground !== 'none') {
+    el.classList.add('profile-card-themed', `profile-bg-${profileBackground}`);
   }
 }
 
@@ -1641,9 +1657,50 @@ function renderMyProfile() {
   const user = state.currentUser;
   if (!user) return;
   renderAvatar(document.getElementById('myProfilePhoto'), user);
+  applyProfileBackground(document.getElementById('myProfileCard'), user.profileBackground);
   document.getElementById('myProfileName').textContent = user.name;
   document.getElementById('myProfileRole').textContent = ROLE_LABELS[user.role] || user.role;
   document.getElementById('myProfilePhotoRemoveBtn').hidden = !user.hasPhoto;
+  renderProfileStylePicker();
+}
+
+// Free-pick cosmetic swatches for the avatar border and profile card background - same
+// swatch-button pattern as the calendar colour picker (renderColorPicker), just without the
+// "taken by someone else" exclusivity, since everyone can pick the same one.
+const PROFILE_BORDER_LABELS = { none: 'None', gold: 'Gold', blue: 'Blue', green: 'Green', purple: 'Purple', red: 'Red', rainbow: 'Rainbow' };
+const PROFILE_BACKGROUND_LABELS = { none: 'None', ocean: 'Ocean', sunset: 'Sunset', forest: 'Forest', slate: 'Slate', berry: 'Berry' };
+
+function renderProfileStylePicker() {
+  const user = state.currentUser;
+  if (!user) return;
+
+  const borderContainer = document.getElementById('profileBorderPicker');
+  borderContainer.innerHTML = Object.entries(PROFILE_BORDER_LABELS).map(([value, label]) => `
+    <button type="button" class="profile-style-swatch-btn style-${value}${user.profileBorder === value ? ' selected' : ''}"
+      data-border="${value}" title="${label}" aria-label="${label}">${value === 'none' ? '—' : ''}</button>
+  `).join('');
+  borderContainer.querySelectorAll('[data-border]').forEach((btn) => {
+    btn.addEventListener('click', () => saveProfileStyle({ profileBorder: btn.dataset.border, profileBackground: user.profileBackground }));
+  });
+
+  const bgContainer = document.getElementById('profileBackgroundPicker');
+  bgContainer.innerHTML = Object.entries(PROFILE_BACKGROUND_LABELS).map(([value, label]) => `
+    <button type="button" class="profile-style-swatch-btn style-${value}${user.profileBackground === value ? ' selected' : ''}"
+      data-background="${value}" title="${label}" aria-label="${label}">${value === 'none' ? '—' : ''}</button>
+  `).join('');
+  bgContainer.querySelectorAll('[data-background]').forEach((btn) => {
+    btn.addEventListener('click', () => saveProfileStyle({ profileBorder: user.profileBorder, profileBackground: btn.dataset.background }));
+  });
+}
+
+async function saveProfileStyle(body) {
+  try {
+    state.currentUser = await api('/api/users/me/profile-style', { method: 'PUT', body: JSON.stringify(body) });
+    renderMyProfile();
+    renderAvatar(document.getElementById('userAvatar'), state.currentUser);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 document.getElementById('myProfileBtn').addEventListener('click', () => openMyProfileModal());
@@ -1745,6 +1802,7 @@ async function openProfileModal(userId) {
     const profile = await api(`/api/users/${userId}/profile`);
     document.getElementById('profileViewModalTitle').textContent = profile.name;
     renderAvatar(document.getElementById('profileViewPhoto'), profile);
+    applyProfileBackground(document.getElementById('profileViewCard'), profile.profileBackground);
     document.getElementById('profileViewName').textContent = profile.name;
     document.getElementById('profileViewRole').textContent = ROLE_LABELS[profile.role] || profile.role;
     const tbody = document.querySelector('#profileViewQualificationsTable tbody');

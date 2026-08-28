@@ -38,6 +38,13 @@ const CALENDAR_COLORS = [
 ];
 const CALENDAR_COLOR_HEXES = CALENDAR_COLORS.map((c) => c.hex);
 
+// Purely cosmetic profile customisation - free pick, not unique-per-person like the calendar
+// colour above (plenty of people can have a gold border). The actual colours/gradients live
+// in style.css keyed by these same values (see .avatar-border-X / .profile-bg-X) - these
+// arrays are just the allowlist a save is validated against, same role as CALENDAR_COLOR_HEXES.
+const PROFILE_BORDER_STYLES = ['none', 'gold', 'blue', 'green', 'purple', 'red', 'rainbow'];
+const PROFILE_BACKGROUND_THEMES = ['none', 'ocean', 'sunset', 'forest', 'slate', 'berry'];
+
 function genId() {
   return crypto.randomUUID();
 }
@@ -2530,6 +2537,8 @@ function sanitizeUser(row) {
     active: row.active !== false,
     mfaEnabled: !!row.mfa_enabled,
     hasPhoto: !!row.avatar_stored_name,
+    profileBorder: row.profile_border || 'none',
+    profileBackground: row.profile_background || 'none',
     createdAt: row.created_at,
   };
 }
@@ -2756,6 +2765,19 @@ async function setUserColor(userId, color) {
   return sanitizeUser(data);
 }
 
+async function setUserProfileStyle(userId, { profileBorder, profileBackground }) {
+  const border = profileBorder || 'none';
+  const background = profileBackground || 'none';
+  if (!PROFILE_BORDER_STYLES.includes(border)) throw new Error('Not a valid border style');
+  if (!PROFILE_BACKGROUND_THEMES.includes(background)) throw new Error('Not a valid background theme');
+  const { data, error } = await supabase.from('users')
+    .update({ profile_border: border, profile_background: background })
+    .eq('id', userId).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
 // ---------- Profiles (photo + qualifications) ----------
 // Pegged to `users` (login accounts), not `employees` (a name-only sales-credit list) -
 // job_assignments.user_id points at users, which is the relation a future client portal
@@ -2851,7 +2873,9 @@ async function getUserAvatarStoredName(userId) {
 // (and, later, clients browsing a job's assigned team) - deliberately narrower than
 // sanitizeUser: no email, no calendar colour, nothing account-related.
 async function getUserProfile(id) {
-  const { data, error } = await supabase.from('users').select('id, name, role, active, avatar_stored_name').eq('id', id).maybeSingle();
+  const { data, error } = await supabase.from('users')
+    .select('id, name, role, active, avatar_stored_name, profile_border, profile_background')
+    .eq('id', id).maybeSingle();
   check(error);
   if (!data || data.active === false) return null;
   const qualifications = await listUserQualifications(id);
@@ -2860,6 +2884,8 @@ async function getUserProfile(id) {
     name: data.name,
     role: data.role,
     hasPhoto: !!data.avatar_stored_name,
+    profileBorder: data.profile_border || 'none',
+    profileBackground: data.profile_background || 'none',
     qualifications,
   };
 }
@@ -2869,6 +2895,8 @@ module.exports = {
   DOCUMENT_CATEGORIES,
   DOCUMENT_LABELS,
   CALENDAR_COLORS,
+  PROFILE_BORDER_STYLES,
+  PROFILE_BACKGROUND_THEMES,
   logActivity,
   logCrud,
   listActivityLog,
@@ -2890,6 +2918,7 @@ module.exports = {
   OPERATIVE_ROLES,
   listUserColors,
   setUserColor,
+  setUserProfileStyle,
   listEmployees,
   addEmployee,
   renameEmployee,

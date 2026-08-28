@@ -1138,7 +1138,7 @@
       <h2>My Profile</h2>
       <button type="button" id="myProfileModalCloseBtn" class="link-btn">Close</button>
     </div>
-    <div class="profile-card">
+    <div class="profile-card" id="myProfileCard">
       <div class="profile-photo-wrap">
         <span class="profile-photo-large" id="myProfilePhoto"></span>
         <div class="profile-photo-actions">
@@ -1154,6 +1154,13 @@
         <p class="hint" id="myProfileRole"></p>
       </div>
     </div>
+
+    <h3>Customise Your Profile</h3>
+    <p class="hint">Just for fun — pick an avatar border and a background for your profile card. Shows up wherever your avatar appears.</p>
+    <p class="hint">Avatar border</p>
+    <div class="profile-style-picker" id="profileBorderPicker"></div>
+    <p class="hint">Profile background</p>
+    <div class="profile-style-picker" id="profileBackgroundPicker"></div>
 
     <h3>My Qualifications</h3>
     <div class="import-upload">
@@ -1180,7 +1187,7 @@
       <h2 id="profileViewModalTitle">Profile</h2>
       <button type="button" id="profileViewModalCloseBtn" class="link-btn">Close</button>
     </div>
-    <div class="profile-card">
+    <div class="profile-card" id="profileViewCard">
       <span class="profile-photo-large" id="profileViewPhoto"></span>
       <div class="profile-info">
         <h3 id="profileViewName"></h3>
