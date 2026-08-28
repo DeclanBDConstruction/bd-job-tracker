@@ -1158,7 +1158,9 @@
     <h3>My Qualifications</h3>
     <div class="import-upload">
       <input type="text" id="newQualificationName" placeholder="e.g. CSCS Card">
-      <input type="date" id="newQualificationExpiry" title="Expiry date (optional)">
+      <label class="qualification-expiry-field">Expiry (optional — leave blank if it doesn't expire)
+        <input type="date" id="newQualificationExpiry">
+      </label>
       <button type="button" id="addQualificationBtn" class="primary">+ Add Qualification</button>
     </div>
     <table class="data-table" id="myQualificationsTable">
