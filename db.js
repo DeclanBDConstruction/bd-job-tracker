@@ -56,6 +56,68 @@ function check(error) {
   throw new Error(error.message);
 }
 
+// ---------- Activity Log (admin audit trail) ----------
+
+function rowToActivityLogEntry(row) {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    actorUserId: row.actor_user_id,
+    actorName: row.actor_name,
+    actorRole: row.actor_role,
+    action: row.action,
+    summary: row.summary,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    details: row.details || {},
+  };
+}
+
+// Unlike every other write in this file, a failed audit-log insert must never surface as a
+// failed request for the thing it's describing (a job still got created even if this fails) -
+// so this deliberately doesn't call check()/throw, just logs to the server console and moves on.
+async function logActivity(actor, action, summary, targetType, targetId, details) {
+  try {
+    const { error } = await supabase.from('activity_log').insert({
+      id: genId(),
+      actor_user_id: actor ? actor.id : null,
+      actor_name: actor ? actor.name : 'System',
+      actor_role: actor ? actor.role : null,
+      action,
+      summary,
+      target_type: targetType || null,
+      target_id: targetId ? String(targetId) : null,
+      details: details || {},
+    });
+    if (error) console.error('activity log write failed:', error.message);
+  } catch (err) {
+    console.error('activity log write failed:', err.message);
+  }
+}
+
+// Terse one-liner for routine CRUD that doesn't need a hand-crafted sentence, e.g.
+// logCrud(req.user, 'created', 'price_list_item', 'Price list item', item.name, item.id).
+function logCrud(actor, verb, actionNoun, label, name, id) {
+  const verbWord = verb === 'created' ? 'Created' : verb === 'updated' ? 'Updated' : 'Deleted';
+  return logActivity(actor, `${actionNoun}.${verb}`, `${verbWord} ${label} "${name}"`, actionNoun, id);
+}
+
+async function listActivityLog(filters = {}, pagination = {}) {
+  const limit = Math.min(Math.max(Number(pagination.limit) || 50, 1), 200);
+  const offset = Math.max(Number(pagination.offset) || 0, 0);
+  let query = supabase.from('activity_log').select('*', { count: 'exact' });
+  if (filters.from) query = query.gte('created_at', filters.from);
+  if (filters.to) query = query.lte('created_at', filters.to);
+  if (filters.actorUserId) query = query.eq('actor_user_id', filters.actorUserId);
+  if (filters.action) query = query.eq('action', filters.action);
+  if (filters.targetType) query = query.eq('target_type', filters.targetType);
+  if (filters.q) query = query.ilike('summary', `%${filters.q}%`);
+  query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
+  const { data, error, count } = await query;
+  check(error);
+  return { entries: data.map(rowToActivityLogEntry), total: count, limit, offset };
+}
+
 // ---------- Employees ----------
 
 // `hasAccount` flags employees whose name matched a user account at registration
@@ -2633,6 +2695,9 @@ module.exports = {
   DOCUMENT_CATEGORIES,
   DOCUMENT_LABELS,
   CALENDAR_COLORS,
+  logActivity,
+  logCrud,
+  listActivityLog,
   registerUser,
   verifyLogin,
   createSession,

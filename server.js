@@ -132,11 +132,17 @@ async function validateDocumentParams(req, res, next) {
   try {
     if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
     if (!db.DOCUMENT_CATEGORIES.includes(req.params.category)) return res.status(400).json({ error: 'Invalid document category' });
-    if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+    const job = await db.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    req.job = job;
     next();
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+}
+
+function logDocumentUpload(user, jobRef, jobId, category, doc) {
+  db.logActivity(user, 'document.uploaded', `Uploaded ${db.DOCUMENT_LABELS[category]} "${doc.originalName}" to job ${jobRef}`, 'job', jobId);
 }
 
 // Default 100kb is tight for a request carrying two base64 signature-pad PNGs (see the
@@ -223,11 +229,24 @@ app.post('/api/auth/register', registerLimiter, handle(async (req, res) => {
   }
   const user = await db.registerUser(req.body);
   setSessionCookie(res, await db.createSession(user.id));
+  db.logActivity(user, 'user.registered', `New account registered: ${user.name} (${user.email})`, 'user', user.id);
   res.status(201).json(user);
 }));
 
 app.post('/api/auth/login', loginLimiter, handle(async (req, res) => {
-  const user = await db.verifyLogin(req.body.email, req.body.password);
+  let user;
+  try {
+    user = await db.verifyLogin(req.body.email, req.body.password);
+  } catch (err) {
+    // Distinguished from a wrong-password guess so an admin scanning the log can tell a
+    // disabled account trying to sign back in apart from an actual credential-guessing attempt.
+    if (err.message.includes('disabled')) {
+      db.logActivity(null, 'auth.login_blocked', `Disabled account tried to sign in: ${req.body.email}`, 'user', null);
+    } else {
+      db.logActivity(null, 'auth.login_failed', `Failed sign-in attempt for ${req.body.email}`, 'user', null);
+    }
+    throw err;
+  }
   // Password's right, but that's only half the story for an MFA account - hand back a
   // short-lived challenge token instead of a session, so the browser knows to prompt for a
   // code next. No cookie is set until /api/auth/mfa/verify-login confirms it.
@@ -236,14 +255,22 @@ app.post('/api/auth/login', loginLimiter, handle(async (req, res) => {
     return res.json({ mfaRequired: true, mfaToken });
   }
   setSessionCookie(res, await db.createSession(user.id));
+  db.logActivity(user, 'auth.login', `${user.name} signed in`, 'user', user.id);
   res.json(user);
 }));
 
 // Same throttle as the password step - keyed by IP, generous for a real user fumbling their
 // authenticator app but slow going for anyone trying to brute-force a 6-digit code.
 app.post('/api/auth/mfa/verify-login', loginLimiter, handle(async (req, res) => {
-  const user = await db.verifyMfaChallenge(req.body.mfaToken, req.body.code);
+  let user;
+  try {
+    user = await db.verifyMfaChallenge(req.body.mfaToken, req.body.code);
+  } catch (err) {
+    db.logActivity(null, 'auth.login_failed', 'Failed 2FA attempt during sign-in', 'user', null);
+    throw err;
+  }
   setSessionCookie(res, await db.createSession(user.id));
+  db.logActivity(user, 'auth.login', `${user.name} signed in`, 'user', user.id);
   res.json(user);
 }));
 
@@ -397,18 +424,21 @@ app.get('/api/users', requireAdmin, handle(async (req, res) => {
 
 app.put('/api/users/:id/role', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserRole(req.params.id, req.body.role);
+  db.logActivity(req.user, 'user.role_changed', `Set ${user.name}'s role to ${user.role}`, 'user', user.id);
   broadcast('users');
   res.json(user);
 }));
 
 app.put('/api/users/:id/active', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserActive(req.params.id, !!req.body.active);
+  db.logActivity(req.user, 'user.active_changed', `${user.active ? 'Enabled' : 'Disabled'} ${user.name}'s account`, 'user', user.id);
   broadcast('users');
   res.json(user);
 }));
 
 app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserEmployee(req.params.id, req.body.employeeId || null);
+  db.logActivity(req.user, 'user.employee_linked', req.body.employeeId ? `Linked ${user.name} to an employee record` : `Unlinked ${user.name} from their employee record`, 'user', user.id);
   broadcast('users');
   res.json(user);
 }));
@@ -417,6 +447,7 @@ app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
 // way to clear an account's 2FA; there's no self-service disable (see the note in db.js).
 app.put('/api/users/:id/mfa-reset', requireAdmin, handle(async (req, res) => {
   const user = await db.adminResetMfa(req.params.id);
+  db.logActivity(req.user, 'auth.mfa_reset', `Reset two-factor authentication for ${user.name}`, 'user', user.id);
   broadcast('users');
   res.json(user);
 }));
@@ -429,6 +460,7 @@ app.post('/api/auth/mfa/setup', handle(async (req, res) => {
 
 app.post('/api/auth/mfa/confirm', handle(async (req, res) => {
   const user = await db.confirmMfaSetup(req.user.id, req.body.code);
+  db.logActivity(user, 'auth.mfa_setup', `${user.name} completed two-factor authentication setup`, 'user', user.id);
   broadcast('users');
   res.json(user);
 }));
@@ -507,24 +539,28 @@ app.delete('/api/users/:id/photo', requireAdmin, handle(async (req, res) => {
 
 app.post('/api/users/me/qualifications', handle(async (req, res) => {
   const qualification = await db.addUserQualification(req.user.id, req.body);
+  db.logCrud(req.user, 'created', 'qualification', 'Qualification', qualification.name, qualification.id);
   broadcast('users');
   res.status(201).json(qualification);
 }));
 
 app.post('/api/users/:id/qualifications', requireAdmin, handle(async (req, res) => {
   const qualification = await db.addUserQualification(req.params.id, req.body);
+  db.logCrud(req.user, 'created', 'qualification', 'Qualification', qualification.name, qualification.id);
   broadcast('users');
   res.status(201).json(qualification);
 }));
 
 app.put('/api/users/qualifications/:qid', handle(async (req, res) => {
   const qualification = await db.updateUserQualification(req.params.qid, req.body, req.user);
+  db.logCrud(req.user, 'updated', 'qualification', 'Qualification', qualification.name, qualification.id);
   broadcast('users');
   res.json(qualification);
 }));
 
 app.delete('/api/users/qualifications/:qid', handle(async (req, res) => {
   await db.deleteUserQualification(req.params.qid, req.user);
+  db.logCrud(req.user, 'deleted', 'qualification', 'Qualification', req.params.qid, req.params.qid);
   broadcast('users');
   res.status(204).end();
 }));
@@ -537,18 +573,21 @@ app.get('/api/employees', handle(async (req, res) => {
 
 app.post('/api/employees', requireAdmin, handle(async (req, res) => {
   const employee = await db.addEmployee(req.body.name);
+  db.logCrud(req.user, 'created', 'employee', 'Employee', employee.name, employee.id);
   broadcast('employees');
   res.status(201).json(employee);
 }));
 
 app.put('/api/employees/:id', requireAdmin, handle(async (req, res) => {
   const employee = await db.renameEmployee(req.params.id, req.body.name);
+  db.logCrud(req.user, 'updated', 'employee', 'Employee', employee.name, employee.id);
   broadcast('employees');
   res.json(employee);
 }));
 
 app.delete('/api/employees/:id', requireAdmin, handle(async (req, res) => {
   await db.deleteEmployee(req.params.id);
+  db.logCrud(req.user, 'deleted', 'employee', 'Employee', req.params.id, req.params.id);
   broadcast('employees');
   res.status(204).end();
 }));
@@ -594,18 +633,21 @@ app.get('/api/jobs/:id/costing', handle(async (req, res) => {
 app.post('/api/jobs/:id/costing/lines', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
   const line = await db.createJobCostingLine(req.params.id, req.body);
+  db.logCrud(req.user, 'created', 'costing_line', 'Costing line', line.description, line.id);
   broadcast('jobs');
   res.status(201).json(line);
 }));
 
 app.put('/api/costing-lines/:id', handle(async (req, res) => {
   const line = await db.updateJobCostingLine(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'costing_line', 'Costing line', line.description, line.id);
   broadcast('jobs');
   res.json(line);
 }));
 
 app.delete('/api/costing-lines/:id', handle(async (req, res) => {
   await db.deleteJobCostingLine(req.params.id);
+  db.logCrud(req.user, 'deleted', 'costing_line', 'Costing line', req.params.id, req.params.id);
   broadcast('jobs');
   res.status(204).end();
 }));
@@ -613,6 +655,8 @@ app.delete('/api/costing-lines/:id', handle(async (req, res) => {
 app.put('/api/jobs/:id/costing/labour/:userId', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
   await db.setJobCostingLabourHours(req.params.id, req.params.userId, req.body.hours);
+  const job = await db.getJob(req.params.id);
+  db.logActivity(req.user, 'costing_labour.updated', `Set a labour hours override (${req.body.hours}h) on job ${job.jobReference || job.client}`, 'job', req.params.id);
   broadcast('jobs');
   res.json(await db.getJobCostingLabour(req.params.id));
 }));
@@ -620,18 +664,28 @@ app.put('/api/jobs/:id/costing/labour/:userId', handle(async (req, res) => {
 app.delete('/api/jobs/:id/costing/labour/:userId', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
   await db.clearJobCostingLabourHours(req.params.id, req.params.userId);
+  const job = await db.getJob(req.params.id);
+  db.logActivity(req.user, 'costing_labour.cleared', `Cleared a labour hours override on job ${job.jobReference || job.client}`, 'job', req.params.id);
   broadcast('jobs');
   res.json(await db.getJobCostingLabour(req.params.id));
 }));
 
 app.post('/api/jobs', handle(async (req, res) => {
   const job = await db.createJob(req.body);
+  db.logActivity(req.user, 'job.created', `Created job ${job.jobReference || job.client}`, 'job', job.id);
   broadcast('jobs');
   res.status(201).json(job);
 }));
 
 app.put('/api/jobs/:id', handle(async (req, res) => {
+  const before = await db.getJob(req.params.id);
   const job = await db.updateJob(req.params.id, req.body);
+  const ref = job.jobReference || job.client;
+  if (before && before.status !== job.status) {
+    db.logActivity(req.user, 'job.status_changed', `Changed job ${ref} status from ${before.status} to ${job.status}`, 'job', job.id);
+  } else {
+    db.logActivity(req.user, 'job.updated', `Updated job ${ref}`, 'job', job.id);
+  }
   broadcast('jobs');
   res.json(job);
 }));
@@ -640,6 +694,7 @@ app.delete('/api/jobs/:id', requireAdmin, handle(async (req, res) => {
   const job = await db.getJob(req.params.id);
   await db.deleteJob(req.params.id);
   if (job) {
+    db.logActivity(req.user, 'job.deleted', `Deleted job ${job.jobReference || job.client}`, 'job', job.id);
     const paths = db.DOCUMENT_CATEGORIES.flatMap((category) =>
       job.documents[category].map((doc) => storagePath(req.params.id, category, doc.storedName)));
     if (paths.length) await supabase.storage.from(DOCUMENTS_BUCKET).remove(paths);
@@ -650,27 +705,33 @@ app.delete('/api/jobs/:id', requireAdmin, handle(async (req, res) => {
 
 app.post('/api/jobs/:id/complete', handle(async (req, res) => {
   const job = await db.completeJob(req.params.id, req.user);
+  db.logActivity(req.user, 'job.completed', `Marked job ${job.jobReference || job.client} complete`, 'job', job.id);
   broadcast('jobs');
   res.json(job);
 }));
 
 app.post('/api/jobs/:id/reopen', handle(async (req, res) => {
   const job = await db.reopenJob(req.params.id);
+  db.logActivity(req.user, 'job.reopened', `Reopened job ${job.jobReference || job.client}`, 'job', job.id);
   broadcast('jobs');
   res.json(job);
 }));
 
 app.post('/api/jobs/:id/variations', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
-  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const job = await db.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
   const variation = await db.addJobVariation(req.params.id, req.body);
+  db.logActivity(req.user, 'job.variation_added', `Added variation "${variation.description}" (£${variation.value}) to job ${job.jobReference || job.client}`, 'job', job.id);
   broadcast('jobs');
   res.status(201).json(variation);
 }));
 
 app.delete('/api/jobs/:id/variations/:variationId', handle(async (req, res) => {
+  const job = await db.getJob(req.params.id);
   const variation = await db.deleteJobVariation(req.params.id, req.params.variationId);
   if (!variation) return res.status(404).json({ error: 'Variation not found' });
+  if (job) db.logActivity(req.user, 'job.variation_deleted', `Deleted variation "${variation.description}" from job ${job.jobReference || job.client}`, 'job', job.id);
   broadcast('jobs');
   res.status(204).end();
 }));
@@ -689,6 +750,7 @@ app.post('/api/jobs/:id/documents/:category', validateDocumentParams, uploadDocu
     storedName,
     size: req.file.size,
   });
+  logDocumentUpload(req.user, req.job.jobReference || req.job.client, req.job.id, req.params.category, doc);
   broadcast('jobs');
   res.status(201).json(doc);
 }));
@@ -720,6 +782,8 @@ app.delete('/api/jobs/:id/documents/:category/:docId', validateDocumentParams, h
   const doc = await db.deleteJobDocument(req.params.id, req.params.category, req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath(req.params.id, req.params.category, doc.storedName)]);
+  const ref = req.job.jobReference || req.job.client;
+  db.logActivity(req.user, 'document.deleted', `Deleted ${db.DOCUMENT_LABELS[req.params.category]} "${doc.originalName}" from job ${ref}`, 'job', req.job.id);
   broadcast('jobs');
   res.status(204).end();
 }));
@@ -795,18 +859,22 @@ app.get('/api/job-assignments', handle(async (req, res) => {
 
 app.post('/api/job-assignments', requireAdmin, handle(async (req, res) => {
   const assignment = await db.createJobAssignment(req.body, req.user);
+  db.logActivity(req.user, 'assignment.created', `Assigned ${assignment.userName} to job ${assignment.jobReference || assignment.jobClient} (${assignment.task})`, 'job', assignment.jobId);
   broadcast('jobAssignments');
   res.status(201).json(assignment);
 }));
 
 app.put('/api/job-assignments/:id', requireAdmin, handle(async (req, res) => {
   const assignment = await db.updateJobAssignment(req.params.id, req.body);
+  db.logActivity(req.user, 'assignment.updated', `Updated ${assignment.userName}'s assignment on job ${assignment.jobReference || assignment.jobClient}`, 'job', assignment.jobId);
   broadcast('jobAssignments');
   res.json(assignment);
 }));
 
 app.delete('/api/job-assignments/:id', requireAdmin, handle(async (req, res) => {
+  const assignment = await db.getJobAssignment(req.params.id);
   await db.deleteJobAssignment(req.params.id);
+  if (assignment) db.logActivity(req.user, 'assignment.deleted', `Removed ${assignment.userName}'s assignment from job ${assignment.jobReference || assignment.jobClient}`, 'job', assignment.jobId);
   broadcast('jobAssignments');
   res.status(204).end();
 }));
@@ -819,6 +887,7 @@ app.get('/api/job-assignments/mine', handle(async (req, res) => {
 
 app.put('/api/job-assignments/:id/complete', handle(async (req, res) => {
   const assignment = await db.setJobAssignmentCompleted(req.params.id, !!req.body.completed, req.user);
+  db.logActivity(req.user, 'assignment.completed_changed', `${req.user.name} marked their assignment on job ${assignment.jobReference || assignment.jobClient} as ${assignment.completed ? 'complete' : 'not complete'}`, 'job', assignment.jobId);
   broadcast('jobAssignments');
   res.json(assignment);
 }));
@@ -897,6 +966,7 @@ app.post('/api/job-assignments/:id/photo', uploadImage.single('file'), handle(as
     storedName,
     size: req.file.size,
   });
+  logDocumentUpload(req.user, assignment.jobReference || assignment.jobClient, assignment.jobId, 'photos', doc);
   broadcast('jobs'); // so an admin/surveyor with the Job Detail Photos tab open sees it live
   res.status(201).json(doc);
 }));
@@ -958,6 +1028,7 @@ app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
     storedName,
     size: pdfBuffer.length,
   });
+  logDocumentUpload(req.user, assignment.jobReference || assignment.jobClient, assignment.jobId, 'permit', doc);
   broadcast('jobs'); // so an admin/surveyor with the Job Detail Permit to Work tab open sees it live
   res.status(201).json(doc);
 }));
@@ -973,7 +1044,7 @@ app.post('/api/job-assignments/:id/permit', handle(async (req, res) => {
 // snapshot rather than replacing the old one - a running history of what changed is preferable
 // to silently overwriting a HSE-relevant record.
 
-async function attachRamsToJobDocuments(assignment, rams) {
+async function attachRamsToJobDocuments(assignment, rams, user) {
   const html = riskAssessments.renderRamsHtml({
     methodStatement: rams.methodStatement,
     hazards: rams.hazards,
@@ -989,11 +1060,13 @@ async function attachRamsToJobDocuments(assignment, rams) {
     .from(DOCUMENTS_BUCKET)
     .upload(storagePath(assignment.jobId, 'rams', storedName), Buffer.from(html, 'utf8'), { contentType: 'text/html' });
   if (error) throw new Error(error.message);
-  return db.addJobDocument(assignment.jobId, 'rams', {
+  const doc = await db.addJobDocument(assignment.jobId, 'rams', {
     originalName,
     storedName,
     size: Buffer.byteLength(html, 'utf8'),
   });
+  logDocumentUpload(user, assignment.jobReference || assignment.jobClient, assignment.jobId, 'rams', doc);
+  return doc;
 }
 
 app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
@@ -1003,7 +1076,8 @@ app.post('/api/job-assignments/:id/rams', handle(async (req, res) => {
   if (!decodePngDataUrl(req.body.signatureImage)) throw new Error('Sign before saving');
 
   const rams = await db.createJobAssignmentRams(req.params.id, req.body);
-  await attachRamsToJobDocuments(assignment, rams);
+  await attachRamsToJobDocuments(assignment, rams, req.user);
+  db.logActivity(req.user, 'rams.submitted', `${rams.operativeName} submitted RAMS for job ${assignment.jobReference || assignment.jobClient}`, 'job', assignment.jobId);
 
   broadcast('jobAssignments');
   broadcast('jobs'); // so an admin/surveyor with the Job Detail RAMS tab open sees it live
@@ -1056,7 +1130,7 @@ app.post('/api/job-assignments/:id/rams/attach-to-job', handle(async (req, res) 
   const rams = await db.getJobAssignmentRams(req.params.id);
   if (!rams) return res.status(404).json({ error: 'No RAMS submitted for this assignment yet' });
 
-  const doc = await attachRamsToJobDocuments(assignment, rams);
+  const doc = await attachRamsToJobDocuments(assignment, rams, req.user);
   broadcast('jobs');
   res.status(201).json(doc);
 }));
@@ -1078,7 +1152,8 @@ app.get('/api/risk-assessments/:id/download', handle(async (req, res) => {
 
 app.post('/api/jobs/:id/risk-assessments/:raId/attach', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
-  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const job = await db.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
   const ra = riskAssessments.getRiskAssessment(req.params.raId);
   if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
 
@@ -1095,6 +1170,7 @@ app.post('/api/jobs/:id/risk-assessments/:raId/attach', handle(async (req, res) 
     storedName,
     size: Buffer.byteLength(html),
   });
+  logDocumentUpload(req.user, job.jobReference || job.client, job.id, 'rams', doc);
   broadcast('jobs');
   res.status(201).json(doc);
 }));
@@ -1123,6 +1199,7 @@ app.post('/api/risk-assessments/library', uploadDocument.single('file'), handle(
     size: req.file.size,
     uploadedBy: req.user.name,
   });
+  db.logCrud(req.user, 'created', 'saved_risk_assessment', 'Saved risk assessment', ra.name, ra.id);
   res.status(201).json(ra);
 }));
 
@@ -1142,12 +1219,14 @@ app.delete('/api/risk-assessments/library/:id', requireAdmin, handle(async (req,
   const ra = await db.deleteSavedRiskAssessment(req.params.id);
   if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
   await supabase.storage.from(DOCUMENTS_BUCKET).remove([libraryStoragePath(ra.storedName)]);
+  db.logCrud(req.user, 'deleted', 'saved_risk_assessment', 'Saved risk assessment', ra.name, ra.id);
   res.status(204).end();
 }));
 
 app.post('/api/jobs/:id/risk-assessments/library/:raId/attach', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
-  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const job = await db.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
   const ra = await db.getSavedRiskAssessment(req.params.raId);
   if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
 
@@ -1169,6 +1248,7 @@ app.post('/api/jobs/:id/risk-assessments/library/:raId/attach', handle(async (re
     storedName,
     size: buffer.length,
   });
+  logDocumentUpload(req.user, job.jobReference || job.client, job.id, 'rams', doc);
   broadcast('jobs');
   res.status(201).json(doc);
 }));
@@ -1183,6 +1263,7 @@ app.get('/api/risk-assessments/custom', handle(async (req, res) => {
 
 app.post('/api/risk-assessments/custom', handle(async (req, res) => {
   const ra = await db.createCustomRiskAssessment(req.body, req.user.name);
+  db.logCrud(req.user, 'created', 'custom_risk_assessment', 'Custom risk assessment', ra.title, ra.id);
   res.status(201).json(ra);
 }));
 
@@ -1198,12 +1279,14 @@ app.get('/api/risk-assessments/custom/:id/download', handle(async (req, res) => 
 app.delete('/api/risk-assessments/custom/:id', requireAdmin, handle(async (req, res) => {
   const ra = await db.deleteCustomRiskAssessment(req.params.id);
   if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
+  db.logCrud(req.user, 'deleted', 'custom_risk_assessment', 'Custom risk assessment', ra.title, ra.id);
   res.status(204).end();
 }));
 
 app.post('/api/jobs/:id/risk-assessments/custom/:raId/attach', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
-  if (!(await db.getJob(req.params.id))) return res.status(404).json({ error: 'Job not found' });
+  const job = await db.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
   const ra = await db.getCustomRiskAssessment(req.params.raId);
   if (!ra) return res.status(404).json({ error: 'Risk assessment not found' });
 
@@ -1220,6 +1303,7 @@ app.post('/api/jobs/:id/risk-assessments/custom/:raId/attach', handle(async (req
     storedName,
     size: Buffer.byteLength(html),
   });
+  logDocumentUpload(req.user, job.jobReference || job.client, job.id, 'rams', doc);
   broadcast('jobs');
   res.status(201).json(doc);
 }));
@@ -1247,6 +1331,7 @@ app.post('/api/cad-drawings', requireAdminOrSurveyor, handle(async (req, res) =>
     sceneData: req.body.sceneData,
     createdBy: req.user.name,
   });
+  db.logCrud(req.user, 'created', 'cad_drawing', 'CAD drawing', drawing.name, drawing.id);
   res.status(201).json(drawing);
 }));
 
@@ -1266,6 +1351,7 @@ app.delete('/api/cad-drawings/:id', requireAdmin, handle(async (req, res) => {
   if (drawing.thumbnailStoredName) {
     await supabase.storage.from(DOCUMENTS_BUCKET).remove([cadDrawingStoragePath(drawing.thumbnailStoredName)]);
   }
+  db.logCrud(req.user, 'deleted', 'cad_drawing', 'CAD drawing', drawing.name, drawing.id);
   res.status(204).end();
 }));
 
@@ -1324,6 +1410,9 @@ app.get('/api/calendar', handle(async (req, res) => {
 
 app.post('/api/calendar', handle(async (req, res) => {
   const event = await db.createCalendarEvent(req.body, req.user);
+  if (event.isHoliday) {
+    db.logActivity(req.user, 'calendar.holiday_logged', `Logged ${event.userName}'s holiday ${event.date} to ${event.endDate}`, 'calendar_event', event.id);
+  }
   broadcast('calendar');
   res.status(201).json(event);
 }));
@@ -1384,18 +1473,21 @@ app.get('/api/price-list', handle(async (req, res) => {
 
 app.post('/api/price-list', handle(async (req, res) => {
   const item = await db.createPriceListItem(req.body);
+  db.logCrud(req.user, 'created', 'price_list_item', 'Price list item', item.name, item.id);
   broadcast('priceList');
   res.status(201).json(item);
 }));
 
 app.put('/api/price-list/:id', handle(async (req, res) => {
   const item = await db.updatePriceListItem(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'price_list_item', 'Price list item', item.name, item.id);
   broadcast('priceList');
   res.json(item);
 }));
 
 app.delete('/api/price-list/:id', requireAdmin, handle(async (req, res) => {
   await db.deletePriceListItem(req.params.id);
+  db.logCrud(req.user, 'deleted', 'price_list_item', 'Price list item', req.params.id, req.params.id);
   broadcast('priceList');
   res.status(204).end();
 }));
@@ -1422,6 +1514,7 @@ app.post('/api/subbies', uploadDocument.single('file'), handle(async (req, res) 
     storedName,
     size: req.file.size,
   });
+  db.logCrud(req.user, 'created', 'subby', 'Subcontractor', subby.companyName, subby.id);
   broadcast('subbies');
   res.status(201).json(subby);
 }));
@@ -1440,6 +1533,7 @@ app.get('/api/subbies/:id/file', handle(async (req, res) => {
 
 app.put('/api/subbies/:id', handle(async (req, res) => {
   const subby = await db.updateSubby(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'subby', 'Subcontractor', subby.companyName, subby.id);
   broadcast('subbies');
   res.json(subby);
 }));
@@ -1449,6 +1543,7 @@ app.delete('/api/subbies/:id', requireAdmin, handle(async (req, res) => {
   if (subby && subby.formStoredName) {
     await supabase.storage.from(DOCUMENTS_BUCKET).remove([subbyFormStoragePath(subby.formStoredName)]);
   }
+  if (subby) db.logCrud(req.user, 'deleted', 'subby', 'Subcontractor', subby.companyName, subby.id);
   broadcast('subbies');
   res.status(204).end();
 }));
@@ -1463,24 +1558,29 @@ app.get('/api/quotes', handle(async (req, res) => {
 
 app.post('/api/quotes', handle(async (req, res) => {
   const quote = await db.createQuote(req.body, req.user);
+  db.logCrud(req.user, 'created', 'quote', 'Quote', quote.clientName, quote.id);
   broadcast('quotes');
   res.status(201).json(quote);
 }));
 
 app.put('/api/quotes/:id', handle(async (req, res) => {
   const quote = await db.updateQuote(req.params.id, req.body, req.user);
+  db.logCrud(req.user, 'updated', 'quote', 'Quote', quote.clientName, quote.id);
   broadcast('quotes');
   res.json(quote);
 }));
 
 app.put('/api/quotes/:id/quoted', handle(async (req, res) => {
   const quote = await db.setQuoteQuoted(req.params.id, !!req.body.quoted, req.user);
+  db.logActivity(req.user, 'quote.quoted_changed', `Marked quote for ${quote.clientName} as ${quote.quoted ? 'quoted' : 'not quoted'}`, 'quote', quote.id);
   broadcast('quotes');
   res.json(quote);
 }));
 
 app.delete('/api/quotes/:id', handle(async (req, res) => {
+  const quote = await db.getQuote(req.params.id);
   await db.deleteQuote(req.params.id, req.user);
+  if (quote) db.logCrud(req.user, 'deleted', 'quote', 'Quote', quote.clientName, quote.id);
   broadcast('quotes');
   res.status(204).end();
 }));
@@ -1493,24 +1593,28 @@ app.get('/api/hires', requireAdmin, handle(async (req, res) => {
 
 app.post('/api/hires', requireAdmin, handle(async (req, res) => {
   const hire = await db.createHire(req.body);
+  db.logCrud(req.user, 'created', 'hire', 'Hire', hire.item, hire.id);
   broadcast('hires');
   res.status(201).json(hire);
 }));
 
 app.put('/api/hires/:id', requireAdmin, handle(async (req, res) => {
   const hire = await db.updateHire(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'hire', 'Hire', hire.item, hire.id);
   broadcast('hires');
   res.json(hire);
 }));
 
 app.post('/api/hires/:id/return', requireAdmin, handle(async (req, res) => {
   const hire = await db.markHireReturned(req.params.id);
+  db.logActivity(req.user, 'hire.returned', `Marked hire "${hire.item}" as returned`, 'hire', hire.id);
   broadcast('hires');
   res.json(hire);
 }));
 
 app.delete('/api/hires/:id', requireAdmin, handle(async (req, res) => {
   await db.deleteHire(req.params.id);
+  db.logCrud(req.user, 'deleted', 'hire', 'Hire', req.params.id, req.params.id);
   broadcast('hires');
   res.status(204).end();
 }));
@@ -1523,24 +1627,28 @@ app.get('/api/vehicle-hires', requireAdmin, handle(async (req, res) => {
 
 app.post('/api/vehicle-hires', requireAdmin, handle(async (req, res) => {
   const vehicleHire = await db.createVehicleHire(req.body);
+  db.logCrud(req.user, 'created', 'vehicle_hire', 'Vehicle hire', vehicleHire.registration, vehicleHire.id);
   broadcast('vehicleHires');
   res.status(201).json(vehicleHire);
 }));
 
 app.put('/api/vehicle-hires/:id', requireAdmin, handle(async (req, res) => {
   const vehicleHire = await db.updateVehicleHire(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'vehicle_hire', 'Vehicle hire', vehicleHire.registration, vehicleHire.id);
   broadcast('vehicleHires');
   res.json(vehicleHire);
 }));
 
 app.post('/api/vehicle-hires/:id/off-hire', requireAdmin, handle(async (req, res) => {
   const vehicleHire = await db.markVehicleHireOffHired(req.params.id, req.body.signedOut, req.body.comments);
+  db.logActivity(req.user, 'vehicle_hire.off_hired', `Marked vehicle hire "${vehicleHire.registration}" as off-hire`, 'vehicle_hire', vehicleHire.id);
   broadcast('vehicleHires');
   res.json(vehicleHire);
 }));
 
 app.delete('/api/vehicle-hires/:id', requireAdmin, handle(async (req, res) => {
   await db.deleteVehicleHire(req.params.id);
+  db.logCrud(req.user, 'deleted', 'vehicle_hire', 'Vehicle hire', req.params.id, req.params.id);
   broadcast('vehicleHires');
   res.status(204).end();
 }));
@@ -1553,18 +1661,21 @@ app.get('/api/signage', handle(async (req, res) => {
 
 app.post('/api/signage', handle(async (req, res) => {
   const sign = await db.createSignage(req.body);
+  db.logCrud(req.user, 'created', 'signage', 'Sign', sign.label, sign.id);
   broadcast('signage');
   res.status(201).json(sign);
 }));
 
 app.put('/api/signage/:id', handle(async (req, res) => {
   const sign = await db.updateSignage(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'signage', 'Sign', sign.label, sign.id);
   broadcast('signage');
   res.json(sign);
 }));
 
 app.delete('/api/signage/:id', requireAdmin, handle(async (req, res) => {
   await db.deleteSignage(req.params.id);
+  db.logCrud(req.user, 'deleted', 'signage', 'Sign', req.params.id, req.params.id);
   broadcast('signage');
   res.status(204).end();
 }));
@@ -1597,6 +1708,14 @@ app.get('/api/reports/monthly', requireAdmin, handle(async (req, res) => {
 app.get('/api/reports/clients', requireAdmin, handle(async (req, res) => {
   res.json(await db.clientReport());
 }));
+
+// ---------- Activity Log (admin) ----------
+
+app.get('/api/activity-log', requireAdmin, handle(async (req, res) => {
+  const { from, to, actorUserId, action, targetType, q, limit, offset } = req.query;
+  res.json(await db.listActivityLog({ from, to, actorUserId, action, targetType, q }, { limit, offset }));
+}));
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

@@ -31,7 +31,7 @@
       <div id="loginView">
         <h2>Sign In</h2>
         <p class="auth-subtitle">Welcome back — enter your details to continue.</p>
-        <form id="loginForm">
+        <form id="loginForm" novalidate>
           <label>Email<input type="email" id="loginEmail" required autocomplete="username"></label>
           <label>Password<input type="password" id="loginPassword" required autocomplete="current-password"></label>
           <p class="auth-error" id="loginError" hidden></p>
@@ -43,7 +43,7 @@
       <div id="registerView" hidden>
         <h2>Create Account</h2>
         <p class="auth-subtitle">Set up your account to get started.</p>
-        <form id="registerForm">
+        <form id="registerForm" novalidate>
           <label>Name<input type="text" id="registerName" required autocomplete="name"></label>
           <label>Email<input type="email" id="registerEmail" required autocomplete="username"></label>
           <label>Password (min. 6 characters)<input type="password" id="registerPassword" required minlength="6" autocomplete="new-password"></label>
@@ -57,7 +57,7 @@
       <div id="mfaView" hidden>
         <h2>Enter Your Code</h2>
         <p class="auth-subtitle">Open your authenticator app (Microsoft Authenticator, Google Authenticator, etc.) and enter the 6-digit code for this account.</p>
-        <form id="mfaLoginForm">
+        <form id="mfaLoginForm" novalidate>
           <label>Code<input type="text" id="mfaLoginCode" inputmode="numeric" autocomplete="one-time-code" required autofocus placeholder="000000"></label>
           <p class="auth-error" id="mfaLoginError" hidden></p>
           <button type="submit" class="primary">Verify</button>
@@ -70,7 +70,7 @@
         <p class="auth-subtitle">Every account needs this before it can be used. Scan this QR code with an authenticator app (Microsoft Authenticator, Google Authenticator, etc.), then enter the 6-digit code it shows you to continue.</p>
         <img id="mfaSetupQrImage" alt="Two-factor setup QR code" class="mfa-qr">
         <p class="auth-subtitle">Can't scan it? Enter this key manually instead: <code id="mfaSetupManualSecret"></code></p>
-        <form id="mfaSetupConfirmForm">
+        <form id="mfaSetupConfirmForm" novalidate>
           <label>Code<input type="text" id="mfaSetupConfirmCode" inputmode="numeric" autocomplete="one-time-code" required placeholder="000000"></label>
           <p class="auth-error" id="mfaSetupConfirmError" hidden></p>
           <button type="submit" class="primary">Confirm &amp; Continue</button>
@@ -151,6 +151,7 @@
 
     <button class="tab-btn" data-tab="cad" id="cadTabBtn" hidden>CAD</button>
     <button class="tab-btn" data-tab="admin" id="adminTabBtn" hidden>Admin</button>
+    <button class="tab-btn" data-tab="logs" id="logsTabBtn" hidden>Logs</button>
   </nav>
 </header>
 
@@ -741,6 +742,42 @@
       <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Account</th><th>Two-Factor</th></tr></thead>
       <tbody></tbody>
     </table>
+  </section>
+
+  <!-- LOGS TAB (admin-only activity/audit trail) -->
+  <section id="tab-logs" class="tab-panel">
+    <div class="panel-header">
+      <h2>Activity Log</h2>
+      <div class="filters">
+        <input type="date" id="logFromDate">
+        <input type="date" id="logToDate">
+        <select id="logActorFilter"><option value="">All people</option></select>
+        <select id="logActionFilter">
+          <option value="">All actions</option>
+          <option value="auth.login">Signed in</option>
+          <option value="auth.login_failed">Failed sign-in</option>
+          <option value="job.created">Job created</option>
+          <option value="job.status_changed">Job status changed</option>
+          <option value="job.completed">Job completed</option>
+          <option value="job.deleted">Job deleted</option>
+          <option value="document.uploaded">Document uploaded</option>
+          <option value="document.deleted">Document deleted</option>
+          <option value="assignment.created">Assignment created</option>
+          <option value="assignment.deleted">Assignment removed</option>
+          <option value="rams.submitted">RAMS submitted</option>
+          <option value="user.role_changed">User role changed</option>
+          <option value="user.active_changed">User enabled/disabled</option>
+          <option value="auth.mfa_reset">Two-factor reset</option>
+        </select>
+        <input type="text" id="logSearch" placeholder="Search summary…">
+      </div>
+    </div>
+    <table class="data-table" id="activityLogTable">
+      <thead><tr><th>Time</th><th>Who</th><th>Action</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty-state" id="activityLogEmpty" hidden>No activity found.</p>
+    <button type="button" id="logLoadMoreBtn" class="link-btn" hidden>Load more</button>
   </section>
 
 </main>

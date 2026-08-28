@@ -60,6 +60,16 @@ function dismissToast(el) {
   el.addEventListener('transitionend', () => el.remove(), { once: true });
 }
 
+// Auth forms use novalidate so an empty/invalid field surfaces through the app's own
+// .auth-error box instead of the browser's native validation bubble (mismatched styling).
+function checkFormValidity(form, errorEl) {
+  if (form.checkValidity()) return true;
+  const invalidField = form.querySelector(':invalid');
+  errorEl.textContent = invalidField ? invalidField.validationMessage : 'Please fill in all fields.';
+  errorEl.hidden = false;
+  return false;
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
@@ -132,6 +142,7 @@ async function showApp(user) {
   document.querySelector('.topbar h1 .brand-sub').classList.add('animate-in');
 
   document.getElementById('adminTabBtn').hidden = !isAdmin();
+  document.getElementById('logsTabBtn').hidden = !isAdmin();
   document.getElementById('cadTabBtn').hidden = !(isAdmin() || isSurveyor());
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
@@ -170,6 +181,7 @@ async function showApp(user) {
 // everyone's screen stays current without needing to hit refresh.
 
 let liveEvents = null;
+let activityLogLiveRefreshTimer = null;
 
 function activeTab() {
   const btn = document.querySelector('.tab-btn.active');
@@ -186,6 +198,15 @@ function connectLiveUpdates() {
     // requests the server will 403.
     if (isStaff() && !['calendar', 'diary', 'users'].includes(type)) return;
     if (isOperative() && !['calendar', 'diary', 'users', 'jobAssignments'].includes(type)) return;
+    // Virtually every mutation already broadcasts some type - piggyback on all of them to
+    // refresh the Logs tab live if it's open, rather than adding a dedicated broadcast call
+    // at every one of the ~50 activity-logging call sites in server.js. Only while still on
+    // the first page though - resetting mid "Load more" would yank an admin back to the top
+    // every time anyone else in the app does anything.
+    if (activeTab() === 'logs' && activityLogState.offset <= ACTIVITY_LOG_PAGE_SIZE) {
+      clearTimeout(activityLogLiveRefreshTimer);
+      activityLogLiveRefreshTimer = setTimeout(() => loadActivityLog({ reset: true }), 400);
+    }
     if (type === 'jobs') handleLiveJobsChange();
     else if (type === 'employees') handleLiveEmployeesChange();
     else if (type === 'calendar') handleLiveCalendarChange();
@@ -368,8 +389,10 @@ async function showMfaSetupRequired(user) {
 
 document.getElementById('mfaSetupConfirmForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const errorEl = document.getElementById('mfaSetupConfirmError');
   errorEl.hidden = true;
+  if (!checkFormValidity(form, errorEl)) return;
   try {
     const res = await fetch('/api/auth/mfa/confirm', {
       method: 'POST',
@@ -418,8 +441,10 @@ function showMfaView() {
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const errorEl = document.getElementById('loginError');
   errorEl.hidden = true;
+  if (!checkFormValidity(form, errorEl)) return;
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
@@ -450,8 +475,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 
 document.getElementById('mfaLoginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const errorEl = document.getElementById('mfaLoginError');
   errorEl.hidden = true;
+  if (!checkFormValidity(form, errorEl)) return;
   try {
     const res = await fetch('/api/auth/mfa/verify-login', {
       method: 'POST',
@@ -485,8 +512,10 @@ document.getElementById('mfaBackToLoginBtn').addEventListener('click', () => {
 
 document.getElementById('registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const errorEl = document.getElementById('registerError');
   errorEl.hidden = true;
+  if (!checkFormValidity(form, errorEl)) return;
   try {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
@@ -588,6 +617,7 @@ function goToTab(tab) {
   if (tab === 'clients') { showTabLoading('#clientsContainer'); loadClients(); }
   if (tab === 'home') renderHomeDashboard();
   if (tab === 'admin') loadAdminUsers();
+  if (tab === 'logs') { showTabLoading('#activityLogTable tbody', 3); loadActivityLog({ reset: true }); }
   if (tab === 'hire') { showTabLoading('#hiresTable tbody', 9); loadHires(); }
   if (tab === 'vehiclehire') { showTabLoading('#vehicleHiresTable tbody', 8); loadVehicleHires(); }
   if (tab === 'quoting') loadQuotes();
@@ -5510,6 +5540,69 @@ async function loadAdminUsers() {
     });
   });
 }
+
+// ---------- Activity Log (admin) ----------
+
+const ACTIVITY_LOG_PAGE_SIZE = 50;
+const activityLogState = { offset: 0, total: 0, actorsLoaded: false };
+
+function activityLogFilterParams() {
+  const params = new URLSearchParams();
+  const from = document.getElementById('logFromDate').value;
+  const to = document.getElementById('logToDate').value;
+  const actorUserId = document.getElementById('logActorFilter').value;
+  const action = document.getElementById('logActionFilter').value;
+  const q = document.getElementById('logSearch').value.trim();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  if (actorUserId) params.set('actorUserId', actorUserId);
+  if (action) params.set('action', action);
+  if (q) params.set('q', q);
+  return params;
+}
+
+async function loadActivityLog({ reset } = {}) {
+  if (reset) activityLogState.offset = 0;
+  if (!activityLogState.actorsLoaded) {
+    const select = document.getElementById('logActorFilter');
+    select.innerHTML = '<option value="">All people</option>'
+      + state.operativeUsers.map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+    activityLogState.actorsLoaded = true;
+  }
+  const params = activityLogFilterParams();
+  params.set('limit', ACTIVITY_LOG_PAGE_SIZE);
+  params.set('offset', activityLogState.offset);
+  const { entries, total } = await api(`/api/activity-log?${params.toString()}`);
+  activityLogState.total = total;
+  renderActivityLogRows(entries, !reset && activityLogState.offset > 0);
+  activityLogState.offset += entries.length;
+  document.getElementById('logLoadMoreBtn').hidden = activityLogState.offset >= total;
+}
+
+function renderActivityLogRows(entries, append) {
+  const tbody = document.querySelector('#activityLogTable tbody');
+  const empty = document.getElementById('activityLogEmpty');
+  const rowsHtml = entries.map((e) => `
+    <tr>
+      <td>${new Date(e.createdAt).toLocaleString('en-GB')}</td>
+      <td>${escapeHtml(e.actorName)}</td>
+      <td>${escapeHtml(e.summary)}</td>
+    </tr>
+  `).join('');
+  if (append) tbody.insertAdjacentHTML('beforeend', rowsHtml);
+  else tbody.innerHTML = rowsHtml;
+  empty.hidden = tbody.children.length > 0;
+}
+
+['logFromDate', 'logToDate', 'logActorFilter', 'logActionFilter'].forEach((id) => {
+  document.getElementById(id).addEventListener('change', () => loadActivityLog({ reset: true }));
+});
+let logSearchDebounceTimer = null;
+document.getElementById('logSearch').addEventListener('input', () => {
+  clearTimeout(logSearchDebounceTimer);
+  logSearchDebounceTimer = setTimeout(() => loadActivityLog({ reset: true }), 300);
+});
+document.getElementById('logLoadMoreBtn').addEventListener('click', () => loadActivityLog());
 
 // ---------- Modal accessibility (focus trap + Escape-to-close) ----------
 // Retrofitted once, globally, rather than touching every individual modal's open/close call

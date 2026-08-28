@@ -513,6 +513,29 @@ create table if not exists minigame_scores (
 create unique index if not exists minigame_scores_date_user_idx on minigame_scores (game_date, user_id);
 create index if not exists minigame_scores_date_idx on minigame_scores (game_date);
 
+-- Admin-only audit trail: one row per notable mutation across the app (job/user/document/
+-- assignment/RAMS changes etc). actor_name/actor_role are denormalized snapshots (not just
+-- a join to users) so a log entry stays readable even after the actor's account is renamed,
+-- role-changed, or deleted - same reasoning as calendar_events.user_name/minigame_scores.user_name.
+-- Written by db.js's logActivity, which deliberately swallows its own errors so an audit-log
+-- write can never fail the mutation it's describing.
+create table if not exists activity_log (
+  id uuid primary key,
+  created_at timestamptz not null default now(),
+  actor_user_id uuid references users(id) on delete set null,
+  actor_name text not null,
+  actor_role text,
+  action text not null,
+  summary text not null,
+  target_type text,
+  target_id text,
+  details jsonb not null default '{}'::jsonb
+);
+create index if not exists activity_log_created_at_idx on activity_log (created_at desc);
+create index if not exists activity_log_actor_user_id_idx on activity_log (actor_user_id);
+create index if not exists activity_log_action_idx on activity_log (action);
+create index if not exists activity_log_target_type_idx on activity_log (target_type, created_at desc);
+
 -- Lock every table down by default. The app only ever talks to Supabase using the
 -- service-role key (which bypasses RLS), so these policies exist purely as a safety
 -- net in case the anon/public key were ever exposed - with RLS on and no policies,
@@ -541,6 +564,7 @@ alter table signage enable row level security;
 alter table job_costing_labour_overrides enable row level security;
 alter table job_costing_lines enable row level security;
 alter table minigame_scores enable row level security;
+alter table activity_log enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.
