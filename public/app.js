@@ -3247,6 +3247,11 @@ async function openScanModal() {
   document.getElementById('scanAssetModal').hidden = false;
   scanBusy = false;
   scanModalOpen = true;
+  scanFrameCount = 0;
+  if (typeof jsQR === 'undefined') {
+    document.getElementById('scanStatusMsg').textContent = 'Scanner failed to load (jsQR missing) - use the code box below instead.';
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     // The user may have closed the modal while the permission prompt was still up - don't
@@ -3278,23 +3283,39 @@ function closeScanModal() {
 // this before decoding.
 const SCAN_MAX_DIMENSION = 480;
 
+let scanFrameCount = 0;
+
 function scanLoop() {
   if (scanBusy) { scanRafId = requestAnimationFrame(scanLoop); return; }
   const video = document.getElementById('scanVideo');
   const canvas = document.getElementById('scanCanvas');
-  if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth) {
-    const scale = Math.min(1, SCAN_MAX_DIMENSION / Math.max(video.videoWidth, video.videoHeight));
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-    if (code && code.data) {
-      lookupAssetToken(code.data);
-      scanRafId = requestAnimationFrame(scanLoop);
-      return;
+  // A thrown error here (e.g. a transient canvas read failure) would otherwise kill the
+  // requestAnimationFrame chain for good - the video keeps playing so the camera still looks
+  // "on", but no frame is ever decoded again. Catching it and just trying the next frame is
+  // what actually keeps this resilient instead of silently dying after one bad frame.
+  try {
+    if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth) {
+      const scale = Math.min(1, SCAN_MAX_DIMENSION / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      scanFrameCount += 1;
+      if (scanFrameCount % 20 === 0) {
+        document.getElementById('scanStatusMsg').textContent = `Scanning… (${canvas.width}×${canvas.height}, ${scanFrameCount} frames checked)`;
+      }
+      if (code && code.data) {
+        lookupAssetToken(code.data);
+        scanRafId = requestAnimationFrame(scanLoop);
+        return;
+      }
+    } else {
+      document.getElementById('scanStatusMsg').textContent = 'Waiting for camera…';
     }
+  } catch (err) {
+    document.getElementById('scanStatusMsg').textContent = `Scan error: ${err.message} (retrying…)`;
   }
   scanRafId = requestAnimationFrame(scanLoop);
 }
