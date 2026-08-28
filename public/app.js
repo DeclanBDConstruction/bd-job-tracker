@@ -3219,6 +3219,7 @@ async function openAssetQr(id) {
     const { qrDataUrl } = await api(`/api/assets/${id}/qr`);
     document.getElementById('assetQrImage').src = qrDataUrl;
     document.getElementById('assetQrName').textContent = asset ? asset.name : '';
+    document.getElementById('assetQrToken').textContent = asset ? asset.qrToken : '';
     document.getElementById('assetQrModal').hidden = false;
   } catch (err) {
     toast(err.message, 'error');
@@ -3270,14 +3271,22 @@ function closeScanModal() {
   document.getElementById('scanAssetModal').hidden = true;
 }
 
+// Phone cameras (especially iPhones) shoot video at a much higher resolution than a QR
+// decode needs - scanning every frame at native resolution means copying and processing
+// several megapixels up to 60 times a second, which can make the loop unusably slow. jsQR
+// finds a code just as reliably from a much smaller frame, so every frame is downscaled to
+// this before decoding.
+const SCAN_MAX_DIMENSION = 480;
+
 function scanLoop() {
   if (scanBusy) { scanRafId = requestAnimationFrame(scanLoop); return; }
   const video = document.getElementById('scanVideo');
   const canvas = document.getElementById('scanCanvas');
-  if (video.readyState === video.HAVE_ENOUGH_DATA) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
+  if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth) {
+    const scale = Math.min(1, SCAN_MAX_DIMENSION / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
