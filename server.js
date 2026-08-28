@@ -116,6 +116,11 @@ function cadDrawingStoragePath(storedName) {
   return `_library/cad/${storedName}`;
 }
 
+// Profile photos live under this fixed prefix in the same bucket - see setUserAvatar in db.js.
+function avatarStoragePath(storedName) {
+  return `_library/avatars/${storedName}`;
+}
+
 function makeStoredName(originalName) {
   const safeName = originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
@@ -326,6 +331,18 @@ const CALENDAR_DIARY_ROUTES = [
   { method: 'DELETE', path: /^\/diary\/[^/]+$/ },
   { method: 'GET', path: /^\/minigame\/today$/ },
   { method: 'POST', path: /^\/minigame\/score$/ },
+  // Profile: viewing the directory/anyone's profile/photo is open to every role (Team tab +
+  // job-assignment click-through); the `me` routes are this role's own photo/qualifications,
+  // same "me" trick as the colour picker above. Editing someone ELSE's profile stays
+  // requireAdmin-gated in the route handlers themselves, so it needs no entry here.
+  { method: 'GET', path: /^\/users\/directory$/ },
+  { method: 'GET', path: /^\/users\/[^/]+\/profile$/ },
+  { method: 'GET', path: /^\/users\/[^/]+\/photo$/ },
+  { method: 'POST', path: /^\/users\/me\/photo$/ },
+  { method: 'DELETE', path: /^\/users\/me\/photo$/ },
+  { method: 'POST', path: /^\/users\/me\/qualifications$/ },
+  { method: 'PUT', path: /^\/users\/qualifications\/[^/]+$/ },
+  { method: 'DELETE', path: /^\/users\/qualifications\/[^/]+$/ },
 ];
 
 const STAFF_ALLOWED_ROUTES = CALENDAR_DIARY_ROUTES;
@@ -431,6 +448,90 @@ app.put('/api/users/me/color', handle(async (req, res) => {
   const user = await db.setUserColor(req.user.id, req.body.color);
   broadcast('users');
   res.json(user);
+}));
+
+// ---------- Profiles (photo + qualifications) ----------
+// Directory/profile/photo reads are open to every role (Team tab + job-assignment click-
+// through); self-service writes use a literal `me` in the path so the STAFF/OPERATIVE route
+// allowlist below can match them without knowing each user's id ahead of time. Admin-on-
+// someone-else's-behalf routes use the real :id and are requireAdmin-gated instead.
+
+app.get('/api/users/directory', handle(async (req, res) => {
+  res.json(await db.listUserDirectory());
+}));
+
+app.get('/api/users/:id/profile', handle(async (req, res) => {
+  const profile = await db.getUserProfile(req.params.id);
+  if (!profile) return res.status(404).json({ error: 'User not found' });
+  res.json(profile);
+}));
+
+app.get('/api/users/:id/photo', handle(async (req, res) => {
+  const storedName = await db.getUserAvatarStoredName(req.params.id);
+  if (!storedName) return res.status(404).json({ error: 'No photo set' });
+  const { data, error } = await supabase.storage.from(DOCUMENTS_BUCKET).download(avatarStoragePath(storedName));
+  if (error) return res.status(404).json({ error: 'File not found in storage' });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Type', data.type || 'image/jpeg');
+  res.send(buffer);
+}));
+
+async function replaceUserAvatar(userId, file, res) {
+  if (!file) throw new Error('A photo is required');
+  const storedName = makeStoredName(file.originalname);
+  const { error } = await supabase.storage.from(DOCUMENTS_BUCKET)
+    .upload(avatarStoragePath(storedName), file.buffer, { contentType: file.mimetype || 'application/octet-stream' });
+  if (error) throw new Error(error.message);
+  const previousStoredName = await db.setUserAvatar(userId, storedName);
+  if (previousStoredName) await supabase.storage.from(DOCUMENTS_BUCKET).remove([avatarStoragePath(previousStoredName)]);
+  broadcast('users');
+  res.status(201).json({ ok: true });
+}
+
+app.post('/api/users/me/photo', uploadImage.single('file'), handle(async (req, res) => {
+  await replaceUserAvatar(req.user.id, req.file, res);
+}));
+
+app.delete('/api/users/me/photo', handle(async (req, res) => {
+  const previousStoredName = await db.clearUserAvatar(req.user.id);
+  if (previousStoredName) await supabase.storage.from(DOCUMENTS_BUCKET).remove([avatarStoragePath(previousStoredName)]);
+  broadcast('users');
+  res.status(204).end();
+}));
+
+app.post('/api/users/:id/photo', requireAdmin, uploadImage.single('file'), handle(async (req, res) => {
+  await replaceUserAvatar(req.params.id, req.file, res);
+}));
+
+app.delete('/api/users/:id/photo', requireAdmin, handle(async (req, res) => {
+  const previousStoredName = await db.clearUserAvatar(req.params.id);
+  if (previousStoredName) await supabase.storage.from(DOCUMENTS_BUCKET).remove([avatarStoragePath(previousStoredName)]);
+  broadcast('users');
+  res.status(204).end();
+}));
+
+app.post('/api/users/me/qualifications', handle(async (req, res) => {
+  const qualification = await db.addUserQualification(req.user.id, req.body);
+  broadcast('users');
+  res.status(201).json(qualification);
+}));
+
+app.post('/api/users/:id/qualifications', requireAdmin, handle(async (req, res) => {
+  const qualification = await db.addUserQualification(req.params.id, req.body);
+  broadcast('users');
+  res.status(201).json(qualification);
+}));
+
+app.put('/api/users/qualifications/:qid', handle(async (req, res) => {
+  const qualification = await db.updateUserQualification(req.params.qid, req.body, req.user);
+  broadcast('users');
+  res.json(qualification);
+}));
+
+app.delete('/api/users/qualifications/:qid', handle(async (req, res) => {
+  await db.deleteUserQualification(req.params.qid, req.user);
+  broadcast('users');
+  res.status(204).end();
 }));
 
 // ---------- Employees ----------

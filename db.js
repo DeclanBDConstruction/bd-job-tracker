@@ -2288,6 +2288,7 @@ function sanitizeUser(row) {
     // Defaults true for rows saved before this column existed (see the schema migration).
     active: row.active !== false,
     mfaEnabled: !!row.mfa_enabled,
+    hasPhoto: !!row.avatar_stored_name,
     createdAt: row.created_at,
   };
 }
@@ -2514,6 +2515,132 @@ async function setUserColor(userId, color) {
   return sanitizeUser(data);
 }
 
+// ---------- Profiles (photo + qualifications) ----------
+// Pegged to `users` (login accounts), not `employees` (a name-only sales-credit list) -
+// job_assignments.user_id points at users, which is the relation a future client portal
+// will need when showing who's working a job.
+
+function rowToQualification(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    expiryDate: row.expiry_date || null,
+    status: expiryStatus(row.expiry_date),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listUserQualifications(userId) {
+  const { data, error } = await supabase.from('user_qualifications').select('*').eq('user_id', userId).order('name');
+  check(error);
+  return data.map(rowToQualification);
+}
+
+async function addUserQualification(userId, { name, expiryDate }) {
+  const cleanName = (name || '').trim();
+  if (!cleanName) throw new Error('Qualification name is required');
+  const { data, error } = await supabase.from('user_qualifications').insert({
+    id: genId(),
+    user_id: userId,
+    name: cleanName,
+    expiry_date: expiryDate || null,
+  }).select().single();
+  check(error);
+  return rowToQualification(data);
+}
+
+async function updateUserQualification(id, { name, expiryDate }, requester) {
+  const { data: existing, error: findErr } = await supabase.from('user_qualifications').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Qualification not found');
+  if (existing.user_id !== requester.id && requester.role !== 'admin') {
+    throw new Error('You can only edit your own qualifications');
+  }
+  const cleanName = (name || '').trim();
+  if (!cleanName) throw new Error('Qualification name is required');
+  const { data, error } = await supabase.from('user_qualifications')
+    .update({ name: cleanName, expiry_date: expiryDate || null, updated_at: new Date().toISOString() })
+    .eq('id', id).select().single();
+  check(error);
+  return rowToQualification(data);
+}
+
+async function deleteUserQualification(id, requester) {
+  const { data: existing, error: findErr } = await supabase.from('user_qualifications').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Qualification not found');
+  if (existing.user_id !== requester.id && requester.role !== 'admin') {
+    throw new Error('You can only delete your own qualifications');
+  }
+  const { error } = await supabase.from('user_qualifications').delete().eq('id', id);
+  check(error);
+}
+
+// Returns the *previous* stored name (or null) so the caller can delete the old file from
+// Storage after the new one's already uploaded and saved - see setUserAvatar's callers in
+// server.js, which upload-then-swap rather than swap-then-upload so a failed upload never
+// leaves a user with no photo at all.
+async function setUserAvatar(userId, storedName) {
+  const { data: existing, error: findErr } = await supabase.from('users').select('avatar_stored_name').eq('id', userId).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('User not found');
+  const { error } = await supabase.from('users').update({ avatar_stored_name: storedName }).eq('id', userId);
+  check(error);
+  return existing.avatar_stored_name || null;
+}
+
+async function clearUserAvatar(userId) {
+  const { data: existing, error: findErr } = await supabase.from('users').select('avatar_stored_name').eq('id', userId).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('User not found');
+  const { error } = await supabase.from('users').update({ avatar_stored_name: null }).eq('id', userId);
+  check(error);
+  return existing.avatar_stored_name || null;
+}
+
+async function getUserAvatarStoredName(userId) {
+  const { data, error } = await supabase.from('users').select('avatar_stored_name').eq('id', userId).maybeSingle();
+  check(error);
+  return data ? data.avatar_stored_name || null : null;
+}
+
+// Public profile shape shown to colleagues browsing the Team directory (and, later, clients
+// browsing a job's assigned team) - deliberately narrower than sanitizeUser: no email, no
+// calendar colour, nothing account-related.
+async function getUserProfile(id) {
+  const { data, error } = await supabase.from('users').select('id, name, role, active, avatar_stored_name').eq('id', id).maybeSingle();
+  check(error);
+  if (!data || data.active === false) return null;
+  const qualifications = await listUserQualifications(id);
+  return {
+    id: data.id,
+    name: data.name,
+    role: data.role,
+    hasPhoto: !!data.avatar_stored_name,
+    qualifications,
+  };
+}
+
+async function listUserDirectory() {
+  const [{ data: users, error: usersErr }, { data: qualRows, error: qualErr }] = await Promise.all([
+    supabase.from('users').select('id, name, role, avatar_stored_name').eq('active', true).order('name'),
+    supabase.from('user_qualifications').select('user_id'),
+  ]);
+  check(usersErr);
+  check(qualErr);
+  const qualCountByUserId = new Map();
+  qualRows.forEach((q) => qualCountByUserId.set(q.user_id, (qualCountByUserId.get(q.user_id) || 0) + 1));
+  return users.map((u) => ({
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    hasPhoto: !!u.avatar_stored_name,
+    qualificationCount: qualCountByUserId.get(u.id) || 0,
+  }));
+}
+
 module.exports = {
   DEFAULT_STATUSES,
   DOCUMENT_CATEGORIES,
@@ -2635,6 +2762,15 @@ module.exports = {
   deleteDiaryEntry,
   getMiniGameToday,
   submitMiniGameScore,
+  listUserQualifications,
+  addUserQualification,
+  updateUserQualification,
+  deleteUserQualification,
+  setUserAvatar,
+  clearUserAvatar,
+  getUserAvatarStoredName,
+  getUserProfile,
+  listUserDirectory,
   // Pure helpers with no Supabase calls - exported so they can be unit-tested directly (see
   // test/db.pure.test.js) without needing a live database connection.
   addDaysToDateString,

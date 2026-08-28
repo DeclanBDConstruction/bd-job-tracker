@@ -24,6 +24,8 @@ const state = {
   minigameDaily: [],
   minigameAllTime: [],
   minigameMyBest: null,
+  myQualifications: [],
+  teamDirectory: [],
 };
 
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
@@ -101,13 +103,30 @@ function hideSplash() {
   if (splash) splash.classList.add('splash-hide');
 }
 
+function avatarInitials(name) {
+  return (name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+}
+
+// Shared by the topbar avatar, the Team directory, and the profile view/edit cards - shows the
+// uploaded photo (proxied through the authenticated /api/users/:id/photo route, never a public
+// URL) when one exists, falling back to initials otherwise.
+function renderAvatar(el, { id, name, hasPhoto }) {
+  if (!el) return;
+  if (hasPhoto && id) {
+    el.textContent = '';
+    el.innerHTML = `<img src="/api/users/${id}/photo" alt="${escapeHtml(name || '')}">`;
+  } else {
+    el.innerHTML = '';
+    el.textContent = avatarInitials(name);
+  }
+}
+
 async function showApp(user) {
   state.currentUser = user;
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
   document.getElementById('currentUserName').textContent = user.name;
-  document.getElementById('userAvatar').textContent = (user.name || '')
-    .trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  renderAvatar(document.getElementById('userAvatar'), user);
   // Play the header's little pop-in now, exactly when it actually becomes visible — could be
   // right after the splash (already signed in) or well after it (just signed in manually).
   document.querySelector('.topbar h1 .logo-mark').classList.add('animate-in');
@@ -297,6 +316,7 @@ async function handleLiveUsersChange() {
     console.warn('Calendar colours unavailable:', err.message);
   }
   if (activeTab() === 'admin') loadAdminUsers();
+  if (activeTab() === 'profile') loadProfileTab();
 }
 
 async function checkAuth() {
@@ -573,6 +593,7 @@ function goToTab(tab) {
   if (tab === 'vehiclehire') { showTabLoading('#vehicleHiresTable tbody', 8); loadVehicleHires(); }
   if (tab === 'quoting') loadQuotes();
   if (tab === 'assignments') renderMyAssignmentsTab();
+  if (tab === 'profile') loadProfileTab();
   if (tab === 'diary') {
     setDiaryViewDate(todayDateStr());
     loadDiary();
@@ -1521,6 +1542,172 @@ document.querySelector('#employeesTable tbody').addEventListener('click', async 
   }
 });
 
+// ---------- Profile (photo + qualifications) + Team directory ----------
+// Pegged to `users` (login accounts), not the Employees tab's name-only sales-credit list -
+// see the Job Detail assignments list (openProfileModal wiring below) for the same view reused
+// for "who's assigned to this job", which a future client portal will call too.
+
+let teamSearchTerm = '';
+
+async function loadProfileTab() {
+  renderMyProfile();
+  try {
+    const [profile, directory] = await Promise.all([
+      api(`/api/users/${state.currentUser.id}/profile`),
+      api('/api/users/directory'),
+    ]);
+    state.myQualifications = profile.qualifications;
+    state.teamDirectory = directory;
+    renderMyQualifications();
+    renderTeamGrid();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function renderMyProfile() {
+  const user = state.currentUser;
+  if (!user) return;
+  renderAvatar(document.getElementById('myProfilePhoto'), user);
+  document.getElementById('myProfileName').textContent = user.name;
+  document.getElementById('myProfileRole').textContent = ROLE_LABELS[user.role] || user.role;
+  document.getElementById('myProfilePhotoRemoveBtn').hidden = !user.hasPhoto;
+}
+
+function qualificationExpiryCell(q) {
+  if (!q.expiryDate) return '<span class="hint">No expiry</span>';
+  const pillClass = q.status === 'expired' ? 'overdue' : q.status === 'expiring-soon' ? 'due-soon' : 'returned';
+  const label = q.status === 'expired' ? 'Expired' : q.status === 'expiring-soon' ? 'Expiring Soon' : 'Valid';
+  return `<span class="hire-status ${pillClass}">${label}</span> <span class="doc-meta">${q.expiryDate}</span>`;
+}
+
+function renderMyQualifications() {
+  const tbody = document.querySelector('#myQualificationsTable tbody');
+  tbody.innerHTML = state.myQualifications.map((q) => `
+    <tr>
+      <td>${escapeHtml(q.name)}</td>
+      <td>${qualificationExpiryCell(q)}</td>
+      <td class="row-actions"><button type="button" data-del-qualification="${q.id}" class="danger">Delete</button></td>
+    </tr>
+  `).join('');
+  document.getElementById('myQualificationsEmptyState').hidden = !!state.myQualifications.length;
+}
+
+function renderTeamGrid() {
+  const term = teamSearchTerm.trim().toLowerCase();
+  const list = state.teamDirectory.filter((u) => !term || u.name.toLowerCase().includes(term));
+  const grid = document.getElementById('teamGrid');
+  grid.innerHTML = list.map((u) => `
+    <button type="button" class="profile-team-card" data-view-profile="${u.id}">
+      <span class="profile-photo-medium" data-avatar-for="${u.id}"></span>
+      <span class="profile-team-card-name">${escapeHtml(u.name)}</span>
+      <span class="hint">${ROLE_LABELS[u.role] || u.role}</span>
+    </button>
+  `).join('');
+  list.forEach((u) => renderAvatar(grid.querySelector(`[data-avatar-for="${u.id}"]`), u));
+  if (!list.length) grid.innerHTML = `<p class="empty-state">${term ? 'No one matches your search.' : 'No team members yet.'}</p>`;
+}
+
+document.getElementById('teamSearch').addEventListener('input', (e) => {
+  teamSearchTerm = e.target.value;
+  renderTeamGrid();
+});
+
+document.getElementById('myProfilePhotoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/api/users/me/photo', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Upload failed');
+    }
+    state.currentUser.hasPhoto = true;
+    renderMyProfile();
+    renderAvatar(document.getElementById('userAvatar'), state.currentUser);
+    toast('Photo updated.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    e.target.value = '';
+  }
+});
+
+document.getElementById('myProfilePhotoRemoveBtn').addEventListener('click', async () => {
+  try {
+    await api('/api/users/me/photo', { method: 'DELETE' });
+    state.currentUser.hasPhoto = false;
+    renderMyProfile();
+    renderAvatar(document.getElementById('userAvatar'), state.currentUser);
+    toast('Photo removed.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+document.getElementById('addQualificationBtn').addEventListener('click', async () => {
+  const nameInput = document.getElementById('newQualificationName');
+  const expiryInput = document.getElementById('newQualificationExpiry');
+  if (!nameInput.value.trim()) return;
+  try {
+    await api('/api/users/me/qualifications', {
+      method: 'POST',
+      body: JSON.stringify({ name: nameInput.value, expiryDate: expiryInput.value || null }),
+    });
+    nameInput.value = '';
+    expiryInput.value = '';
+    state.myQualifications = await api(`/api/users/${state.currentUser.id}/profile`).then((p) => p.qualifications);
+    renderMyQualifications();
+    toast('Qualification added.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+document.querySelector('#myQualificationsTable tbody').addEventListener('click', async (e) => {
+  const id = e.target.dataset.delQualification;
+  if (!id) return;
+  if (!confirm('Delete this qualification?')) return;
+  try {
+    await api(`/api/users/qualifications/${id}`, { method: 'DELETE' });
+    state.myQualifications = state.myQualifications.filter((q) => q.id !== id);
+    renderMyQualifications();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+// Shared read-only profile view - opened from the Team directory and from an assigned
+// employee's name on a Job Detail page (see teamAssignmentDisplayRow below).
+async function openProfileModal(userId) {
+  try {
+    const profile = await api(`/api/users/${userId}/profile`);
+    document.getElementById('profileViewModalTitle').textContent = profile.name;
+    renderAvatar(document.getElementById('profileViewPhoto'), profile);
+    document.getElementById('profileViewName').textContent = profile.name;
+    document.getElementById('profileViewRole').textContent = ROLE_LABELS[profile.role] || profile.role;
+    const tbody = document.querySelector('#profileViewQualificationsTable tbody');
+    tbody.innerHTML = profile.qualifications.map((q) => `
+      <tr><td>${escapeHtml(q.name)}</td><td>${qualificationExpiryCell(q)}</td></tr>
+    `).join('');
+    document.getElementById('profileViewQualificationsEmpty').hidden = !!profile.qualifications.length;
+    document.getElementById('profileViewModal').hidden = false;
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+document.getElementById('teamGrid').addEventListener('click', (e) => {
+  const id = e.target.closest('[data-view-profile]')?.dataset.viewProfile;
+  if (id) openProfileModal(id);
+});
+
+document.getElementById('profileViewModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('profileViewModal').hidden = true;
+});
+
 // ---------- Price List (Labour & Materials) ----------
 
 // Builds one item+price list (search, add row, inline edit/delete) wired to its own DOM ids.
@@ -2025,7 +2212,7 @@ function teamAssignmentDisplayRow(a) {
   return `
     <div class="job-clocktimes-assignment" data-id="${a.id}">
       <div class="job-team-row-header">
-        <h4>${escapeHtml(a.userName)} <span class="hint">— ${escapeHtml(a.task)}, ${a.startDate}, ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span> <span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></h4>
+        <h4><button type="button" class="link-btn profile-link" data-view-profile="${a.userId}">${escapeHtml(a.userName)}</button> <span class="hint">— ${escapeHtml(a.task)}, ${a.startDate}, ${a.durationDays} day${a.durationDays === 1 ? '' : 's'}</span> <span class="status-pill ${a.completed ? 'complete' : 'in-progress'}">${a.completed ? 'Done' : 'Pending'}</span></h4>
         <div class="row-actions">
           <button type="button" class="ja-photos-btn">View Photos</button>
           <button type="button" class="ja-timelog-btn">Time Log</button>
@@ -2097,6 +2284,9 @@ function renderJobTeamSection(assignments) {
     });
   }
 
+  container.querySelectorAll('.profile-link').forEach((btn) => {
+    btn.addEventListener('click', () => openProfileModal(btn.dataset.viewProfile));
+  });
   container.querySelectorAll('.ja-photos-btn').forEach((btn) => {
     btn.addEventListener('click', () => openJobDetail(currentDetailJobId, 'photos'));
   });

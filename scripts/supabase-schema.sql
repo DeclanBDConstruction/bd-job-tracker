@@ -55,6 +55,25 @@ create index if not exists users_employee_id_idx on users (employee_id);
 alter table users add column if not exists mfa_secret text;
 alter table users add column if not exists mfa_enabled boolean not null default false;
 
+-- Profile photo shown on the Profile tab, Team directory, topbar avatar, and (later) the client
+-- portal's "who's working on this job" view. Stored the same way as other uploaded files - the
+-- bytes live in Storage under `_library/avatars/`, only the object name lives here. Null means no
+-- photo yet - the app falls back to initials, same as before this column existed.
+alter table users add column if not exists avatar_stored_name text;
+
+-- Qualifications/certifications a person holds (e.g. CSCS card, First Aid) shown on their
+-- Profile tab - expiry_date is optional free-text (not every qualification expires) so the
+-- office can see at a glance what's coming up for renewal.
+create table if not exists user_qualifications (
+  id uuid primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  name text not null,
+  expiry_date text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists user_qualifications_user_id_idx on user_qualifications (user_id);
+
 create table if not exists sessions (
   token text primary key,
   user_id uuid not null references users(id) on delete cascade,
@@ -500,6 +519,7 @@ create index if not exists minigame_scores_date_idx on minigame_scores (game_dat
 -- that key grants zero access.
 alter table employees enable row level security;
 alter table users enable row level security;
+alter table user_qualifications enable row level security;
 alter table sessions enable row level security;
 alter table jobs enable row level security;
 alter table job_variations enable row level security;
