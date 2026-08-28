@@ -1667,8 +1667,14 @@ function renderMyProfile() {
 // Free-pick cosmetic swatches for the avatar border and profile card background - same
 // swatch-button pattern as the calendar colour picker (renderColorPicker), just without the
 // "taken by someone else" exclusivity, since everyone can pick the same one.
-const PROFILE_BORDER_LABELS = { none: 'None', gold: 'Gold', blue: 'Blue', green: 'Green', purple: 'Purple', red: 'Red', rainbow: 'Rainbow' };
-const PROFILE_BACKGROUND_LABELS = { none: 'None', ocean: 'Ocean', sunset: 'Sunset', forest: 'Forest', slate: 'Slate', berry: 'Berry' };
+const PROFILE_BORDER_LABELS = {
+  none: 'None', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', blue: 'Blue', green: 'Green',
+  purple: 'Purple', red: 'Red', diamond: 'Diamond', fire: 'Fire', ice: 'Ice', rainbow: 'Rainbow (holo)',
+};
+const PROFILE_BACKGROUND_LABELS = {
+  none: 'None', ocean: 'Ocean', sunset: 'Sunset', forest: 'Forest', slate: 'Slate', berry: 'Berry',
+  galaxy: 'Galaxy', goldfoil: 'Gold Foil', aurora: 'Aurora',
+};
 
 function renderProfileStylePicker() {
   const user = state.currentUser;

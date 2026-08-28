@@ -42,8 +42,8 @@ const CALENDAR_COLOR_HEXES = CALENDAR_COLORS.map((c) => c.hex);
 // colour above (plenty of people can have a gold border). The actual colours/gradients live
 // in style.css keyed by these same values (see .avatar-border-X / .profile-bg-X) - these
 // arrays are just the allowlist a save is validated against, same role as CALENDAR_COLOR_HEXES.
-const PROFILE_BORDER_STYLES = ['none', 'gold', 'blue', 'green', 'purple', 'red', 'rainbow'];
-const PROFILE_BACKGROUND_THEMES = ['none', 'ocean', 'sunset', 'forest', 'slate', 'berry'];
+const PROFILE_BORDER_STYLES = ['none', 'bronze', 'silver', 'gold', 'blue', 'green', 'purple', 'red', 'diamond', 'fire', 'ice', 'rainbow'];
+const PROFILE_BACKGROUND_THEMES = ['none', 'ocean', 'sunset', 'forest', 'slate', 'berry', 'galaxy', 'goldfoil', 'aurora'];
 
 function genId() {
   return crypto.randomUUID();

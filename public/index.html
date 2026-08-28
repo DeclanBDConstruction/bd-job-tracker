@@ -1139,19 +1139,15 @@
       <button type="button" id="myProfileModalCloseBtn" class="link-btn">Close</button>
     </div>
     <div class="profile-card" id="myProfileCard">
-      <div class="profile-photo-wrap">
-        <span class="profile-photo-large" id="myProfilePhoto"></span>
-        <div class="profile-photo-actions">
-          <label class="upload-btn">
-            Upload Photo
-            <input type="file" id="myProfilePhotoInput" accept="image/*" hidden>
-          </label>
-          <button type="button" id="myProfilePhotoRemoveBtn" class="link-btn" hidden>Remove Photo</button>
-        </div>
-      </div>
-      <div class="profile-info">
-        <h3 id="myProfileName"></h3>
-        <p class="hint" id="myProfileRole"></p>
+      <span class="profile-photo-large" id="myProfilePhoto"></span>
+      <h3 id="myProfileName"></h3>
+      <p class="profile-role-badge" id="myProfileRole"></p>
+      <div class="profile-photo-actions">
+        <label class="upload-btn">
+          Upload Photo
+          <input type="file" id="myProfilePhotoInput" accept="image/*" hidden>
+        </label>
+        <button type="button" id="myProfilePhotoRemoveBtn" class="link-btn" hidden>Remove Photo</button>
       </div>
     </div>
 
@@ -1189,10 +1185,8 @@
     </div>
     <div class="profile-card" id="profileViewCard">
       <span class="profile-photo-large" id="profileViewPhoto"></span>
-      <div class="profile-info">
-        <h3 id="profileViewName"></h3>
-        <p class="hint" id="profileViewRole"></p>
-      </div>
+      <h3 id="profileViewName"></h3>
+      <p class="profile-role-badge" id="profileViewRole"></p>
     </div>
     <h3>Qualifications</h3>
     <table class="data-table" id="profileViewQualificationsTable">
