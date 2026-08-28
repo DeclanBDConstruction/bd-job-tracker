@@ -331,11 +331,10 @@ const CALENDAR_DIARY_ROUTES = [
   { method: 'DELETE', path: /^\/diary\/[^/]+$/ },
   { method: 'GET', path: /^\/minigame\/today$/ },
   { method: 'POST', path: /^\/minigame\/score$/ },
-  // Profile: viewing the directory/anyone's profile/photo is open to every role (Team tab +
+  // Profile: viewing anyone's profile/photo is open to every role (Employees tab +
   // job-assignment click-through); the `me` routes are this role's own photo/qualifications,
   // same "me" trick as the colour picker above. Editing someone ELSE's profile stays
   // requireAdmin-gated in the route handlers themselves, so it needs no entry here.
-  { method: 'GET', path: /^\/users\/directory$/ },
   { method: 'GET', path: /^\/users\/[^/]+\/profile$/ },
   { method: 'GET', path: /^\/users\/[^/]+\/photo$/ },
   { method: 'POST', path: /^\/users\/me\/photo$/ },
@@ -451,14 +450,10 @@ app.put('/api/users/me/color', handle(async (req, res) => {
 }));
 
 // ---------- Profiles (photo + qualifications) ----------
-// Directory/profile/photo reads are open to every role (Team tab + job-assignment click-
-// through); self-service writes use a literal `me` in the path so the STAFF/OPERATIVE route
-// allowlist below can match them without knowing each user's id ahead of time. Admin-on-
-// someone-else's-behalf routes use the real :id and are requireAdmin-gated instead.
-
-app.get('/api/users/directory', handle(async (req, res) => {
-  res.json(await db.listUserDirectory());
-}));
+// Profile/photo reads are open to every role (Employees tab + job-assignment click-through);
+// self-service writes use a literal `me` in the path so the STAFF/OPERATIVE route allowlist
+// below can match them without knowing each user's id ahead of time. Admin-on-someone-else's-
+// behalf routes use the real :id and are requireAdmin-gated instead.
 
 app.get('/api/users/:id/profile', handle(async (req, res) => {
   const profile = await db.getUserProfile(req.params.id);

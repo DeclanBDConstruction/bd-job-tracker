@@ -25,7 +25,6 @@ const state = {
   minigameAllTime: [],
   minigameMyBest: null,
   myQualifications: [],
-  teamDirectory: [],
 };
 
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
@@ -316,7 +315,7 @@ async function handleLiveUsersChange() {
     console.warn('Calendar colours unavailable:', err.message);
   }
   if (activeTab() === 'admin') loadAdminUsers();
-  if (activeTab() === 'profile') loadProfileTab();
+  if (!document.getElementById('myProfileModal').hidden) openMyProfileModal();
 }
 
 async function checkAuth() {
@@ -593,7 +592,6 @@ function goToTab(tab) {
   if (tab === 'vehiclehire') { showTabLoading('#vehicleHiresTable tbody', 8); loadVehicleHires(); }
   if (tab === 'quoting') loadQuotes();
   if (tab === 'assignments') renderMyAssignmentsTab();
-  if (tab === 'profile') loadProfileTab();
   if (tab === 'diary') {
     setDiaryViewDate(todayDateStr());
     loadDiary();
@@ -1498,7 +1496,7 @@ function renderEmployees() {
     const tr = document.createElement('tr');
     if (e.hasAccount) tr.classList.add('employee-linked');
     tr.innerHTML = `<td>${escapeHtml(e.name)} <span style="color:var(--muted)">(${jobCount} job${jobCount === 1 ? '' : 's'})</span>${e.hasAccount ? '<span class="linked-badge" title="An account has been created and linked to this employee">Account linked</span>' : ''}</td>
-      <td class="row-actions">${isAdmin() ? `<button data-del-emp="${e.id}" class="danger">Delete</button>` : ''}</td>`;
+      <td class="row-actions">${e.userId ? `<button type="button" data-view-profile-emp="${e.userId}">View Profile</button>` : ''}${isAdmin() ? `<button data-del-emp="${e.id}" class="danger">Delete</button>` : ''}</td>`;
     tbody.appendChild(tr);
   });
   if (!list.length) {
@@ -1529,6 +1527,8 @@ document.getElementById('addEmployeeBtn').addEventListener('click', async () => 
 });
 
 document.querySelector('#employeesTable tbody').addEventListener('click', async (e) => {
+  const viewProfileId = e.target.dataset.viewProfileEmp;
+  if (viewProfileId) { openProfileModal(viewProfileId); return; }
   const id = e.target.dataset.delEmp;
   if (!id) return;
   if (!confirm('Delete this employee?')) return;
@@ -1542,24 +1542,19 @@ document.querySelector('#employeesTable tbody').addEventListener('click', async 
   }
 });
 
-// ---------- Profile (photo + qualifications) + Team directory ----------
+// ---------- Profile (photo + qualifications) ----------
 // Pegged to `users` (login accounts), not the Employees tab's name-only sales-credit list -
-// see the Job Detail assignments list (openProfileModal wiring below) for the same view reused
-// for "who's assigned to this job", which a future client portal will call too.
+// see teamAssignmentDisplayRow and renderEmployees for the same read-only view (openProfileModal)
+// reused for "who's assigned to this job" / "who's this employee's linked account", which a
+// future client portal will call too.
 
-let teamSearchTerm = '';
-
-async function loadProfileTab() {
+async function openMyProfileModal() {
   renderMyProfile();
+  document.getElementById('myProfileModal').hidden = false;
   try {
-    const [profile, directory] = await Promise.all([
-      api(`/api/users/${state.currentUser.id}/profile`),
-      api('/api/users/directory'),
-    ]);
+    const profile = await api(`/api/users/${state.currentUser.id}/profile`);
     state.myQualifications = profile.qualifications;
-    state.teamDirectory = directory;
     renderMyQualifications();
-    renderTeamGrid();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -1573,6 +1568,12 @@ function renderMyProfile() {
   document.getElementById('myProfileRole').textContent = ROLE_LABELS[user.role] || user.role;
   document.getElementById('myProfilePhotoRemoveBtn').hidden = !user.hasPhoto;
 }
+
+document.getElementById('myProfileBtn').addEventListener('click', () => openMyProfileModal());
+
+document.getElementById('myProfileModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('myProfileModal').hidden = true;
+});
 
 function qualificationExpiryCell(q) {
   if (!q.expiryDate) return '<span class="hint">No expiry</span>';
@@ -1592,26 +1593,6 @@ function renderMyQualifications() {
   `).join('');
   document.getElementById('myQualificationsEmptyState').hidden = !!state.myQualifications.length;
 }
-
-function renderTeamGrid() {
-  const term = teamSearchTerm.trim().toLowerCase();
-  const list = state.teamDirectory.filter((u) => !term || u.name.toLowerCase().includes(term));
-  const grid = document.getElementById('teamGrid');
-  grid.innerHTML = list.map((u) => `
-    <button type="button" class="profile-team-card" data-view-profile="${u.id}">
-      <span class="profile-photo-medium" data-avatar-for="${u.id}"></span>
-      <span class="profile-team-card-name">${escapeHtml(u.name)}</span>
-      <span class="hint">${ROLE_LABELS[u.role] || u.role}</span>
-    </button>
-  `).join('');
-  list.forEach((u) => renderAvatar(grid.querySelector(`[data-avatar-for="${u.id}"]`), u));
-  if (!list.length) grid.innerHTML = `<p class="empty-state">${term ? 'No one matches your search.' : 'No team members yet.'}</p>`;
-}
-
-document.getElementById('teamSearch').addEventListener('input', (e) => {
-  teamSearchTerm = e.target.value;
-  renderTeamGrid();
-});
 
 document.getElementById('myProfilePhotoInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -1679,8 +1660,9 @@ document.querySelector('#myQualificationsTable tbody').addEventListener('click',
   }
 });
 
-// Shared read-only profile view - opened from the Team directory and from an assigned
-// employee's name on a Job Detail page (see teamAssignmentDisplayRow below).
+// Shared read-only profile view - opened from the Employees tab (colleagues with a linked
+// account) and from an assigned employee's name on a Job Detail page (see
+// teamAssignmentDisplayRow below).
 async function openProfileModal(userId) {
   try {
     const profile = await api(`/api/users/${userId}/profile`);
@@ -1698,11 +1680,6 @@ async function openProfileModal(userId) {
     toast(err.message, 'error');
   }
 }
-
-document.getElementById('teamGrid').addEventListener('click', (e) => {
-  const id = e.target.closest('[data-view-profile]')?.dataset.viewProfile;
-  if (id) openProfileModal(id);
-});
 
 document.getElementById('profileViewModalCloseBtn').addEventListener('click', () => {
   document.getElementById('profileViewModal').hidden = true;

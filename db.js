@@ -62,16 +62,21 @@ function check(error) {
 // (see registerUser's employee_id auto-link), so the Employees tab can show at a
 // glance who's actually signed up versus who's just a name on jobs. `role` (null if
 // no linked account) rides along too - the Jobs tab's employee filter uses it to
-// only offer admins/surveyors, since "employee" there means who won the job.
+// only offer admins/surveyors, since "employee" there means who won the job. `userId`
+// (also null if unlinked) lets the Employees tab's "View Profile" button open the
+// linked account's profile - see getUserProfile.
 async function listEmployees() {
   const [{ data, error }, { data: userRows, error: userErr }] = await Promise.all([
     supabase.from('employees').select('*').order('name'),
-    supabase.from('users').select('employee_id, role').not('employee_id', 'is', null),
+    supabase.from('users').select('id, employee_id, role').not('employee_id', 'is', null),
   ]);
   check(error);
   check(userErr);
-  const roleByEmployeeId = new Map(userRows.map((u) => [u.employee_id, u.role]));
-  return data.map((e) => ({ id: e.id, name: e.name, hasAccount: roleByEmployeeId.has(e.id), role: roleByEmployeeId.get(e.id) || null }));
+  const linkedUserByEmployeeId = new Map(userRows.map((u) => [u.employee_id, u]));
+  return data.map((e) => {
+    const linkedUser = linkedUserByEmployeeId.get(e.id);
+    return { id: e.id, name: e.name, hasAccount: !!linkedUser, role: linkedUser ? linkedUser.role : null, userId: linkedUser ? linkedUser.id : null };
+  });
 }
 
 async function findEmployeeByName(name) {
@@ -2606,9 +2611,9 @@ async function getUserAvatarStoredName(userId) {
   return data ? data.avatar_stored_name || null : null;
 }
 
-// Public profile shape shown to colleagues browsing the Team directory (and, later, clients
-// browsing a job's assigned team) - deliberately narrower than sanitizeUser: no email, no
-// calendar colour, nothing account-related.
+// Public profile shape shown to a colleague viewed via the Employees tab or a job assignment
+// (and, later, clients browsing a job's assigned team) - deliberately narrower than
+// sanitizeUser: no email, no calendar colour, nothing account-related.
 async function getUserProfile(id) {
   const { data, error } = await supabase.from('users').select('id, name, role, active, avatar_stored_name').eq('id', id).maybeSingle();
   check(error);
@@ -2621,24 +2626,6 @@ async function getUserProfile(id) {
     hasPhoto: !!data.avatar_stored_name,
     qualifications,
   };
-}
-
-async function listUserDirectory() {
-  const [{ data: users, error: usersErr }, { data: qualRows, error: qualErr }] = await Promise.all([
-    supabase.from('users').select('id, name, role, avatar_stored_name').eq('active', true).order('name'),
-    supabase.from('user_qualifications').select('user_id'),
-  ]);
-  check(usersErr);
-  check(qualErr);
-  const qualCountByUserId = new Map();
-  qualRows.forEach((q) => qualCountByUserId.set(q.user_id, (qualCountByUserId.get(q.user_id) || 0) + 1));
-  return users.map((u) => ({
-    id: u.id,
-    name: u.name,
-    role: u.role,
-    hasPhoto: !!u.avatar_stored_name,
-    qualificationCount: qualCountByUserId.get(u.id) || 0,
-  }));
 }
 
 module.exports = {
@@ -2770,7 +2757,6 @@ module.exports = {
   clearUserAvatar,
   getUserAvatarStoredName,
   getUserProfile,
-  listUserDirectory,
   // Pure helpers with no Supabase calls - exported so they can be unit-tested directly (see
   // test/db.pure.test.js) without needing a live database connection.
   addDaysToDateString,

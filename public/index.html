@@ -95,8 +95,10 @@
       <div class="header-search-results" id="headerSearchResults" hidden></div>
     </div>
     <div class="topbar-user">
-      <span class="user-avatar" id="userAvatar"></span>
-      <span id="currentUserName"></span>
+      <button type="button" id="myProfileBtn" class="topbar-profile-btn">
+        <span class="user-avatar" id="userAvatar"></span>
+        <span id="currentUserName"></span>
+      </button>
       <button type="button" id="mfaSettingsBtn" class="link-btn">Two-Factor Auth</button>
       <button id="logoutBtn">Sign Out</button>
     </div>
@@ -114,7 +116,6 @@
     </div>
 
     <button class="tab-btn" data-tab="employees" id="employeesTabBtn">Employees</button>
-    <button class="tab-btn" data-tab="profile">Profile</button>
 
     <div class="tab-group" id="operationsTabGroup">
       <button type="button" class="tab-group-btn">Operations <span class="caret">▾</span></button>
@@ -290,51 +291,6 @@
       <thead><tr><th>Name</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
-  </section>
-
-  <!-- PROFILE TAB -->
-  <section id="tab-profile" class="tab-panel">
-    <div class="panel-header">
-      <h2>My Profile</h2>
-    </div>
-    <div class="profile-card">
-      <div class="profile-photo-wrap">
-        <span class="profile-photo-large" id="myProfilePhoto"></span>
-        <div class="profile-photo-actions">
-          <label class="upload-btn">
-            Upload Photo
-            <input type="file" id="myProfilePhotoInput" accept="image/*" hidden>
-          </label>
-          <button type="button" id="myProfilePhotoRemoveBtn" class="link-btn" hidden>Remove Photo</button>
-        </div>
-      </div>
-      <div class="profile-info">
-        <h3 id="myProfileName"></h3>
-        <p class="hint" id="myProfileRole"></p>
-      </div>
-    </div>
-
-    <div class="panel-header">
-      <h3>My Qualifications</h3>
-    </div>
-    <div class="import-upload">
-      <input type="text" id="newQualificationName" placeholder="e.g. CSCS Card">
-      <input type="date" id="newQualificationExpiry" title="Expiry date (optional)">
-      <button type="button" id="addQualificationBtn" class="primary">+ Add Qualification</button>
-    </div>
-    <table class="data-table" id="myQualificationsTable">
-      <thead><tr><th>Qualification</th><th>Expiry</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <p class="empty-state" id="myQualificationsEmptyState" hidden>No qualifications added yet.</p>
-
-    <div class="panel-header">
-      <h3>Team</h3>
-      <div class="filters">
-        <input type="text" id="teamSearch" placeholder="Search team…">
-      </div>
-    </div>
-    <div class="profile-team-grid" id="teamGrid"></div>
   </section>
 
   <!-- LABOUR TAB -->
@@ -1105,8 +1061,47 @@
   </div>
 </div>
 
-<!-- Profile View Modal (read-only) - opened from the Team directory and from an assigned
-     employee's name on a Job Detail page; the same view a future client portal will reuse. -->
+<!-- My Profile Modal (self-edit) - opened by clicking your name/avatar in the topbar. -->
+<div id="myProfileModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2>My Profile</h2>
+      <button type="button" id="myProfileModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <div class="profile-card">
+      <div class="profile-photo-wrap">
+        <span class="profile-photo-large" id="myProfilePhoto"></span>
+        <div class="profile-photo-actions">
+          <label class="upload-btn">
+            Upload Photo
+            <input type="file" id="myProfilePhotoInput" accept="image/*" hidden>
+          </label>
+          <button type="button" id="myProfilePhotoRemoveBtn" class="link-btn" hidden>Remove Photo</button>
+        </div>
+      </div>
+      <div class="profile-info">
+        <h3 id="myProfileName"></h3>
+        <p class="hint" id="myProfileRole"></p>
+      </div>
+    </div>
+
+    <h3>My Qualifications</h3>
+    <div class="import-upload">
+      <input type="text" id="newQualificationName" placeholder="e.g. CSCS Card">
+      <input type="date" id="newQualificationExpiry" title="Expiry date (optional)">
+      <button type="button" id="addQualificationBtn" class="primary">+ Add Qualification</button>
+    </div>
+    <table class="data-table" id="myQualificationsTable">
+      <thead><tr><th>Qualification</th><th>Expiry</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty-state" id="myQualificationsEmptyState" hidden>No qualifications added yet.</p>
+  </div>
+</div>
+
+<!-- Profile View Modal (read-only) - opened from the Employees tab (colleagues with a linked
+     account) and from an assigned employee's name on a Job Detail page; the same view a future
+     client portal will reuse. -->
 <div id="profileViewModal" class="modal-overlay" hidden>
   <div class="modal">
     <div class="job-detail-header">
