@@ -324,6 +324,11 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function requireAssetsAccess(req, res, next) {
+  if (!['admin', 'stocks_manager'].includes(req.user.role)) return res.status(403).json({ error: 'Admins and stocks managers only' });
+  next();
+}
+
 // The CAD section is a surveyor tool as much as an admin one - unlike most admin-gated
 // features, surveyors need full read/write here, not just view.
 function requireAdminOrSurveyor(req, res, next) {
@@ -391,11 +396,31 @@ const OPERATIVE_ALLOWED_ROUTES = [
   { method: 'GET', path: /^\/job-assignments\/[^/]+\/rams-status\/[^/]+\/file$/ },
 ];
 
+// Stocks managers get the Assets tab plus the same "protect your own account" baseline as
+// staff/operatives - everything else in the app (jobs, employees, quoting, etc.) stays off
+// limits, same enforcement shape as STAFF_ALLOWED_ROUTES/OPERATIVE_ALLOWED_ROUTES above.
+const STOCKS_MANAGER_ALLOWED_ROUTES = [
+  ...CALENDAR_DIARY_ROUTES,
+  { method: 'GET', path: /^\/assets$/ },
+  { method: 'POST', path: /^\/assets$/ },
+  { method: 'PUT', path: /^\/assets\/[^/]+$/ },
+  { method: 'GET', path: /^\/assets\/lookup\/[^/]+$/ },
+  { method: 'POST', path: /^\/assets\/[^/]+\/check-out$/ },
+  { method: 'POST', path: /^\/assets\/[^/]+\/check-in$/ },
+  { method: 'POST', path: /^\/assets\/[^/]+\/mark-repaired$/ },
+  { method: 'GET', path: /^\/assets\/[^/]+\/qr$/ },
+  { method: 'GET', path: /^\/jobs$/ },   // read-only, for the check-out form's job picker
+  { method: 'GET', path: /^\/users$/ },  // read-only, for the check-out form's holder picker
+];
+
 app.use('/api', (req, res, next) => {
   if (req.user.role === 'staff' && !STAFF_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
     return res.status(403).json({ error: 'Not available for your role' });
   }
   if (db.OPERATIVE_ROLES.includes(req.user.role) && !OPERATIVE_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
+    return res.status(403).json({ error: 'Not available for your role' });
+  }
+  if (req.user.role === 'stocks_manager' && !STOCKS_MANAGER_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
     return res.status(403).json({ error: 'Not available for your role' });
   }
   next();
@@ -418,7 +443,10 @@ app.get('/api/events', (req, res) => {
 
 // ---------- Users (admin) ----------
 
-app.get('/api/users', requireAdmin, handle(async (req, res) => {
+// Also open to stocks managers (not just admins) - they need this to populate the "who's
+// taking this out" picker on the Scan screen's check-out form (see STOCKS_MANAGER_ALLOWED_ROUTES).
+app.get('/api/users', handle(async (req, res) => {
+  if (!['admin', 'stocks_manager'].includes(req.user.role)) return res.status(403).json({ error: 'Admins only' });
   res.json(await db.listUsers());
 }));
 
@@ -1651,6 +1679,67 @@ app.delete('/api/vehicle-hires/:id', requireAdmin, handle(async (req, res) => {
   db.logCrud(req.user, 'deleted', 'vehicle_hire', 'Vehicle hire', req.params.id, req.params.id);
   broadcast('vehicleHires');
   res.status(204).end();
+}));
+
+// ---------- Assets (plant/tools/equipment, QR scan out/in) ----------
+// Admins and stocks managers only (see requireAssetsAccess/STOCKS_MANAGER_ALLOWED_ROUTES) -
+// delete is admin-only, matching the destructive-action convention used elsewhere.
+
+app.get('/api/assets', requireAssetsAccess, handle(async (req, res) => {
+  res.json(await db.listAssets());
+}));
+
+app.post('/api/assets', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.createAsset(req.body);
+  db.logCrud(req.user, 'created', 'asset', 'Asset', asset.name, asset.id);
+  broadcast('assets');
+  res.status(201).json(asset);
+}));
+
+app.put('/api/assets/:id', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.updateAsset(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'asset', 'Asset', asset.name, asset.id);
+  broadcast('assets');
+  res.json(asset);
+}));
+
+app.delete('/api/assets/:id', requireAdmin, handle(async (req, res) => {
+  await db.deleteAsset(req.params.id);
+  db.logCrud(req.user, 'deleted', 'asset', 'Asset', req.params.id, req.params.id);
+  broadcast('assets');
+  res.status(204).end();
+}));
+
+app.get('/api/assets/lookup/:token', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.getAssetByToken(req.params.token);
+  if (!asset) return res.status(404).json({ error: 'No asset found for that code' });
+  res.json(asset);
+}));
+
+app.post('/api/assets/:id/check-out', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.checkOutAsset(req.params.id, req.body);
+  db.logActivity(req.user, 'asset.checked_out', `Checked out "${asset.name}"${asset.currentHolderName ? ` to ${asset.currentHolderName}` : ''}${asset.currentJobReference ? ` for job ${asset.currentJobReference}` : ''}`, 'asset', asset.id);
+  broadcast('assets');
+  res.json(asset);
+}));
+
+app.post('/api/assets/:id/check-in', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.checkInAsset(req.params.id, req.body);
+  db.logActivity(req.user, 'asset.checked_in', `Checked in "${asset.name}" - condition: ${asset.lastConditionStatus}`, 'asset', asset.id);
+  broadcast('assets');
+  res.json(asset);
+}));
+
+app.post('/api/assets/:id/mark-repaired', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.markAssetRepaired(req.params.id);
+  db.logActivity(req.user, 'asset.marked_repaired', `Marked "${asset.name}" as repaired`, 'asset', asset.id);
+  broadcast('assets');
+  res.json(asset);
+}));
+
+app.get('/api/assets/:id/qr', requireAssetsAccess, handle(async (req, res) => {
+  const asset = await db.getAsset(req.params.id);
+  res.json({ qrDataUrl: await db.getAssetQr(asset) });
 }));
 
 // ---------- Signage (shared - anyone can view/add/update; removing one is admin-only) ----------

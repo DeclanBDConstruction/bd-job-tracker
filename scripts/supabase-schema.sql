@@ -274,6 +274,28 @@ create table if not exists hires (
 alter table hires add column if not exists job_number text;
 alter table hires add column if not exists job_description text;
 
+-- Plant/tools/equipment tracked via QR-code labels. Unlike hires above (whose status is
+-- purely date-derived), status here is event-driven (scan actions), so it's a stored
+-- column rather than computed at read time. qr_token is short (10 hex chars) rather than
+-- the row's own uuid, so the printed/laminated label QR stays small and reliably
+-- scannable - see generateQrToken in db.js.
+create table if not exists assets (
+  id uuid primary key,
+  name text not null,
+  category text,
+  qr_token text not null,
+  status text not null default 'available', -- available | checked_out | repairs
+  current_job_id uuid references jobs(id) on delete set null,
+  current_holder_user_id uuid references users(id) on delete set null,
+  checked_out_at timestamptz,
+  last_condition_status text, -- good | damaged
+  last_condition_notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists assets_qr_token_idx on assets (qr_token);
+create index if not exists assets_status_idx on assets (status);
+
 -- Hired-in vehicles, admin-only. Unlike `hires` above there's no due-back date - a
 -- vehicle just stays on-hire until someone off-hires it, which is one-way (see
 -- markVehicleHireOffHired in db.js) and stamps off_hire_date + any damage_comments at
@@ -565,6 +587,7 @@ alter table job_costing_labour_overrides enable row level security;
 alter table job_costing_lines enable row level security;
 alter table minigame_scores enable row level security;
 alter table activity_log enable row level security;
+alter table assets enable row level security;
 
 -- Storage bucket for uploaded RAMS/drawings/signoff/photos. Private - the app proxies
 -- downloads through its own authenticated API rather than exposing public file URLs.

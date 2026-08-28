@@ -2049,6 +2049,180 @@ async function deleteVehicleHire(id) {
   check(error);
 }
 
+// ---------- Assets ----------
+// Plant/tools/equipment tracked via printed QR labels - scan out (who's got it, optionally
+// which job), scan back in with an immediate condition check (see checkInAsset), and a
+// damaged item goes to 'repairs' instead of back into circulation until markAssetRepaired
+// puts it back into service. Unlike Hire above, status here is event-driven (scan actions),
+// not date-derived, so it's a real stored column rather than computed at read time.
+
+const ASSET_STATUSES = ['available', 'checked_out', 'repairs'];
+
+function rowToAsset(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category || '',
+    qrToken: row.qr_token,
+    status: row.status,
+    currentJobId: row.current_job_id || null,
+    currentHolderUserId: row.current_holder_user_id || null,
+    checkedOutAt: row.checked_out_at || null,
+    lastConditionStatus: row.last_condition_status || null,
+    lastConditionNotes: row.last_condition_notes || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Joins job reference/client and holder name onto each asset - same app-code-join pattern
+// as attachJobAssignmentContext, just skipped for assets that aren't currently checked out.
+async function attachAssetContext(assets) {
+  const jobIds = [...new Set(assets.filter((a) => a.currentJobId).map((a) => a.currentJobId))];
+  const userIds = [...new Set(assets.filter((a) => a.currentHolderUserId).map((a) => a.currentHolderUserId))];
+  const [{ data: jobRows, error: jobErr }, { data: userRows, error: userErr }] = await Promise.all([
+    jobIds.length ? supabase.from('jobs').select('id, job_reference, client').in('id', jobIds) : Promise.resolve({ data: [], error: null }),
+    userIds.length ? supabase.from('users').select('id, name').in('id', userIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  check(jobErr);
+  check(userErr);
+  const jobById = Object.fromEntries(jobRows.map((j) => [j.id, j]));
+  const userById = Object.fromEntries(userRows.map((u) => [u.id, u]));
+  assets.forEach((a) => {
+    const job = a.currentJobId ? jobById[a.currentJobId] : null;
+    a.currentJobReference = job ? (job.job_reference || job.client) : '';
+    const user = a.currentHolderUserId ? userById[a.currentHolderUserId] : null;
+    a.currentHolderName = user ? user.name : '';
+  });
+  return assets;
+}
+
+async function listAssets() {
+  const { data, error } = await supabase.from('assets').select('*').order('name');
+  check(error);
+  return attachAssetContext(data.map(rowToAsset));
+}
+
+async function getAsset(id) {
+  const { data, error } = await supabase.from('assets').select('*').eq('id', id).maybeSingle();
+  check(error);
+  if (!data) throw new Error('Asset not found');
+  const [asset] = await attachAssetContext([rowToAsset(data)]);
+  return asset;
+}
+
+async function getAssetByToken(token) {
+  const { data, error } = await supabase.from('assets').select('*').eq('qr_token', token).maybeSingle();
+  check(error);
+  if (!data) return null;
+  const [asset] = await attachAssetContext([rowToAsset(data)]);
+  return asset;
+}
+
+// Short (10 hex chars) rather than the row's own uuid, so the printed/laminated label QR
+// stays small and reliably scannable - the unique index on qr_token backstops a collision.
+function generateQrToken() {
+  return crypto.randomBytes(5).toString('hex');
+}
+
+async function createAsset(input) {
+  const name = (input.name || '').trim();
+  if (!name) throw new Error('Name is required');
+  const row = {
+    id: genId(),
+    name,
+    category: (input.category || '').trim(),
+    qr_token: generateQrToken(),
+    status: 'available',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('assets').insert(row).select().single();
+  check(error);
+  return rowToAsset(data);
+}
+
+async function updateAsset(id, input) {
+  const name = (input.name || '').trim();
+  if (!name) throw new Error('Name is required');
+  const row = { name, category: (input.category || '').trim(), updated_at: new Date().toISOString() };
+  const { data, error } = await supabase.from('assets').update(row).eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Asset not found');
+  return rowToAsset(data);
+}
+
+async function deleteAsset(id) {
+  const { error } = await supabase.from('assets').delete().eq('id', id);
+  check(error);
+}
+
+async function checkOutAsset(id, { jobId, holderUserId }) {
+  const { data: existing, error: findErr } = await supabase.from('assets').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Asset not found');
+  if (existing.status !== 'available') {
+    throw new Error(existing.status === 'repairs' ? "This item is in repairs and can't be checked out" : 'This item is already checked out');
+  }
+  if (!holderUserId) throw new Error('Choose who is taking this out');
+  const row = {
+    status: 'checked_out',
+    current_job_id: jobId || null,
+    current_holder_user_id: holderUserId,
+    checked_out_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  // Filtering the update on the status just read (not just id) closes the check-then-act gap
+  // between the SELECT above and this write - if someone else's scan already moved this asset
+  // on in between, this matches zero rows instead of silently clobbering their change.
+  const { data, error } = await supabase.from('assets').update(row).eq('id', id).eq('status', 'available').select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('This item was just checked out by someone else - try scanning it again');
+  const [asset] = await attachAssetContext([rowToAsset(data)]);
+  return asset;
+}
+
+async function checkInAsset(id, { condition, notes }) {
+  const { data: existing, error: findErr } = await supabase.from('assets').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Asset not found');
+  if (existing.status !== 'checked_out') throw new Error('This item is not currently checked out');
+  if (!['good', 'damaged'].includes(condition)) throw new Error('Choose the condition it came back in');
+  const row = {
+    status: condition === 'good' ? 'available' : 'repairs',
+    current_job_id: null,
+    current_holder_user_id: null,
+    checked_out_at: null,
+    last_condition_status: condition,
+    last_condition_notes: (notes || '').trim(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('assets').update(row).eq('id', id).eq('status', 'checked_out').select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('This item was just checked in by someone else - try scanning it again');
+  return rowToAsset(data);
+}
+
+// Keeps last_condition_status/notes as historical context (what the last inspection found)
+// rather than clearing them - the activity log already carries the "marked repaired" event
+// itself, so this is just useful context to leave visible on the list once it's fixed.
+async function markAssetRepaired(id) {
+  const { data: existing, error: findErr } = await supabase.from('assets').select('*').eq('id', id).maybeSingle();
+  check(findErr);
+  if (!existing) throw new Error('Asset not found');
+  if (existing.status !== 'repairs') throw new Error('This item is not in repairs');
+  const { data, error } = await supabase.from('assets')
+    .update({ status: 'available', updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'repairs').select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('This item was just updated by someone else - try again');
+  return rowToAsset(data);
+}
+
+async function getAssetQr(asset) {
+  return QRCode.toDataURL(asset.qrToken);
+}
+
 // ---------- Signage ----------
 // Inventory of physical site signs, shared and editable by anyone (removing one is
 // admin-only). Seeded once with 10 rows (sign_number 1..10) the first time the table is
@@ -2337,7 +2511,7 @@ async function submitMiniGameScore(user, input) {
 // any features built for them yet, so every /api route except auth blocks them for now
 // (see the operative-lockout middleware in server.js) - extend that allowlist as
 // operative-specific screens get built instead of loosening this list.
-const ROLES = ['admin', 'staff', 'surveyor', 'installation_operative', 'manufacturing_operative'];
+const ROLES = ['admin', 'staff', 'surveyor', 'installation_operative', 'manufacturing_operative', 'stocks_manager'];
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
 
 function sanitizeUser(row) {
@@ -2803,6 +2977,17 @@ module.exports = {
   updateVehicleHire,
   markVehicleHireOffHired,
   deleteVehicleHire,
+  ASSET_STATUSES,
+  listAssets,
+  getAsset,
+  getAssetByToken,
+  createAsset,
+  updateAsset,
+  deleteAsset,
+  checkOutAsset,
+  checkInAsset,
+  markAssetRepaired,
+  getAssetQr,
   listSignage,
   createSignage,
   updateSignage,

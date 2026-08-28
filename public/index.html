@@ -125,6 +125,7 @@
         <button class="tab-btn" data-tab="quoting">Quoting</button>
         <button class="tab-btn" data-tab="hire" id="hireTabBtn" hidden>Hire</button>
         <button class="tab-btn" data-tab="vehiclehire" id="vehicleHireTabBtn" hidden>Vehicle Hire</button>
+        <button class="tab-btn" data-tab="assets" id="assetsTabBtn" hidden>Assets</button>
         <button class="tab-btn" data-tab="signage">Signage Tracker</button>
         <button class="tab-btn" data-tab="pricelist">Price List</button>
       </div>
@@ -497,6 +498,38 @@
       </div>
       <p class="empty-state" id="vehicleHiresOffHireEmptyState" hidden>No off-hired vehicles yet.</p>
     </div>
+  </section>
+
+  <!-- ASSETS TAB (plant/tools/equipment, QR scan out/in - admins and stocks managers) -->
+  <section id="tab-assets" class="tab-panel">
+    <div class="panel-header">
+      <h2>Assets</h2>
+      <div class="filters">
+        <input type="text" id="assetSearch" placeholder="Search name, category…">
+        <select id="assetStatusFilter">
+          <option value="">All statuses</option>
+          <option value="available">Available</option>
+          <option value="checked_out">Checked Out</option>
+          <option value="repairs">Repairs</option>
+        </select>
+        <button type="button" id="assetsScanBtn" class="primary">Scan</button>
+        <button type="button" id="newAssetBtn">+ Add Asset</button>
+      </div>
+    </div>
+    <p class="hint">Plant, tools and equipment tracked by QR label — scan an item out to
+      whoever's taking it, and scan it back in to log its condition. A damaged item goes
+      into Repairs until it's marked fixed.</p>
+    <div class="table-scroll">
+      <table class="data-table" id="assetsTable">
+        <thead>
+          <tr>
+            <th>Name</th><th>Category</th><th>Status</th><th>Job</th><th>Holder</th><th>Checked Out</th><th>Last Condition</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="empty-state" id="assetsEmptyState" hidden>No assets added yet.</p>
   </section>
 
   <!-- SIGNAGE TRACKER TAB -->
@@ -1175,8 +1208,56 @@
   </div>
 </div>
 
+<!-- Add/Edit Asset Modal -->
+<div id="assetModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2 id="assetModalTitle">Add Asset</h2>
+      <button type="button" id="assetModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <form id="assetForm">
+      <input type="hidden" id="assetId">
+      <label>Name *<input type="text" id="assetNameInput" required></label>
+      <label>Category<input type="text" id="assetCategoryInput" placeholder="e.g. Plant, Tools, Equipment"></label>
+      <button type="submit" class="primary">Save</button>
+    </form>
+  </div>
+</div>
+
+<!-- Asset QR Modal - shows a printable label for a physical item -->
+<div id="assetQrModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2>Asset QR Code</h2>
+      <button type="button" id="assetQrModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <p class="hint">Print or screenshot this and stick it on the item — scanning it is how it gets checked in and out.</p>
+    <img id="assetQrImage" alt="Asset QR code" class="mfa-qr">
+    <h3 id="assetQrName"></h3>
+  </div>
+</div>
+
+<!-- Scan Asset Modal - camera-based QR scan for check-out/check-in/repairs -->
+<div id="scanAssetModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="job-detail-header">
+      <h2>Scan Asset</h2>
+      <button type="button" id="scanAssetModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <video id="scanVideo" class="scan-video" playsinline autoplay muted></video>
+    <canvas id="scanCanvas" hidden></canvas>
+    <p class="hint" id="scanStatusMsg"></p>
+    <div class="scan-manual-entry">
+      <input type="text" id="scanManualToken" placeholder="Or type the code…">
+      <button type="button" id="scanManualBtn">Look Up</button>
+    </div>
+    <div id="scanResultPanel"></div>
+  </div>
+</div>
+
 <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
+<script src="vendor/jsQR.js"></script>
 <script src="app.js"></script>
 <script src="cad.js"></script>
 </body>

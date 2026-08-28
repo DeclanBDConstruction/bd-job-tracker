@@ -697,6 +697,10 @@ h3 { color: var(--blue-dark); }
 
 .mfa-qr { display: block; width: 200px; height: 200px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; }
 
+.scan-video { display: block; width: 100%; max-width: 360px; margin: 12px auto; border-radius: 8px; background: #000; }
+.scan-manual-entry { display: flex; gap: 8px; margin: 12px 0; }
+.scan-manual-entry input { flex: 1; }
+
 /* ---------- Form controls ---------- */
 
 input, select, textarea, button {
@@ -876,6 +880,9 @@ button.danger:hover { background: #fdecea; }
 .status-pill.won, .status-pill.complete, .status-pill.invoiced { background: var(--green-light); color: #4c7a1f; }
 .status-pill.in-progress { background: var(--blue-light); color: var(--blue-dark); }
 .status-pill.lost, .status-pill.cancelled { background: #fbe1e0; color: #a8271f; }
+.status-pill.available { background: var(--green-light); color: #4c7a1f; }
+.status-pill.checked_out { background: var(--blue-light); color: var(--blue-dark); }
+.status-pill.repairs { background: #fbe1e0; color: #a8271f; }
 
 .progress-pill {
   display: inline-flex;

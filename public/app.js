@@ -13,6 +13,7 @@ const state = {
   quotes: [],
   hires: [],
   vehicleHires: [],
+  assets: [],
   signage: [],
   diaryEntries: [],
   jobAssignments: [],
@@ -32,6 +33,7 @@ const isAdmin = () => !!(state.currentUser && state.currentUser.role === 'admin'
 const isOperative = () => !!(state.currentUser && OPERATIVE_ROLES.includes(state.currentUser.role));
 const isStaff = () => !!(state.currentUser && state.currentUser.role === 'staff');
 const isSurveyor = () => !!(state.currentUser && state.currentUser.role === 'surveyor');
+const isStocksManager = () => !!(state.currentUser && state.currentUser.role === 'stocks_manager');
 const canManageQuotes = () => !!(state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.canManageQuotes));
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -147,25 +149,31 @@ async function showApp(user) {
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('vehicleHireTabBtn').hidden = !isAdmin();
+  document.getElementById('assetsTabBtn').hidden = !(isAdmin() || isStocksManager());
   document.getElementById('quotingAddRow').hidden = !canManageQuotes();
   // Admins/surveyors sometimes go on the tools themselves (assigned via the Jobs tab's
   // "Assign the Team" checklist same as anyone else) - they need the same self-service
   // Assignments tab an operative gets so they can actually clock in on their own assignment.
-  // Only staff have no route to ever be assigned a job, so they're the sole exclusion.
-  document.getElementById('assignmentsTabBtn').hidden = isStaff();
+  // Staff and stocks managers have no route to ever be assigned a job, so they're excluded.
+  document.getElementById('assignmentsTabBtn').hidden = isStaff() || isStocksManager();
 
   // Staff and operatives both only get Home, My Calendar and My Diary - everything else
   // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
   // purposes, but the real enforcement is server-side (see the allowlists in server.js).
-  const restricted = isStaff() || isOperative();
+  // Stocks managers are restricted the same way, except they keep the Operations dropdown
+  // open specifically for Assets - every other button inside it is individually hidden below.
+  const restricted = isStaff() || isOperative() || isStocksManager();
   document.getElementById('jobsTabGroup').hidden = restricted;
   document.getElementById('employeesTabBtn').hidden = restricted;
-  document.getElementById('operationsTabGroup').hidden = restricted;
+  document.getElementById('operationsTabGroup').hidden = restricted && !isStocksManager();
   document.getElementById('reportsTabGroup').hidden = restricted;
   document.getElementById('calendarTabBtn').hidden = restricted;
   document.getElementById('headerSearchWrap').hidden = restricted;
+  ['labour', 'subbies', 'quoting', 'signage', 'pricelist'].forEach((tab) => {
+    document.querySelector(`.tab-btn[data-tab="${tab}"]`).hidden = isStocksManager();
+  });
 
-  const bootstrapPromise = isStaff() ? bootstrapStaff() : isOperative() ? bootstrapOperative() : bootstrap();
+  const bootstrapPromise = isStaff() ? bootstrapStaff() : isOperative() ? bootstrapOperative() : isStocksManager() ? bootstrapStocksManager() : bootstrap();
   connectLiveUpdates();
   const minDisplay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
   try {
@@ -198,6 +206,7 @@ function connectLiveUpdates() {
     // requests the server will 403.
     if (isStaff() && !['calendar', 'diary', 'users'].includes(type)) return;
     if (isOperative() && !['calendar', 'diary', 'users', 'jobAssignments'].includes(type)) return;
+    if (isStocksManager() && !['calendar', 'diary', 'users', 'assets', 'jobs'].includes(type)) return;
     // Virtually every mutation already broadcasts some type - piggyback on all of them to
     // refresh the Logs tab live if it's open, rather than adding a dedicated broadcast call
     // at every one of the ~50 activity-logging call sites in server.js. Only while still on
@@ -220,6 +229,7 @@ function connectLiveUpdates() {
     else if (type === 'diary') handleLiveDiaryChange();
     else if (type === 'minigame') handleLiveMinigameChange();
     else if (type === 'jobAssignments') handleLiveJobAssignmentsChange();
+    else if (type === 'assets') handleLiveAssetsChange();
   };
 }
 
@@ -247,6 +257,10 @@ async function handleLiveHiresChange() {
 
 async function handleLiveVehicleHiresChange() {
   if (activeTab() === 'vehiclehire') loadVehicleHires();
+}
+
+async function handleLiveAssetsChange() {
+  if (activeTab() === 'assets') loadAssets();
 }
 
 async function handleLiveSignageChange() {
@@ -620,6 +634,7 @@ function goToTab(tab) {
   if (tab === 'logs') { showTabLoading('#activityLogTable tbody', 3); loadActivityLog({ reset: true }); }
   if (tab === 'hire') { showTabLoading('#hiresTable tbody', 9); loadHires(); }
   if (tab === 'vehiclehire') { showTabLoading('#vehicleHiresTable tbody', 8); loadVehicleHires(); }
+  if (tab === 'assets') { showTabLoading('#assetsTable tbody', 8); loadAssets(); }
   if (tab === 'quoting') loadQuotes();
   if (tab === 'assignments') renderMyAssignmentsTab();
   if (tab === 'diary') {
@@ -877,6 +892,38 @@ async function bootstrapOperative() {
   renderCalendar();
   renderHomeDashboard();
   renderMyAssignmentsTab();
+
+  try {
+    const [calendarColors, userColors] = await Promise.all([api('/api/calendar-colors'), api('/api/users/colors')]);
+    state.calendarColors = calendarColors;
+    state.userColors = userColors;
+    renderCalendar();
+    renderColorPicker();
+  } catch (err) {
+    console.warn('Calendar colours unavailable (database may need the colour migration run):', err.message);
+    const container = document.getElementById('calColorPicker');
+    if (container) container.innerHTML = `<span class="color-picker-error">Couldn't load colours: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// Stocks managers get Home, My Calendar and My Diary (like staff), plus the Assets tab -
+// a trimmed bootstrap like bootstrapStaff, since everything else 403s for this role (see
+// STOCKS_MANAGER_ALLOWED_ROUTES in server.js). Jobs/users are fetched read-only, just to
+// populate the check-out form's job/holder pickers on the Scan screen.
+async function bootstrapStocksManager() {
+  const [calendarEvents, assets, jobs, operativeUsers] = await Promise.all([
+    api('/api/calendar'),
+    api('/api/assets'),
+    api('/api/jobs'),
+    api('/api/users'),
+  ]);
+  state.calendarEvents = calendarEvents;
+  state.assets = assets;
+  state.jobs = jobs;
+  state.operativeUsers = operativeUsers;
+  renderCalendar();
+  renderHomeDashboard();
+  renderAssets();
 
   try {
     const [calendarColors, userColors] = await Promise.all([api('/api/calendar-colors'), api('/api/users/colors')]);
@@ -3065,6 +3112,284 @@ document.getElementById('vehicleHireAddForm').addEventListener('submit', async (
   } catch (err) {
     toast(err.message, 'error');
   }
+});
+
+// ---------- Assets (plant/tools/equipment, QR scan out/in) ----------
+// Admins and stocks managers only (see requireAssetsAccess in server.js). Add/edit happens
+// in a modal (assetModal) rather than inline rows like Hire, since there's only two fields.
+// Check-out/check-in/repairs all happen from the Scan modal - see the scan block further down.
+
+const ASSET_STATUS_LABELS = { available: 'Available', checked_out: 'Checked Out', repairs: 'Repairs' };
+
+async function loadAssets() {
+  state.assets = await api('/api/assets');
+  renderAssets();
+}
+
+function assetRow(a) {
+  const checkedOutAt = a.checkedOutAt ? new Date(a.checkedOutAt).toLocaleString('en-GB') : '—';
+  const lastCondition = a.lastConditionStatus ? (a.lastConditionStatus === 'good' ? 'Good' : 'Damaged') : '—';
+  return `
+    <tr>
+      <td>${escapeHtml(a.name)}</td>
+      <td>${escapeHtml(a.category || '—')}</td>
+      <td><span class="status-pill ${a.status}">${ASSET_STATUS_LABELS[a.status]}</span></td>
+      <td>${escapeHtml(a.currentJobReference || '—')}</td>
+      <td>${escapeHtml(a.currentHolderName || '—')}</td>
+      <td>${checkedOutAt}</td>
+      <td>${lastCondition}</td>
+      <td class="row-actions">
+        <button type="button" data-qr-asset="${a.id}">View QR</button>
+        <button type="button" data-edit-asset="${a.id}">Edit</button>
+        ${isAdmin() ? `<button type="button" class="danger" data-del-asset="${a.id}">Delete</button>` : ''}
+      </td>
+    </tr>
+  `;
+}
+
+function renderAssets() {
+  const term = document.getElementById('assetSearch').value.trim().toLowerCase();
+  const status = document.getElementById('assetStatusFilter').value;
+  const filtered = state.assets.filter((a) => {
+    if (status && a.status !== status) return false;
+    if (term && ![a.name, a.category].some((v) => (v || '').toLowerCase().includes(term))) return false;
+    return true;
+  });
+
+  const tbody = document.querySelector('#assetsTable tbody');
+  document.getElementById('assetsEmptyState').hidden = !!filtered.length;
+  document.getElementById('assetsEmptyState').textContent = state.assets.length && (term || status)
+    ? 'No assets match your search.'
+    : 'No assets added yet.';
+  tbody.innerHTML = filtered.map(assetRow).join('');
+
+  tbody.querySelectorAll('[data-qr-asset]').forEach((btn) => {
+    btn.addEventListener('click', () => openAssetQr(btn.dataset.qrAsset));
+  });
+  tbody.querySelectorAll('[data-edit-asset]').forEach((btn) => {
+    btn.addEventListener('click', () => openAssetModal(state.assets.find((a) => a.id === btn.dataset.editAsset)));
+  });
+  tbody.querySelectorAll('[data-del-asset]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this asset? This cannot be undone.')) return;
+      try {
+        await api(`/api/assets/${btn.dataset.delAsset}`, { method: 'DELETE' });
+        loadAssets();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+}
+
+document.getElementById('assetSearch').addEventListener('input', renderAssets);
+document.getElementById('assetStatusFilter').addEventListener('change', renderAssets);
+
+function openAssetModal(asset) {
+  document.getElementById('assetModalTitle').textContent = asset ? 'Edit Asset' : 'Add Asset';
+  document.getElementById('assetId').value = asset ? asset.id : '';
+  document.getElementById('assetNameInput').value = asset ? asset.name : '';
+  document.getElementById('assetCategoryInput').value = asset ? asset.category : '';
+  document.getElementById('assetModal').hidden = false;
+}
+
+document.getElementById('newAssetBtn').addEventListener('click', () => openAssetModal(null));
+document.getElementById('assetModalCloseBtn').addEventListener('click', () => { document.getElementById('assetModal').hidden = true; });
+
+document.getElementById('assetForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('assetId').value;
+  const body = {
+    name: document.getElementById('assetNameInput').value.trim(),
+    category: document.getElementById('assetCategoryInput').value.trim(),
+  };
+  try {
+    if (id) await api(`/api/assets/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    else await api('/api/assets', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('assetModal').hidden = true;
+    loadAssets();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+async function openAssetQr(id) {
+  try {
+    const asset = state.assets.find((a) => a.id === id);
+    const { qrDataUrl } = await api(`/api/assets/${id}/qr`);
+    document.getElementById('assetQrImage').src = qrDataUrl;
+    document.getElementById('assetQrName').textContent = asset ? asset.name : '';
+    document.getElementById('assetQrModal').hidden = false;
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+document.getElementById('assetQrModalCloseBtn').addEventListener('click', () => { document.getElementById('assetQrModal').hidden = true; });
+
+// ---------- Asset scanning (camera + jsQR) ----------
+// No existing pattern in this codebase to crib from - everything else here is server
+// round-trips and DOM rendering, not live camera/canvas processing. The camera stream stays
+// open for the whole modal session (so scanning several items in a row doesn't re-prompt for
+// permission or flicker the video each time) - only the decode loop pauses while a result is
+// on screen, and both the loop and the camera stop for good when the modal closes.
+
+let scanStream = null;
+let scanRafId = null;
+let scanBusy = false; // true while a result is showing or a lookup is in flight - pauses decoding
+let scanModalOpen = false; // guards against getUserMedia resolving after the modal's already closed
+
+async function openScanModal() {
+  document.getElementById('scanResultPanel').innerHTML = '';
+  document.getElementById('scanStatusMsg').textContent = '';
+  document.getElementById('scanManualToken').value = '';
+  document.getElementById('scanAssetModal').hidden = false;
+  scanBusy = false;
+  scanModalOpen = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    // The user may have closed the modal while the permission prompt was still up - don't
+    // hand a fresh camera stream to a scan loop nothing will ever stop again.
+    if (!scanModalOpen) { stream.getTracks().forEach((t) => t.stop()); return; }
+    scanStream = stream;
+    const video = document.getElementById('scanVideo');
+    video.srcObject = scanStream;
+    await video.play();
+    if (!scanModalOpen) return;
+    scanLoop();
+  } catch (err) {
+    document.getElementById('scanStatusMsg').textContent = 'Camera unavailable - enter the code below instead.';
+  }
+}
+
+function closeScanModal() {
+  scanModalOpen = false;
+  if (scanRafId) cancelAnimationFrame(scanRafId);
+  scanRafId = null;
+  if (scanStream) { scanStream.getTracks().forEach((t) => t.stop()); scanStream = null; }
+  document.getElementById('scanAssetModal').hidden = true;
+}
+
+function scanLoop() {
+  if (scanBusy) { scanRafId = requestAnimationFrame(scanLoop); return; }
+  const video = document.getElementById('scanVideo');
+  const canvas = document.getElementById('scanCanvas');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data) {
+      lookupAssetToken(code.data);
+      scanRafId = requestAnimationFrame(scanLoop);
+      return;
+    }
+  }
+  scanRafId = requestAnimationFrame(scanLoop);
+}
+
+async function lookupAssetToken(token) {
+  if (scanBusy) return;
+  scanBusy = true;
+  try {
+    const asset = await api(`/api/assets/lookup/${encodeURIComponent(token)}`);
+    renderScanResult(asset);
+  } catch (err) {
+    document.getElementById('scanStatusMsg').textContent = err.message;
+    scanBusy = false;
+  }
+}
+
+function renderScanResult(asset) {
+  document.getElementById('scanStatusMsg').textContent = '';
+  const panel = document.getElementById('scanResultPanel');
+  if (asset.status === 'available') {
+    const holderOptions = state.operativeUsers.map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+    const jobOptions = state.jobs.map((j) => `<option value="${j.id}">${escapeHtml(j.jobReference || j.client)}</option>`).join('');
+    panel.innerHTML = `
+      <div class="asset-scan-result">
+        <h3>${escapeHtml(asset.name)}</h3>
+        <p class="hint">Available — check it out</p>
+        <label>Taking it<select id="scanHolderSelect"><option value="">Choose person…</option>${holderOptions}</select></label>
+        <label>Job (optional)<select id="scanJobSelect"><option value="">No specific job</option>${jobOptions}</select></label>
+        <button type="button" id="scanConfirmBtn" class="primary">Check Out</button>
+        <button type="button" id="scanCancelBtn">Cancel</button>
+      </div>
+    `;
+    document.getElementById('scanConfirmBtn').addEventListener('click', async () => {
+      const holderUserId = document.getElementById('scanHolderSelect').value;
+      const jobId = document.getElementById('scanJobSelect').value;
+      if (!holderUserId) { toast('Choose who is taking this out', 'error'); return; }
+      try {
+        await api(`/api/assets/${asset.id}/check-out`, { method: 'POST', body: JSON.stringify({ holderUserId, jobId: jobId || null }) });
+        toast(`Checked out "${asset.name}"`, 'success');
+        resumeScan();
+        if (activeTab() === 'assets') loadAssets();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+    document.getElementById('scanCancelBtn').addEventListener('click', resumeScan);
+  } else if (asset.status === 'checked_out') {
+    panel.innerHTML = `
+      <div class="asset-scan-result">
+        <h3>${escapeHtml(asset.name)}</h3>
+        <p class="hint">Checked out to ${escapeHtml(asset.currentHolderName || '—')}${asset.currentJobReference ? ` for job ${escapeHtml(asset.currentJobReference)}` : ''} — check it in</p>
+        <label><input type="radio" name="scanCondition" value="good" checked> Good condition</label>
+        <label><input type="radio" name="scanCondition" value="damaged"> Damaged — send to Repairs</label>
+        <label>Notes<textarea id="scanConditionNotes" rows="2"></textarea></label>
+        <button type="button" id="scanConfirmBtn" class="primary">Check In</button>
+        <button type="button" id="scanCancelBtn">Cancel</button>
+      </div>
+    `;
+    document.getElementById('scanConfirmBtn').addEventListener('click', async () => {
+      const condition = panel.querySelector('input[name="scanCondition"]:checked').value;
+      const notes = document.getElementById('scanConditionNotes').value.trim();
+      try {
+        await api(`/api/assets/${asset.id}/check-in`, { method: 'POST', body: JSON.stringify({ condition, notes }) });
+        toast(`Checked in "${asset.name}"`, 'success');
+        resumeScan();
+        if (activeTab() === 'assets') loadAssets();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+    document.getElementById('scanCancelBtn').addEventListener('click', resumeScan);
+  } else {
+    panel.innerHTML = `
+      <div class="asset-scan-result">
+        <h3>${escapeHtml(asset.name)}</h3>
+        <p class="hint">In repairs${asset.lastConditionNotes ? `: ${escapeHtml(asset.lastConditionNotes)}` : ''}</p>
+        <button type="button" id="scanConfirmBtn" class="primary">Mark Repaired</button>
+        <button type="button" id="scanCancelBtn">Cancel</button>
+      </div>
+    `;
+    document.getElementById('scanConfirmBtn').addEventListener('click', async () => {
+      try {
+        await api(`/api/assets/${asset.id}/mark-repaired`, { method: 'POST' });
+        toast(`Marked "${asset.name}" as repaired`, 'success');
+        resumeScan();
+        if (activeTab() === 'assets') loadAssets();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+    document.getElementById('scanCancelBtn').addEventListener('click', resumeScan);
+  }
+}
+
+function resumeScan() {
+  document.getElementById('scanResultPanel').innerHTML = '';
+  scanBusy = false;
+}
+
+document.getElementById('assetsScanBtn').addEventListener('click', openScanModal);
+document.getElementById('scanAssetModalCloseBtn').addEventListener('click', closeScanModal);
+document.getElementById('scanManualBtn').addEventListener('click', () => {
+  const token = document.getElementById('scanManualToken').value.trim();
+  if (token) lookupAssetToken(token);
 });
 
 // ---------- Signage Tracker ----------
@@ -5442,6 +5767,7 @@ const ROLE_LABELS = {
   surveyor: 'Surveyor',
   installation_operative: 'Installation Operative',
   manufacturing_operative: 'Manufacturing Operative',
+  stocks_manager: 'Stocks Manager',
 };
 
 async function loadAdminUsers() {
