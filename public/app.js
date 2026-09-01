@@ -26,6 +26,7 @@ const state = {
   minigameAllTime: [],
   minigameMyBest: null,
   myQualifications: [],
+  profileStyleOptions: null,
 };
 
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
@@ -118,6 +119,15 @@ function avatarInitials(name) {
   return (name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 }
 
+// Generated design ids look like `g-<template>-<hue3>` (e.g. `g-pulse-090`) - see
+// buildProfileStyleOptions in db.js, the single source of truth for which ones exist. Legacy
+// hand-picked ids (bronze, ocean, ...) don't match this and are applied as a plain `-${id}`
+// class same as always.
+function parseGeneratedDesign(id) {
+  const m = /^g-([a-z]+)-(\d{3})$/.exec(id || '');
+  return m ? { template: m[1], hue: Number(m[2]) } : null;
+}
+
 // Shared by the topbar avatar, the Team directory, and the profile view/edit cards - shows the
 // uploaded photo (proxied through the authenticated /api/users/:id/photo route, never a public
 // URL) when one exists, falling back to initials otherwise. Also applies that person's chosen
@@ -133,7 +143,16 @@ function renderAvatar(el, { id, name, hasPhoto, profileBorder }) {
     el.textContent = avatarInitials(name);
   }
   el.className = el.className.replace(/\bavatar-border-\S+/g, '').trim();
-  if (profileBorder && profileBorder !== 'none') el.classList.add(`avatar-border-${profileBorder}`);
+  el.style.removeProperty('--dh');
+  if (profileBorder && profileBorder !== 'none') {
+    const gen = parseGeneratedDesign(profileBorder);
+    if (gen) {
+      el.classList.add(`avatar-border-g-${gen.template}`);
+      el.style.setProperty('--dh', `${gen.hue}deg`);
+    } else {
+      el.classList.add(`avatar-border-${profileBorder}`);
+    }
+  }
 }
 
 // Applies a person's chosen profile-card background theme (see PROFILE_BACKGROUND_THEMES in
@@ -143,8 +162,15 @@ function applyProfileBackground(el, profileBackground) {
   if (!el) return;
   el.classList.remove('profile-card-themed');
   el.className = el.className.replace(/\bprofile-bg-\S+/g, '').trim();
+  el.style.removeProperty('--dh');
   if (profileBackground && profileBackground !== 'none') {
-    el.classList.add('profile-card-themed', `profile-bg-${profileBackground}`);
+    const gen = parseGeneratedDesign(profileBackground);
+    if (gen) {
+      el.classList.add('profile-card-themed', `profile-bg-g-${gen.template}`);
+      el.style.setProperty('--dh', `${gen.hue}deg`);
+    } else {
+      el.classList.add('profile-card-themed', `profile-bg-${profileBackground}`);
+    }
   }
 }
 
@@ -1666,36 +1692,72 @@ function renderMyProfile() {
 
 // Free-pick cosmetic swatches for the avatar border and profile card background - same
 // swatch-button pattern as the calendar colour picker (renderColorPicker), just without the
-// "taken by someone else" exclusivity, since everyone can pick the same one.
-const PROFILE_BORDER_LABELS = {
-  none: 'None', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', blue: 'Blue', green: 'Green',
-  purple: 'Purple', red: 'Red', diamond: 'Diamond', fire: 'Fire', ice: 'Ice', rainbow: 'Rainbow (holo)',
-};
-const PROFILE_BACKGROUND_LABELS = {
-  none: 'None', ocean: 'Ocean', sunset: 'Sunset', forest: 'Forest', slate: 'Slate', berry: 'Berry',
-  galaxy: 'Galaxy', goldfoil: 'Gold Foil', aurora: 'Aurora',
-};
+// "taken by someone else" exclusivity, since everyone can pick the same one. The full option
+// list (a dozen hand-picked "Classic" designs plus hundreds of procedurally generated ones,
+// see buildProfileStyleOptions in db.js) is fetched from the server rather than duplicated here,
+// so db.js stays the single source of truth for which ids are valid.
+let profileBorderCategory = 'Classic';
+let profileBackgroundCategory = 'Classic';
 
-function renderProfileStylePicker() {
+async function renderProfileStylePicker() {
   const user = state.currentUser;
   if (!user) return;
+  if (!state.profileStyleOptions) {
+    try {
+      state.profileStyleOptions = await api('/api/profile-styles');
+    } catch (err) {
+      toast(err.message, 'error');
+      return;
+    }
+  }
+  renderProfileStyleSection('border', state.profileStyleOptions.borders, user.profileBorder);
+  renderProfileStyleSection('background', state.profileStyleOptions.backgrounds, user.profileBackground);
+}
 
-  const borderContainer = document.getElementById('profileBorderPicker');
-  borderContainer.innerHTML = Object.entries(PROFILE_BORDER_LABELS).map(([value, label]) => `
-    <button type="button" class="profile-style-swatch-btn style-${value}${user.profileBorder === value ? ' selected' : ''}"
-      data-border="${value}" title="${label}" aria-label="${label}">${value === 'none' ? '—' : ''}</button>
+function renderProfileStyleSection(kind, options, selectedId) {
+  const isBorder = kind === 'border';
+  const categoriesEl = document.getElementById(isBorder ? 'profileBorderCategories' : 'profileBackgroundCategories');
+  const gridEl = document.getElementById(isBorder ? 'profileBorderPicker' : 'profileBackgroundPicker');
+  const categories = ['Classic', ...new Set(options.filter((o) => o.category !== 'Classic').map((o) => o.category))];
+  const activeCategory = isBorder ? profileBorderCategory : profileBackgroundCategory;
+
+  categoriesEl.innerHTML = categories.map((cat) => `
+    <button type="button" class="profile-style-category-btn${cat === activeCategory ? ' active' : ''}" data-category="${escapeHtml(cat)}">${escapeHtml(cat)}</button>
   `).join('');
-  borderContainer.querySelectorAll('[data-border]').forEach((btn) => {
-    btn.addEventListener('click', () => saveProfileStyle({ profileBorder: btn.dataset.border, profileBackground: user.profileBackground }));
+  categoriesEl.querySelectorAll('[data-category]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (isBorder) profileBorderCategory = btn.dataset.category;
+      else profileBackgroundCategory = btn.dataset.category;
+      renderProfileStyleSection(kind, options, selectedId);
+    });
   });
 
-  const bgContainer = document.getElementById('profileBackgroundPicker');
-  bgContainer.innerHTML = Object.entries(PROFILE_BACKGROUND_LABELS).map(([value, label]) => `
-    <button type="button" class="profile-style-swatch-btn style-${value}${user.profileBackground === value ? ' selected' : ''}"
-      data-background="${value}" title="${label}" aria-label="${label}">${value === 'none' ? '—' : ''}</button>
-  `).join('');
-  bgContainer.querySelectorAll('[data-background]').forEach((btn) => {
-    btn.addEventListener('click', () => saveProfileStyle({ profileBorder: user.profileBorder, profileBackground: btn.dataset.background }));
+  const visible = options.filter((o) => o.id === 'none' || o.category === activeCategory);
+  gridEl.innerHTML = visible.map((o) => {
+    const gen = parseGeneratedDesign(o.id);
+    const classes = ['profile-style-swatch-btn'];
+    let styleAttr = '';
+    if (o.id === 'none') {
+      classes.push('style-none');
+    } else if (gen) {
+      styleAttr = ` style="--dh:${gen.hue}deg"`;
+      if (isBorder) classes.push('style-generated', `avatar-border-g-${gen.template}`);
+      else classes.push(`profile-bg-g-${gen.template}`);
+    } else {
+      classes.push(`style-${o.id}`);
+    }
+    if (o.id === selectedId) classes.push('selected');
+    return `<button type="button" class="${classes.join(' ')}" data-id="${escapeHtml(o.id)}"
+      title="${escapeHtml(o.label)}" aria-label="${escapeHtml(o.label)}"${styleAttr}>${o.id === 'none' ? '—' : ''}</button>`;
+  }).join('');
+  gridEl.querySelectorAll('[data-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const user = state.currentUser;
+      saveProfileStyle({
+        profileBorder: isBorder ? btn.dataset.id : user.profileBorder,
+        profileBackground: isBorder ? user.profileBackground : btn.dataset.id,
+      });
+    });
   });
 }
 

@@ -353,6 +353,7 @@ const CALENDAR_DIARY_ROUTES = [
   { method: 'GET', path: /^\/calendar-colors$/ },
   { method: 'GET', path: /^\/users\/colors$/ },
   { method: 'PUT', path: /^\/users\/me\/color$/ },
+  { method: 'GET', path: /^\/profile-styles$/ },
   { method: 'PUT', path: /^\/users\/me\/profile-style$/ },
   // Every role gets to protect their own account, same reasoning as the colour picker above.
   { method: 'POST', path: /^\/auth\/mfa\/setup$/ },
@@ -502,6 +503,10 @@ app.get('/api/calendar-colors', handle(async (req, res) => {
 
 app.get('/api/users/colors', handle(async (req, res) => {
   res.json(await db.listUserColors());
+}));
+
+app.get('/api/profile-styles', handle(async (req, res) => {
+  res.json(db.PROFILE_STYLE_OPTIONS);
 }));
 
 app.put('/api/users/me/color', handle(async (req, res) => {

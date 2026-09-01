@@ -410,7 +410,141 @@ body {
   .profile-bg-goldfoil, .profile-bg-aurora { animation: none; }
 }
 
-.profile-style-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+/* ---------- Procedurally generated profile designs (hundreds of them) ---------- */
+/* A small set of animated "template" classes rendered at any hue via the --dh custom property,
+   set inline per-element from the generated id `g-<template>-<hue>` (see parseGeneratedDesign
+   in app.js and buildProfileStyleOptions in db.js - the single source of truth for which ids
+   exist). This keeps the stylesheet to a dozen classes instead of literally hundreds. Every
+   animation cycle is 1.6s or slower, well clear of photosensitive-flash territory. */
+
+.avatar-border-g-pulse {
+  outline-color: hsl(var(--dh), 78%, 55%);
+  animation: avatarGenPulse 2.4s ease-in-out infinite;
+}
+@keyframes avatarGenPulse {
+  0%, 100% { box-shadow: 0 0 6px 2px hsla(var(--dh), 85%, 60%, 0.5); }
+  50% { box-shadow: 0 0 15px 6px hsla(var(--dh), 90%, 65%, 0.85); }
+}
+.avatar-border-g-shift { animation: avatarGenShift 4s linear infinite; }
+@keyframes avatarGenShift {
+  0% { outline-color: hsl(var(--dh), 75%, 55%); }
+  25% { outline-color: hsl(calc(var(--dh) + 90deg), 75%, 55%); }
+  50% { outline-color: hsl(calc(var(--dh) + 180deg), 75%, 55%); }
+  75% { outline-color: hsl(calc(var(--dh) + 270deg), 75%, 55%); }
+  100% { outline-color: hsl(calc(var(--dh) + 360deg), 75%, 55%); }
+}
+.avatar-border-g-twinkle {
+  outline-color: hsl(var(--dh), 70%, 68%);
+  animation: avatarGenTwinkle 1.8s ease-in-out infinite;
+}
+@keyframes avatarGenTwinkle {
+  0%, 100% { box-shadow: 0 0 5px 1px hsla(var(--dh), 90%, 75%, 0.4); }
+  30% { box-shadow: 0 0 12px 4px hsla(var(--dh), 95%, 80%, 0.9); }
+  60% { box-shadow: 0 0 4px 1px hsla(var(--dh), 80%, 70%, 0.3); }
+  80% { box-shadow: 0 0 10px 3px hsla(var(--dh), 95%, 80%, 0.75); }
+}
+.avatar-border-g-duo { animation: avatarGenDuo 3s ease-in-out infinite; }
+@keyframes avatarGenDuo {
+  0%, 100% { outline-color: hsl(var(--dh), 75%, 55%); }
+  50% { outline-color: hsl(calc(var(--dh) + 150deg), 75%, 55%); }
+}
+.avatar-border-g-breathe {
+  outline-color: hsl(var(--dh), 72%, 52%);
+  animation: avatarGenBreathe 2.6s ease-in-out infinite;
+}
+@keyframes avatarGenBreathe {
+  0%, 100% { outline-width: 3px; outline-offset: 3px; }
+  50% { outline-width: 5px; outline-offset: 4px; }
+}
+.avatar-border-g-comet {
+  outline-color: hsl(var(--dh), 80%, 55%);
+  animation: avatarGenComet 1.6s ease-in-out infinite;
+}
+@keyframes avatarGenComet {
+  0%, 100% { box-shadow: 0 0 4px 1px hsla(var(--dh), 90%, 70%, 0.35); outline-color: hsl(var(--dh), 80%, 55%); }
+  50% { box-shadow: 0 0 14px 5px hsla(calc(var(--dh) + 20deg), 95%, 75%, 0.85); outline-color: hsl(calc(var(--dh) + 20deg), 90%, 65%); }
+}
+
+.profile-bg-g-shimmer {
+  background: linear-gradient(120deg, hsl(var(--dh), 45%, 20%), hsl(var(--dh), 70%, 55%), hsl(calc(var(--dh) + 20deg), 80%, 70%), hsl(var(--dh), 45%, 20%));
+  background-size: 300% 300%;
+  animation: profileBgShimmer 4s ease infinite;
+}
+.profile-bg-g-flow {
+  background: linear-gradient(120deg, hsl(var(--dh), 55%, 30%), hsl(calc(var(--dh) + 120deg), 55%, 35%), hsl(calc(var(--dh) + 240deg), 55%, 35%), hsl(var(--dh), 55%, 30%));
+  background-size: 300% 300%;
+  animation: profileBgShimmer 8s ease infinite;
+}
+.profile-bg-g-twinklefield {
+  background:
+    radial-gradient(circle at 20% 25%, rgba(255,255,255,0.6) 0 1px, transparent 1px),
+    radial-gradient(circle at 65% 15%, rgba(255,255,255,0.5) 0 1px, transparent 1px),
+    radial-gradient(circle at 80% 55%, rgba(255,255,255,0.6) 0 1px, transparent 1px),
+    radial-gradient(circle at 35% 75%, rgba(255,255,255,0.4) 0 1px, transparent 1px),
+    radial-gradient(circle at 55% 90%, rgba(255,255,255,0.5) 0 1px, transparent 1px),
+    linear-gradient(160deg, hsl(var(--dh), 60%, 12%), hsl(calc(var(--dh) + 30deg), 55%, 22%) 55%, hsl(var(--dh), 65%, 15%));
+  background-size: 60px 60px, 90px 90px, 70px 70px, 80px 80px, 50px 50px, cover;
+  animation: profileBgDrift 12s linear infinite;
+}
+@keyframes profileBgDrift {
+  0% { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }
+  100% { background-position: 60px 60px, -90px 40px, 35px -70px, -80px 80px, 50px -50px, 0 0; }
+}
+.profile-bg-g-pulseglow {
+  background:
+    radial-gradient(600px 400px at 15% 10%, hsla(var(--dh), 80%, 60%, 0.55), transparent 60%),
+    linear-gradient(160deg, hsl(var(--dh), 40%, 18%), hsl(calc(var(--dh) + 20deg), 45%, 28%));
+  animation: profileBgPulseGlow 3.2s ease-in-out infinite;
+}
+@keyframes profileBgPulseGlow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
+}
+.profile-bg-g-wave {
+  background: linear-gradient(135deg, hsl(var(--dh), 50%, 25%) 0%, hsl(calc(var(--dh) + 15deg), 60%, 40%) 25%, hsl(var(--dh), 50%, 25%) 50%, hsl(calc(var(--dh) + 15deg), 60%, 40%) 75%, hsl(var(--dh), 50%, 25%) 100%);
+  background-size: 250% 250%;
+  animation: profileBgShimmer 6s ease infinite;
+}
+.profile-bg-g-orbit {
+  background:
+    repeating-radial-gradient(circle at 50% 50%, hsla(var(--dh), 70%, 60%, 0.25) 0 8px, transparent 8px 16px),
+    linear-gradient(160deg, hsl(var(--dh), 45%, 18%), hsl(calc(var(--dh) + 25deg), 50%, 30%));
+  animation: profileBgOrbit 5s linear infinite;
+}
+@keyframes profileBgOrbit {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 200px 200px, 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-border-g-pulse, .avatar-border-g-shift, .avatar-border-g-twinkle, .avatar-border-g-duo,
+  .avatar-border-g-breathe, .avatar-border-g-comet,
+  .profile-bg-g-shimmer, .profile-bg-g-flow, .profile-bg-g-twinklefield, .profile-bg-g-pulseglow,
+  .profile-bg-g-wave, .profile-bg-g-orbit { animation: none; }
+}
+
+.profile-style-picker-wrap { margin: 8px 0 16px; }
+.profile-style-categories { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.profile-style-category-btn {
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.profile-style-category-btn:hover { border-color: var(--blue); color: var(--blue-dark); }
+.profile-style-category-btn.active { background: var(--blue-dark); border-color: var(--blue-dark); color: white; }
+
+.profile-style-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.profile-style-swatch-btn.style-generated { background: hsl(var(--dh), 75%, 55%); }
 .profile-style-swatch-btn {
   width: 32px;
   height: 32px;
