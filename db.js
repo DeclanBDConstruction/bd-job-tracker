@@ -42,37 +42,52 @@ const CALENDAR_COLOR_HEXES = CALENDAR_COLORS.map((c) => c.hex);
 // colour above (plenty of people can have a gold border). The original hand-picked set below
 // ("classic") each has bespoke colours/animation baked into style.css (.avatar-border-X /
 // .profile-bg-X) and is kept as-is for backwards compatibility with whatever people already
-// picked. On top of that we procedurally generate hundreds more: a handful of animated CSS
-// "template" classes (style.css .avatar-border-g-<template> / .profile-bg-g-<template>) each
-// rendered at many hues via the --dh custom property, so the CSS stays a fixed dozen classes
-// instead of literally hundreds. Generated ids look like `g-<template>-<hue3>` e.g. `g-pulse-090`.
-const PROFILE_HUE_STEP = 9; // 360/9 = 40 hues per template
-const PROFILE_BORDER_TEMPLATES = [
-  { id: 'pulse', label: 'Pulse' },
-  { id: 'shift', label: 'Shift' },
-  { id: 'twinkle', label: 'Twinkle' },
-  { id: 'duo', label: 'Duo' },
-  { id: 'breathe', label: 'Breathe' },
-  { id: 'comet', label: 'Comet' },
+// picked. On top of that there are three hand-illustrated animated scenes - a neon car
+// cruising a road ("cruiser"), a bouncy round character ("buddy"), a character floating past
+// a starfield portal ("voyager") - see the .scene-cruiser/.scene-buddy/.scene-voyager rules in
+// style.css and sceneMarkup() in app.js for the actual artwork/animation. Each scene comes in a
+// day and a night backdrop and 8 neon accent colours (the --dh custom property, set inline per
+// element), giving 3 x 2 x 8 = 48 selectable scenes from 3 hand-built rigs rather than 48 wholly
+// separate illustrations. The same 48 scene ids work for both the avatar (a small ring motif)
+// and the profile card (the full scene) - see PROFILE_BORDER_STYLES/PROFILE_BACKGROUND_THEMES
+// below, both built from this one SCENE_OPTIONS catalogue. Ids look like `s-<template>-<day|
+// night>-<hue3>` e.g. `s-cruiser-night-225`.
+const SCENE_TEMPLATES = [
+  { id: 'cruiser', label: 'Cruiser' },
+  { id: 'buddy', label: 'Buddy' },
+  { id: 'voyager', label: 'Voyager' },
 ];
-const PROFILE_BACKGROUND_TEMPLATES = [
-  { id: 'shimmer', label: 'Shimmer' },
-  { id: 'flow', label: 'Flow' },
-  { id: 'twinklefield', label: 'Starfield' },
-  { id: 'pulseglow', label: 'Glow' },
-  { id: 'wave', label: 'Wave' },
-  { id: 'orbit', label: 'Orbit' },
+const SCENE_TIMES = [
+  { id: 'day', label: 'Day' },
+  { id: 'night', label: 'Night' },
 ];
-// 24 buckets of 15 degrees each, just for a human-readable label - doesn't need to line up
-// exactly with PROFILE_HUE_STEP.
-const HUE_NAMES = [
-  'Red', 'Vermilion', 'Orange', 'Amber', 'Gold', 'Yellow', 'Chartreuse', 'Lime',
-  'Green', 'Emerald', 'Teal', 'Turquoise', 'Cyan', 'Sky', 'Azure', 'Blue',
-  'Indigo', 'Violet', 'Purple', 'Magenta', 'Fuchsia', 'Pink', 'Rose', 'Crimson',
+const NEON_HUES = [
+  { hue: 0, name: 'Ruby' },
+  { hue: 45, name: 'Sunset' },
+  { hue: 90, name: 'Lime' },
+  { hue: 135, name: 'Emerald' },
+  { hue: 180, name: 'Cyan' },
+  { hue: 225, name: 'Sapphire' },
+  { hue: 270, name: 'Violet' },
+  { hue: 315, name: 'Magenta' },
 ];
-function hueName(hue) {
-  return HUE_NAMES[Math.round(hue / 15) % 24];
+
+function buildSceneOptions() {
+  const options = [];
+  for (const template of SCENE_TEMPLATES) {
+    for (const time of SCENE_TIMES) {
+      for (const neon of NEON_HUES) {
+        options.push({
+          id: `s-${template.id}-${time.id}-${String(neon.hue).padStart(3, '0')}`,
+          label: `${template.label} — ${time.label} (${neon.name})`,
+          category: template.label,
+        });
+      }
+    }
+  }
+  return options;
 }
+const SCENE_OPTIONS = buildSceneOptions();
 
 const LEGACY_BORDER_LABELS = {
   none: 'None', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', blue: 'Blue', green: 'Green',
@@ -82,23 +97,12 @@ const LEGACY_BACKGROUND_LABELS = {
   none: 'None', ocean: 'Ocean', sunset: 'Sunset', forest: 'Forest', slate: 'Slate', berry: 'Berry',
   galaxy: 'Galaxy', goldfoil: 'Gold Foil', aurora: 'Aurora',
 };
-
-// Builds { id, label, category } for every legacy option plus every generated (template x hue)
-// combination. `category` groups the picker UI - 'Classic' for the original hand-picked set,
-// or the template's own label (e.g. 'Pulse') for generated ones.
-function buildProfileStyleOptions(legacyLabels, templates) {
-  const options = Object.entries(legacyLabels).map(([id, label]) => ({ id, label, category: 'Classic' }));
-  for (const template of templates) {
-    for (let hue = 0; hue < 360; hue += PROFILE_HUE_STEP) {
-      const id = `g-${template.id}-${String(hue).padStart(3, '0')}`;
-      options.push({ id, label: `${hueName(hue)} ${template.label}`, category: template.label });
-    }
-  }
-  return options;
+function legacyOptions(labels) {
+  return Object.entries(labels).map(([id, label]) => ({ id, label, category: 'Classic' }));
 }
 
-const PROFILE_BORDER_OPTIONS = buildProfileStyleOptions(LEGACY_BORDER_LABELS, PROFILE_BORDER_TEMPLATES);
-const PROFILE_BACKGROUND_OPTIONS = buildProfileStyleOptions(LEGACY_BACKGROUND_LABELS, PROFILE_BACKGROUND_TEMPLATES);
+const PROFILE_BORDER_OPTIONS = [...legacyOptions(LEGACY_BORDER_LABELS), ...SCENE_OPTIONS];
+const PROFILE_BACKGROUND_OPTIONS = [...legacyOptions(LEGACY_BACKGROUND_LABELS), ...SCENE_OPTIONS];
 const PROFILE_STYLE_OPTIONS = { borders: PROFILE_BORDER_OPTIONS, backgrounds: PROFILE_BACKGROUND_OPTIONS };
 const PROFILE_BORDER_STYLES = PROFILE_BORDER_OPTIONS.map((o) => o.id);
 const PROFILE_BACKGROUND_THEMES = PROFILE_BACKGROUND_OPTIONS.map((o) => o.id);

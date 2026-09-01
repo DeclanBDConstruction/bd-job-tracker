@@ -119,20 +119,71 @@ function avatarInitials(name) {
   return (name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 }
 
-// Generated design ids look like `g-<template>-<hue3>` (e.g. `g-pulse-090`) - see
-// buildProfileStyleOptions in db.js, the single source of truth for which ones exist. Legacy
-// hand-picked ids (bronze, ocean, ...) don't match this and are applied as a plain `-${id}`
-// class same as always.
+// Illustrated-scene ids look like `s-<template>-<day|night>-<hue3>` (e.g.
+// `s-cruiser-night-225`) - see buildSceneOptions in db.js, the single source of truth for which
+// ones exist. Legacy hand-picked ids (bronze, ocean, ...) don't match this and are applied as a
+// plain `-${id}` class same as always.
 function parseGeneratedDesign(id) {
-  const m = /^g-([a-z]+)-(\d{3})$/.exec(id || '');
-  return m ? { template: m[1], hue: Number(m[2]) } : null;
+  const m = /^s-([a-z]+)-(day|night)-(\d{3})$/.exec(id || '');
+  return m ? { template: m[1], tod: m[2], hue: Number(m[3]) } : null;
 }
+
+// Static per-template markup for the profile-card scenes (see the .scene-cruiser/.scene-buddy/
+// .scene-voyager rules in style.css for what actually draws/animates each piece). No user data
+// goes into this HTML - it's keyed off `template`, which only ever comes from parsing a known
+// scene id - so building it with innerHTML is safe.
+const SCENE_MARKUP = {
+  cruiser: `
+    <div class="cr-sky"></div>
+    <div class="cr-skyline"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="cr-road"><div class="cr-lines"></div></div>
+    <div class="cr-car">
+      <div class="cr-glow"></div>
+      <div class="cr-body"></div>
+      <div class="cr-cabin"></div>
+      <div class="cr-headlight"></div>
+      <div class="cr-wheel cr-wheel-f"></div>
+      <div class="cr-wheel cr-wheel-r"></div>
+    </div>
+  `,
+  buddy: `
+    <div class="bd-sky"></div>
+    <div class="bd-cloud bd-cloud-a"></div>
+    <div class="bd-cloud bd-cloud-b"></div>
+    <div class="bd-ground"></div>
+    <div class="bd-char">
+      <div class="bd-shadow"></div>
+      <div class="bd-arm bd-arm-l"></div>
+      <div class="bd-body">
+        <div class="bd-cheek bd-cheek-l"></div>
+        <div class="bd-cheek bd-cheek-r"></div>
+        <div class="bd-eye bd-eye-l"></div>
+        <div class="bd-eye bd-eye-r"></div>
+        <div class="bd-mouth"></div>
+      </div>
+      <div class="bd-arm bd-arm-r"></div>
+    </div>
+  `,
+  voyager: `
+    <div class="vg-space"></div>
+    <div class="vg-portal"></div>
+    <div class="vg-char">
+      <div class="vg-cape"></div>
+      <div class="vg-body">
+        <div class="vg-eye vg-eye-l"></div>
+        <div class="vg-eye vg-eye-r"></div>
+      </div>
+    </div>
+  `,
+};
+const SCENE_GLYPHS = { cruiser: '\u{1F697}', buddy: '\u{1F642}', voyager: '\u{1F300}' };
 
 // Shared by the topbar avatar, the Team directory, and the profile view/edit cards - shows the
 // uploaded photo (proxied through the authenticated /api/users/:id/photo route, never a public
 // URL) when one exists, falling back to initials otherwise. Also applies that person's chosen
 // avatar border (see PROFILE_BORDER_STYLES in db.js) - purely cosmetic, follows them wherever
-// their avatar shows up.
+// their avatar shows up. Scene ids get a small abstracted "ring" motif (pure CSS, no injected
+// markup) rather than the full scene - there's no room for that on a 26-96px circle.
 function renderAvatar(el, { id, name, hasPhoto, profileBorder }) {
   if (!el) return;
   if (hasPhoto && id) {
@@ -147,7 +198,7 @@ function renderAvatar(el, { id, name, hasPhoto, profileBorder }) {
   if (profileBorder && profileBorder !== 'none') {
     const gen = parseGeneratedDesign(profileBorder);
     if (gen) {
-      el.classList.add(`avatar-border-g-${gen.template}`);
+      el.classList.add(`avatar-border-s-${gen.template}`);
       el.style.setProperty('--dh', `${gen.hue}deg`);
     } else {
       el.classList.add(`avatar-border-${profileBorder}`);
@@ -155,22 +206,28 @@ function renderAvatar(el, { id, name, hasPhoto, profileBorder }) {
   }
 }
 
-// Applies a person's chosen profile-card background theme (see PROFILE_BACKGROUND_THEMES in
-// db.js) to the card wrapping their photo/name on My Profile and the read-only profile view -
-// same "follows them around" cosmetic as the avatar border, just scoped to their own card.
+// Applies a person's chosen profile-card background (see PROFILE_BACKGROUND_THEMES in db.js) to
+// the card wrapping their photo/name on My Profile and the read-only profile view - same
+// "follows them around" cosmetic as the avatar border, just scoped to their own card. Scene ids
+// get the full illustrated scene injected as a background layer (see SCENE_MARKUP above); legacy
+// ids stay a plain CSS class on the card itself like before.
 function applyProfileBackground(el, profileBackground) {
   if (!el) return;
+  const existingScene = el.querySelector(':scope > .profile-scene');
+  if (existingScene) existingScene.remove();
   el.classList.remove('profile-card-themed');
   el.className = el.className.replace(/\bprofile-bg-\S+/g, '').trim();
-  el.style.removeProperty('--dh');
-  if (profileBackground && profileBackground !== 'none') {
-    const gen = parseGeneratedDesign(profileBackground);
-    if (gen) {
-      el.classList.add('profile-card-themed', `profile-bg-g-${gen.template}`);
-      el.style.setProperty('--dh', `${gen.hue}deg`);
-    } else {
-      el.classList.add('profile-card-themed', `profile-bg-${profileBackground}`);
-    }
+  if (!profileBackground || profileBackground === 'none') return;
+  el.classList.add('profile-card-themed');
+  const gen = parseGeneratedDesign(profileBackground);
+  if (gen) {
+    const scene = document.createElement('div');
+    scene.className = `profile-scene scene-${gen.template} tod-${gen.tod}`;
+    scene.style.setProperty('--dh', `${gen.hue}deg`);
+    scene.innerHTML = SCENE_MARKUP[gen.template] || '';
+    el.insertBefore(scene, el.firstChild);
+  } else {
+    el.classList.add(`profile-bg-${profileBackground}`);
   }
 }
 
@@ -1693,9 +1750,9 @@ function renderMyProfile() {
 // Free-pick cosmetic swatches for the avatar border and profile card background - same
 // swatch-button pattern as the calendar colour picker (renderColorPicker), just without the
 // "taken by someone else" exclusivity, since everyone can pick the same one. The full option
-// list (a dozen hand-picked "Classic" designs plus hundreds of procedurally generated ones,
-// see buildProfileStyleOptions in db.js) is fetched from the server rather than duplicated here,
-// so db.js stays the single source of truth for which ids are valid.
+// list (a dozen hand-picked "Classic" designs plus the 48 illustrated scenes, see
+// buildSceneOptions in db.js) is fetched from the server rather than duplicated here, so db.js
+// stays the single source of truth for which ids are valid.
 let profileBorderCategory = 'Classic';
 let profileBackgroundCategory = 'Classic';
 
@@ -1732,23 +1789,28 @@ function renderProfileStyleSection(kind, options, selectedId) {
     });
   });
 
+  // Swatches show a static hue+glyph chip rather than the live scene/ring - running 48
+  // animated scenes at once in a scrollable grid would be wasted motion and a real perf cost;
+  // the full animation only plays on the actual avatar/card once picked.
   const visible = options.filter((o) => o.id === 'none' || o.category === activeCategory);
   gridEl.innerHTML = visible.map((o) => {
     const gen = parseGeneratedDesign(o.id);
     const classes = ['profile-style-swatch-btn'];
     let styleAttr = '';
+    let glyph = '';
     if (o.id === 'none') {
       classes.push('style-none');
+      glyph = '—';
     } else if (gen) {
+      classes.push('style-scene', `tod-${gen.tod}`);
       styleAttr = ` style="--dh:${gen.hue}deg"`;
-      if (isBorder) classes.push('style-generated', `avatar-border-g-${gen.template}`);
-      else classes.push(`profile-bg-g-${gen.template}`);
+      glyph = SCENE_GLYPHS[gen.template] || '';
     } else {
       classes.push(`style-${o.id}`);
     }
     if (o.id === selectedId) classes.push('selected');
     return `<button type="button" class="${classes.join(' ')}" data-id="${escapeHtml(o.id)}"
-      title="${escapeHtml(o.label)}" aria-label="${escapeHtml(o.label)}"${styleAttr}>${o.id === 'none' ? '—' : ''}</button>`;
+      title="${escapeHtml(o.label)}" aria-label="${escapeHtml(o.label)}"${styleAttr}>${glyph}</button>`;
   }).join('');
   gridEl.querySelectorAll('[data-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
