@@ -2827,11 +2827,14 @@ async function setUserColor(userId, color) {
   return sanitizeUser(data);
 }
 
+// Silently falls back to 'none' for an id that isn't in the current catalogue, rather than
+// throwing - both fields are always sent together on every save (see saveProfileStyle in
+// app.js), so a stale id left over from a retired design batch would otherwise block someone
+// from saving *either* field, not just the one that changed. This is a purely cosmetic free
+// pick, so losing a retired design is a fine trade for never getting stuck.
 async function setUserProfileStyle(userId, { profileBorder, profileBackground }) {
-  const border = profileBorder || 'none';
-  const background = profileBackground || 'none';
-  if (!PROFILE_BORDER_STYLES.includes(border)) throw new Error('Not a valid border style');
-  if (!PROFILE_BACKGROUND_THEMES.includes(background)) throw new Error('Not a valid background theme');
+  const border = PROFILE_BORDER_STYLES.includes(profileBorder) ? profileBorder : 'none';
+  const background = PROFILE_BACKGROUND_THEMES.includes(profileBackground) ? profileBackground : 'none';
   const { data, error } = await supabase.from('users')
     .update({ profile_border: border, profile_background: background })
     .eq('id', userId).select().maybeSingle();
