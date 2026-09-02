@@ -119,130 +119,54 @@ function avatarInitials(name) {
   return (name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 }
 
-// Illustrated-scene ids look like `s-<template>-<day|night>-<hue3>` (e.g.
-// `s-cruiser-night-225`) - see buildSceneOptions in db.js, the single source of truth for which
-// ones exist. Legacy hand-picked ids (bronze, ocean, ...) don't match this and are applied as a
-// plain `-${id}` class same as always.
+// Illustrated-scene ids look like `s-<template>-<hue3>` (e.g. `s-cruiser-225`) - see
+// buildSceneOptions in db.js, the single source of truth for which ones exist. Legacy
+// hand-picked ids (bronze, ocean, ...) don't match this and are applied as a plain `-${id}`
+// class same as always.
 function parseGeneratedDesign(id) {
-  const m = /^s-([a-z]+)-(day|night)-(\d{3})$/.exec(id || '');
-  return m ? { template: m[1], tod: m[2], hue: Number(m[3]) } : null;
+  const m = /^s-([a-z]+)-(\d{3})$/.exec(id || '');
+  return m ? { template: m[1], hue: Number(m[2]) } : null;
 }
 
-// Static per-template markup for the profile-card scenes (see the .scene-cruiser/.scene-buddy/
-// .scene-voyager rules in style.css for what actually draws/animates each piece). No user data
-// goes into this HTML - it's keyed off `template`, which only ever comes from parsing a known
-// scene id - so building it with innerHTML is safe.
+// Static per-template markup for the profile-card scenes - built from real, licensed pixel-art
+// PNGs (public/img/scenes/<template>/, credits in public/img/credits/) rather than hand-rolled
+// CSS shapes, layered/animated via the .scene-<id> rules in style.css. No user data goes into
+// this HTML - it's keyed off `template`, which only ever comes from parsing a known scene id -
+// so building it with innerHTML is safe.
 const SCENE_MARKUP = {
+  neonstreet: `
+    <img class="ns-layer ns-far" src="/img/scenes/neonstreet/far-buildings.png" alt="">
+    <img class="ns-layer ns-back" src="/img/scenes/neonstreet/back-buildings.png" alt="">
+    <img class="ns-layer ns-fore" src="/img/scenes/neonstreet/foreground.png" alt="">
+    <div class="ns-glow"></div>
+    <div class="ns-rain"></div>
+  `,
+  rooftop: `
+    <img class="rf-bg" src="/img/scenes/rooftop/near-buildings-bg.png" alt="">
+    <img class="rf-antenna" src="/img/scenes/rooftop/antenna.png" alt="">
+    <div class="rf-antenna-light"></div>
+    <div class="rf-banner">
+      <img class="rf-banner-frame" src="/img/scenes/rooftop/banner-neon-1.png" alt="">
+      <img class="rf-banner-frame" src="/img/scenes/rooftop/banner-neon-2.png" alt="">
+      <img class="rf-banner-frame" src="/img/scenes/rooftop/banner-neon-3.png" alt="">
+      <img class="rf-banner-frame" src="/img/scenes/rooftop/banner-neon-4.png" alt="">
+    </div>
+    <div class="rf-drone">
+      <img class="rf-drone-frame" src="/img/scenes/rooftop/drone-1.png" alt="">
+      <img class="rf-drone-frame" src="/img/scenes/rooftop/drone-2.png" alt="">
+      <img class="rf-drone-frame" src="/img/scenes/rooftop/drone-3.png" alt="">
+      <img class="rf-drone-frame" src="/img/scenes/rooftop/drone-4.png" alt="">
+    </div>
+  `,
   cruiser: `
-    <div class="cr-sky"></div>
-    <div class="cr-skyline"><span></span><span></span><span></span><span></span><span></span></div>
+    <img class="cr-skyline" src="/img/scenes/cruiser/skyline-a.png" alt="">
     <div class="cr-road"><div class="cr-lines"></div></div>
     <div class="cr-car">
       <div class="cr-glow"></div>
-      <div class="cr-body"></div>
-      <div class="cr-cabin"></div>
+      <img class="cr-car-img" src="/img/scenes/cruiser/v-red.png" alt="">
       <div class="cr-headlight"></div>
-      <div class="cr-wheel cr-wheel-f"></div>
-      <div class="cr-wheel cr-wheel-r"></div>
     </div>
   `,
-  buddy: `
-    <div class="bd-sky"></div>
-    <div class="bd-cloud bd-cloud-a"></div>
-    <div class="bd-cloud bd-cloud-b"></div>
-    <div class="bd-ground"></div>
-    <div class="bd-char">
-      <div class="bd-shadow"></div>
-      <div class="bd-arm bd-arm-l"></div>
-      <div class="bd-body">
-        <div class="bd-cheek bd-cheek-l"></div>
-        <div class="bd-cheek bd-cheek-r"></div>
-        <div class="bd-eye bd-eye-l"></div>
-        <div class="bd-eye bd-eye-r"></div>
-        <div class="bd-mouth"></div>
-      </div>
-      <div class="bd-arm bd-arm-r"></div>
-    </div>
-  `,
-  voyager: `
-    <div class="vg-space"></div>
-    <div class="vg-portal"></div>
-    <div class="vg-char">
-      <div class="vg-cape"></div>
-      <div class="vg-body">
-        <div class="vg-eye vg-eye-l"></div>
-        <div class="vg-eye vg-eye-r"></div>
-      </div>
-    </div>
-  `,
-  rainstreet: `
-    <div class="rs-sky"></div>
-    <div class="rs-skyline"><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="rs-windows"></div>
-    <div class="rs-sign rs-sign-a">OPEN</div>
-    <div class="rs-sign rs-sign-b">24</div>
-    <div class="rs-rain"></div>
-    <div class="rs-puddle"></div>
-    <div class="rs-walker"><div class="rs-umbrella"></div></div>
-  `,
-  outrun: `
-    <div class="ou-sky"></div>
-    <div class="ou-sun"></div>
-    <div class="ou-mountains"></div>
-    <div class="ou-grid"></div>
-    <div class="ou-ship"><div class="ou-ship-trail"></div></div>
-  `,
-  aquarium: `
-    <div class="aq-water"></div>
-    <div class="aq-ray"></div>
-    <div class="aq-seaweed aq-seaweed-a"></div>
-    <div class="aq-seaweed aq-seaweed-b"></div>
-    <div class="aq-seaweed aq-seaweed-c"></div>
-    <div class="aq-bubble aq-bubble-a"></div>
-    <div class="aq-bubble aq-bubble-b"></div>
-    <div class="aq-bubble aq-bubble-c"></div>
-    <div class="aq-bubble aq-bubble-d"></div>
-    <div class="aq-fish"><div class="aq-fish-tail"></div><div class="aq-fish-eye"></div></div>
-  `,
-  campfire: `
-    <div class="cf-sky"></div>
-    <div class="cf-mountains"></div>
-    <div class="cf-tent"></div>
-    <div class="cf-glow"></div>
-    <div class="cf-fire">
-      <div class="cf-flame cf-flame-a"></div>
-      <div class="cf-flame cf-flame-b"></div>
-      <div class="cf-flame cf-flame-c"></div>
-    </div>
-    <div class="cf-spark cf-spark-a"></div>
-    <div class="cf-spark cf-spark-b"></div>
-    <div class="cf-spark cf-spark-c"></div>
-  `,
-  rooftop: `
-    <div class="rw-sky"></div>
-    <div class="rw-firework rw-firework-a"></div>
-    <div class="rw-firework rw-firework-b"></div>
-    <div class="rw-bird rw-bird-a"></div>
-    <div class="rw-bird rw-bird-b"></div>
-    <div class="rw-skyline"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="rw-antenna"><div class="rw-antenna-light"></div></div>
-    <div class="rw-figure"></div>
-  `,
-  arcade: `
-    <div class="ar-room"></div>
-    <div class="ar-marquee"><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="ar-cabinet">
-      <div class="ar-screen"><div class="ar-scanlines"></div></div>
-      <div class="ar-button ar-button-a"></div>
-      <div class="ar-button ar-button-b"></div>
-      <div class="ar-joystick"><div class="ar-stick"></div></div>
-    </div>
-  `,
-};
-const SCENE_GLYPHS = {
-  cruiser: '\u{1F697}', buddy: '\u{1F642}', voyager: '\u{1F300}',
-  rainstreet: '\u{2614}', outrun: '\u{1F305}', aquarium: '\u{1F420}',
-  campfire: '\u{1F525}', rooftop: '\u{1F3D9}', arcade: '\u{1F47E}',
 };
 
 // Shared by the topbar avatar, the Team directory, and the profile view/edit cards - shows the
@@ -289,7 +213,7 @@ function applyProfileBackground(el, profileBackground) {
   const gen = parseGeneratedDesign(profileBackground);
   if (gen) {
     const scene = document.createElement('div');
-    scene.className = `profile-scene scene-${gen.template} tod-${gen.tod}`;
+    scene.className = `profile-scene scene-${gen.template}`;
     scene.style.setProperty('--dh', `${gen.hue}deg`);
     scene.innerHTML = SCENE_MARKUP[gen.template] || '';
     el.insertBefore(scene, el.firstChild);
@@ -1856,9 +1780,10 @@ function renderProfileStyleSection(kind, options, selectedId) {
     });
   });
 
-  // Swatches show a static hue+glyph chip rather than the live scene/ring - running 48
-  // animated scenes at once in a scrollable grid would be wasted motion and a real perf cost;
-  // the full animation only plays on the actual avatar/card once picked.
+  // Swatches show a real (still) thumbnail of the scene's own art plus a small hue-tinted dot
+  // for the accent colour, rather than the live animated scene/ring - only 24 scene options now
+  // (3 templates x 8 accents) so this is cheap, and it means you're picking what you'll
+  // actually see rather than a flat colour chip standing in for it.
   const visible = options.filter((o) => o.id === 'none' || o.category === activeCategory);
   gridEl.innerHTML = visible.map((o) => {
     const gen = parseGeneratedDesign(o.id);
@@ -1869,9 +1794,8 @@ function renderProfileStyleSection(kind, options, selectedId) {
       classes.push('style-none');
       glyph = '—';
     } else if (gen) {
-      classes.push('style-scene', `tod-${gen.tod}`);
+      classes.push('style-scene', `style-scene-${gen.template}`);
       styleAttr = ` style="--dh:${gen.hue}deg"`;
-      glyph = SCENE_GLYPHS[gen.template] || '';
     } else {
       classes.push(`style-${o.id}`);
     }

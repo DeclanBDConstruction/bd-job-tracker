@@ -42,39 +42,24 @@ const CALENDAR_COLOR_HEXES = CALENDAR_COLORS.map((c) => c.hex);
 // colour above (plenty of people can have a gold border). The original hand-picked set below
 // ("classic") each has bespoke colours/animation baked into style.css (.avatar-border-X /
 // .profile-bg-X) and is kept as-is for backwards compatibility with whatever people already
-// picked. On top of that there are nine hand-illustrated animated scenes, each its own rig of
-// shapes/layers (not a shared template redrawn) - see the .scene-<id> rules in style.css and
-// SCENE_MARKUP in app.js for the actual artwork/animation:
-//   cruiser    - neon car cruising a road
-//   buddy      - bouncy round character
-//   voyager    - character floating past a starfield portal
-//   rainstreet - rainy neon shopping street with lit signs and a walker
-//   outrun     - synthwave sun + scrolling grid horizon with a flying ship
-//   aquarium   - fish swimming past swaying seaweed and rising bubbles
-//   campfire   - flickering campfire under a starry/dusk sky
-//   rooftop    - city skyline watcher with fireworks and passing birds
-//   arcade     - retro arcade cabinet with a scanline screen and blinking marquee
-// Each scene comes in a day and a night backdrop and 8 neon accent colours (the --dh custom
-// property, set inline per element), so the variety comes from having 9 genuinely different
-// rigs rather than leaning on the day/night x hue axis to manufacture options - that's 9 x 2 x
-// 8 = 144 selectable scenes. The same ids work for both the avatar (a small ring motif) and the
-// profile card (the full scene) - see PROFILE_BORDER_STYLES/PROFILE_BACKGROUND_THEMES below,
-// both built from this one SCENE_OPTIONS catalogue. Ids look like `s-<template>-<day|night>-
-// <hue3>` e.g. `s-cruiser-night-225`.
+// picked. On top of that there are three animated scenes built from real, licensed pixel-art
+// (not hand-rolled CSS shapes - an earlier attempt at that looked cheap next to actual
+// illustrated art) - see the .scene-<id> rules in style.css, SCENE_MARKUP in app.js, and the
+// PNGs under public/img/scenes/<id>/ for the actual artwork/animation:
+//   neonstreet - "Cyberpunk Street Environment" by Luis Zuno / ansimuz (CC BY 3.0 - credited
+//                in the picker footer, see public/img/credits/)
+//   rooftop    - built from ansimuz's "Warped City" pack (CC0): rooftop skyline, a blinking
+//                antenna, a flickering neon banner and a patrolling drone
+//   cruiser    - also from "Warped City" (CC0): a hovercar driving past a night skyline
+// Each scene is a fixed night backdrop (the source art is all night-lit, a "day" version would
+// just be worse) with one small hue-tinted accent (a light, banner or car colour - the --dh
+// custom property, set inline per element) rather than the whole scene being recoloured, so
+// picking a colour is a minor personalisation, not the source of variety. Ids look like
+// `s-<template>-<hue3>` e.g. `s-cruiser-225`.
 const SCENE_TEMPLATES = [
-  { id: 'cruiser', label: 'Cruiser' },
-  { id: 'buddy', label: 'Buddy' },
-  { id: 'voyager', label: 'Voyager' },
-  { id: 'rainstreet', label: 'Rain Street' },
-  { id: 'outrun', label: 'Outrun' },
-  { id: 'aquarium', label: 'Aquarium' },
-  { id: 'campfire', label: 'Campfire' },
+  { id: 'neonstreet', label: 'Neon Street' },
   { id: 'rooftop', label: 'Rooftop' },
-  { id: 'arcade', label: 'Arcade' },
-];
-const SCENE_TIMES = [
-  { id: 'day', label: 'Day' },
-  { id: 'night', label: 'Night' },
+  { id: 'cruiser', label: 'Cruiser' },
 ];
 const NEON_HUES = [
   { hue: 0, name: 'Ruby' },
@@ -90,14 +75,12 @@ const NEON_HUES = [
 function buildSceneOptions() {
   const options = [];
   for (const template of SCENE_TEMPLATES) {
-    for (const time of SCENE_TIMES) {
-      for (const neon of NEON_HUES) {
-        options.push({
-          id: `s-${template.id}-${time.id}-${String(neon.hue).padStart(3, '0')}`,
-          label: `${template.label} — ${time.label} (${neon.name})`,
-          category: template.label,
-        });
-      }
+    for (const neon of NEON_HUES) {
+      options.push({
+        id: `s-${template.id}-${String(neon.hue).padStart(3, '0')}`,
+        label: `${template.label} (${neon.name})`,
+        category: template.label,
+      });
     }
   }
   return options;
