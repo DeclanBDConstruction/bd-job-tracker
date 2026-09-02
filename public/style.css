@@ -592,6 +592,247 @@ body {
 .scene-voyager .vg-eye-l { left: 24%; }
 .scene-voyager .vg-eye-r { right: 24%; }
 
+/* -- Rain Street: rainy neon shopping street with lit signs and a walker -- */
+.scene-rainstreet .rs-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #10111d, #1c2033 65%); }
+.scene-rainstreet.tod-day .rs-sky { background: linear-gradient(180deg, #7d8fae, #b7c4d9 70%); }
+.scene-rainstreet .rs-skyline { position: absolute; left: 0; right: 0; bottom: 14%; height: 70%; display: flex; align-items: flex-end; gap: 2%; padding: 0 3%; }
+.scene-rainstreet .rs-skyline span { flex: 1; background: #14162280; border-radius: 1px 1px 0 0; }
+.scene-rainstreet.tod-day .rs-skyline span { background: rgba(45,52,72,0.55); }
+.scene-rainstreet .rs-skyline span:nth-child(1) { height: 55%; }
+.scene-rainstreet .rs-skyline span:nth-child(2) { height: 88%; }
+.scene-rainstreet .rs-skyline span:nth-child(3) { height: 68%; }
+.scene-rainstreet .rs-skyline span:nth-child(4) { height: 96%; }
+.scene-rainstreet .rs-skyline span:nth-child(5) { height: 50%; }
+.scene-rainstreet .rs-windows {
+  position: absolute; left: 3%; right: 3%; bottom: 16%; height: 60%;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(255,208,120,0.55) 0 6%, transparent 6% 14%),
+    repeating-linear-gradient(0deg, rgba(255,208,120,0.55) 0 10%, transparent 10% 26%);
+  background-blend-mode: screen;
+  opacity: 0.65;
+  animation: rsWindowFlicker 3.6s steps(1) infinite;
+}
+.scene-rainstreet.tod-day .rs-windows { display: none; }
+@keyframes rsWindowFlicker { 0%, 40%, 100% { opacity: 0.65; } 42% { opacity: 0.3; } 60% { opacity: 0.65; } 62% { opacity: 0.4; } }
+.scene-rainstreet .rs-sign {
+  position: absolute; padding: 2% 5%; font-size: 9px; font-weight: 800; letter-spacing: 0.5px;
+  color: hsl(var(--dh), 90%, 75%); background: hsla(var(--dh), 70%, 25%, 0.55);
+  border: 1px solid hsl(var(--dh), 90%, 65%); border-radius: 3px;
+  text-shadow: 0 0 4px hsl(var(--dh), 90%, 65%), 0 0 8px hsl(var(--dh), 90%, 65%);
+  box-shadow: 0 0 8px 1px hsla(var(--dh), 90%, 60%, 0.6);
+  animation: rsSignFlicker 2.4s steps(1) infinite;
+}
+.scene-rainstreet .rs-sign-a { top: 8%; left: 6%; }
+.scene-rainstreet .rs-sign-b { top: 20%; right: 8%; animation-delay: -1.1s; color: #eafcff; border-color: #7fe8f5; background: rgba(20,60,66,0.55); text-shadow: 0 0 4px #7fe8f5, 0 0 8px #7fe8f5; box-shadow: 0 0 8px 1px rgba(127,232,245,0.6); }
+@keyframes rsSignFlicker { 0%, 89%, 100% { opacity: 1; } 91% { opacity: 0.35; } 93% { opacity: 1; } 95% { opacity: 0.5; } }
+.scene-rainstreet .rs-rain {
+  position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(112deg, rgba(210,225,255,0.35) 0 1px, transparent 1px 5%);
+  animation: rsRainFall 0.45s linear infinite;
+}
+.scene-rainstreet.tod-day .rs-rain { background-image: repeating-linear-gradient(112deg, rgba(255,255,255,0.5) 0 1px, transparent 1px 5%); }
+@keyframes rsRainFall { from { background-position: 0 0; } to { background-position: -14% 22%; } }
+.scene-rainstreet .rs-puddle {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 14%;
+  background: linear-gradient(180deg, #05060a, #0d0f16);
+  box-shadow: inset 0 6px 10px -4px hsla(var(--dh), 80%, 55%, 0.5);
+}
+.scene-rainstreet .rs-walker { position: absolute; left: -10%; bottom: 14%; width: 12%; height: 30%; animation: rsWalk 5s linear infinite; }
+@keyframes rsWalk { from { left: -12%; } to { left: 106%; } }
+.scene-rainstreet .rs-walker::before {
+  content: ""; position: absolute; left: 30%; bottom: 0; width: 40%; height: 62%;
+  background: #0a0b12; border-radius: 40% 40% 0 0;
+}
+.scene-rainstreet .rs-umbrella {
+  position: absolute; top: 0; left: 50%; width: 100%; height: 40%; transform: translateX(-50%);
+  background: hsl(var(--dh), 70%, 45%); border-radius: 50% 50% 0 0;
+  box-shadow: 0 0 6px 1px hsla(var(--dh), 80%, 55%, 0.5);
+}
+
+/* -- Outrun: synthwave sun and scrolling grid horizon -- */
+.scene-outrun .ou-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #2a1250 0%, #6a2470 45%, #b23a5e 75%, #14061f 100%); }
+.scene-outrun.tod-day .ou-sky { background: linear-gradient(180deg, #ff9fc7 0%, #ffc07a 45%, #ffe1a8 75%, #6a3fa0 100%); }
+.scene-outrun .ou-sun {
+  position: absolute; left: 50%; top: 30%; width: 46%; height: 46%; transform: translateX(-50%);
+  border-radius: 50%;
+  background: repeating-linear-gradient(0deg, hsl(var(--dh), 90%, 62%) 0 6%, transparent 6% 10%), hsl(var(--dh), 90%, 62%);
+  box-shadow: 0 0 22px 4px hsla(var(--dh), 90%, 60%, 0.6);
+  animation: ouSunPulse 3s ease-in-out infinite;
+}
+@keyframes ouSunPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.15); } }
+.scene-outrun .ou-mountains {
+  position: absolute; left: 0; right: 0; bottom: 34%; height: 20%;
+  background: #150a28;
+  clip-path: polygon(0% 100%, 8% 40%, 18% 100%, 30% 20%, 42% 100%, 55% 35%, 68% 100%, 80% 15%, 92% 100%, 100% 55%, 100% 100%);
+}
+.scene-outrun.tod-day .ou-mountains { background: #4a2a6a; }
+.scene-outrun .ou-grid {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 34%; overflow: hidden;
+  background: linear-gradient(180deg, hsla(var(--dh), 70%, 30%, 0.4), #0a0512);
+}
+.scene-outrun .ou-grid::before {
+  content: ""; position: absolute; left: -50%; right: -50%; top: 0; bottom: -20%;
+  background-image:
+    repeating-linear-gradient(90deg, hsl(var(--dh), 85%, 60%) 0 2px, transparent 2px 8%),
+    repeating-linear-gradient(0deg, hsl(var(--dh), 85%, 60%) 0 2px, transparent 2px 14%);
+  opacity: 0.7;
+  transform: perspective(60px) rotateX(55deg);
+  animation: ouGridScroll 0.9s linear infinite;
+}
+@keyframes ouGridScroll { from { background-position: 0 0, 0 0; } to { background-position: 0 0, 0 14%; } }
+.scene-outrun .ou-ship { position: absolute; top: 16%; left: -8%; width: 10%; height: 6%; animation: ouShipFly 4.2s linear infinite; }
+@keyframes ouShipFly { from { left: -10%; top: 18%; } 50% { top: 10%; } to { left: 104%; top: 22%; } }
+.scene-outrun .ou-ship::before {
+  content: ""; position: absolute; inset: 0; background: hsl(var(--dh), 20%, 92%);
+  clip-path: polygon(0 50%, 70% 0%, 100% 50%, 70% 100%);
+  box-shadow: 0 0 6px 1px hsla(var(--dh), 90%, 70%, 0.8);
+}
+.scene-outrun .ou-ship-trail {
+  position: absolute; top: 40%; right: 100%; width: 220%; height: 12%;
+  background: linear-gradient(90deg, transparent, hsla(var(--dh), 90%, 65%, 0.6));
+}
+
+/* -- Aquarium: fish, seaweed, rising bubbles -- */
+.scene-aquarium .aq-water { position: absolute; inset: 0; background: linear-gradient(180deg, #0c3a52, #0a2438 75%, #061622); }
+.scene-aquarium.tod-day .aq-water { background: linear-gradient(180deg, #4fb4d8, #1e7fa8 75%, #145f80); }
+.scene-aquarium .aq-ray {
+  position: absolute; top: -10%; left: 20%; width: 30%; height: 90%;
+  background: linear-gradient(100deg, hsla(var(--dh), 60%, 80%, 0.18), transparent 60%);
+  transform: skewX(-18deg);
+  animation: aqRaySway 6s ease-in-out infinite;
+}
+@keyframes aqRaySway { 0%, 100% { transform: skewX(-18deg) translateX(0); } 50% { transform: skewX(-10deg) translateX(8%); } }
+.scene-aquarium .aq-seaweed { position: absolute; bottom: 0; width: 8%; height: 34%; background: #1f6b3f; border-radius: 999px 999px 0 0; transform-origin: bottom center; animation: aqSway 3.4s ease-in-out infinite; }
+.scene-aquarium .aq-seaweed-a { left: 8%; height: 28%; animation-delay: -0.4s; }
+.scene-aquarium .aq-seaweed-b { left: 20%; height: 40%; background: #2c8a4f; animation-delay: -1.8s; }
+.scene-aquarium .aq-seaweed-c { right: 10%; height: 32%; background: #226b45; animation-delay: -2.6s; }
+@keyframes aqSway { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+.scene-aquarium .aq-bubble { position: absolute; bottom: 4%; width: 5%; height: 5%; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.9), rgba(255,255,255,0.15) 60%, transparent 70%); animation: aqRise 4.4s linear infinite; }
+.scene-aquarium .aq-bubble-a { left: 18%; animation-delay: 0s; }
+.scene-aquarium .aq-bubble-b { left: 44%; width: 3%; height: 3%; animation-delay: -1.4s; }
+.scene-aquarium .aq-bubble-c { left: 66%; width: 4%; height: 4%; animation-delay: -2.6s; }
+.scene-aquarium .aq-bubble-d { left: 82%; width: 3%; height: 3%; animation-delay: -3.4s; }
+@keyframes aqRise { 0% { transform: translateY(0); opacity: 0.9; } 90% { opacity: 0.7; } 100% { transform: translateY(-420%); opacity: 0; } }
+.scene-aquarium .aq-fish { position: absolute; left: -14%; top: 44%; width: 22%; height: 12%; animation: aqSwim 5.6s ease-in-out infinite; }
+@keyframes aqSwim { 0% { left: -16%; top: 46%; } 45% { top: 30%; } 50% { left: 116%; top: 30%; transform: scaleX(1); } 50.01% { transform: scaleX(-1); } 95% { top: 58%; } 100% { left: -16%; top: 46%; transform: scaleX(-1); } }
+.scene-aquarium .aq-fish::before {
+  content: ""; position: absolute; inset: 0; background: hsl(var(--dh), 80%, 58%);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  box-shadow: 0 0 6px 1px hsla(var(--dh), 85%, 65%, 0.5);
+}
+.scene-aquarium .aq-fish-tail { position: absolute; right: -30%; top: 20%; width: 34%; height: 60%; background: hsl(var(--dh), 80%, 50%); clip-path: polygon(0 20%, 100% 0, 100% 100%, 0 80%); animation: aqTailWag 0.6s ease-in-out infinite; }
+@keyframes aqTailWag { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+.scene-aquarium .aq-fish-eye { position: absolute; left: 8%; top: 30%; width: 16%; height: 30%; background: #10131f; border-radius: 50%; }
+
+/* -- Campfire: flickering fire under a starry/dusk sky -- */
+.scene-campfire .cf-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #0c1128, #1a1440 70%); }
+.scene-campfire .cf-sky::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(1.4px 1.4px at 15% 15%, #fff 0 1px, transparent 1px),
+    radial-gradient(1.4px 1.4px at 40% 25%, #fff 0 1px, transparent 1px),
+    radial-gradient(1.4px 1.4px at 65% 10%, #fff 0 1px, transparent 1px),
+    radial-gradient(1.4px 1.4px at 85% 22%, #fff 0 1px, transparent 1px),
+    radial-gradient(1.4px 1.4px at 25% 35%, #fff 0 1px, transparent 1px);
+  animation: cfTwinkle 3.2s ease-in-out infinite;
+}
+.scene-campfire.tod-day .cf-sky { background: linear-gradient(180deg, #ff9a6a, #ffd28a 70%); }
+.scene-campfire.tod-day .cf-sky::before { display: none; }
+@keyframes cfTwinkle { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+.scene-campfire .cf-mountains {
+  position: absolute; left: 0; right: 0; bottom: 20%; height: 26%; background: #191233;
+  clip-path: polygon(0% 100%, 15% 30%, 35% 100%, 50% 15%, 68% 100%, 85% 40%, 100% 100%);
+}
+.scene-campfire.tod-day .cf-mountains { background: #7a4a3a; }
+.scene-campfire .cf-tent {
+  position: absolute; left: 10%; bottom: 20%; width: 26%; height: 30%;
+  background: hsl(var(--dh), 45%, 32%);
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+.scene-campfire .cf-tent::after {
+  content: ""; position: absolute; left: 42%; top: 55%; width: 16%; height: 45%;
+  background: #1a1420; clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+.scene-campfire .cf-glow {
+  position: absolute; left: 46%; bottom: 20%; width: 34%; height: 22%; transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(255,150,60,0.55), transparent 70%);
+  animation: cfGlowPulse 1.4s ease-in-out infinite;
+}
+@keyframes cfGlowPulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+.scene-campfire .cf-fire { position: absolute; left: 50%; bottom: 20%; width: 14%; height: 20%; transform: translateX(-50%); }
+.scene-campfire .cf-flame { position: absolute; bottom: 0; left: 50%; border-radius: 50% 50% 50% 50% / 65% 65% 35% 35%; transform-origin: bottom center; animation: cfFlicker 0.6s ease-in-out infinite; }
+.scene-campfire .cf-flame-a { width: 100%; height: 100%; margin-left: -50%; background: linear-gradient(0deg, #ff5a2e, #ffb23f); }
+.scene-campfire .cf-flame-b { width: 66%; height: 72%; margin-left: -33%; background: linear-gradient(0deg, #ff8a2e, #ffe07a); animation-delay: -0.2s; }
+.scene-campfire .cf-flame-c { width: 36%; height: 46%; margin-left: -18%; background: linear-gradient(0deg, #fff2b0, #fff8dd); animation-delay: -0.4s; }
+@keyframes cfFlicker { 0%, 100% { transform: scaleY(1) scaleX(1) rotate(-2deg); } 50% { transform: scaleY(1.12) scaleX(0.9) rotate(3deg); } }
+.scene-campfire .cf-spark { position: absolute; bottom: 22%; left: 50%; width: 3%; height: 3%; border-radius: 50%; background: #ffcf7a; animation: cfSpark 2.2s ease-in infinite; }
+.scene-campfire .cf-spark-a { animation-delay: 0s; }
+.scene-campfire .cf-spark-b { left: 45%; animation-delay: -0.8s; }
+.scene-campfire .cf-spark-c { left: 55%; animation-delay: -1.5s; }
+@keyframes cfSpark { 0% { transform: translateY(0) translateX(0); opacity: 1; } 100% { transform: translateY(-260%) translateX(6%); opacity: 0; } }
+
+/* -- Rooftop: city skyline, fireworks, passing birds, a watcher on the ledge -- */
+.scene-rooftop .rw-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #0a0e24, #1c1f45 75%); }
+.scene-rooftop.tod-day .rw-sky { background: linear-gradient(180deg, #ff9d6e, #ffd39a 75%); }
+.scene-rooftop .rw-skyline { position: absolute; left: 0; right: 0; bottom: 0; height: 42%; display: flex; align-items: flex-end; gap: 2%; padding: 0 2%; }
+.scene-rooftop .rw-skyline span { flex: 1; background: #10132488; border-radius: 1px 1px 0 0; }
+.scene-rooftop.tod-day .rw-skyline span { background: rgba(70,45,60,0.45); }
+.scene-rooftop .rw-skyline span:nth-child(1) { height: 50%; }
+.scene-rooftop .rw-skyline span:nth-child(2) { height: 78%; }
+.scene-rooftop .rw-skyline span:nth-child(3) { height: 60%; }
+.scene-rooftop .rw-skyline span:nth-child(4) { height: 100%; }
+.scene-rooftop .rw-skyline span:nth-child(5) { height: 68%; }
+.scene-rooftop .rw-skyline span:nth-child(6) { height: 44%; }
+.scene-rooftop .rw-antenna { position: absolute; left: 68%; bottom: 42%; width: 2px; height: 16%; background: #2a2e44; }
+.scene-rooftop .rw-antenna-light { position: absolute; top: -4px; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: hsl(var(--dh), 90%, 65%); box-shadow: 0 0 6px 2px hsla(var(--dh), 90%, 60%, 0.8); animation: rwBlink 1.3s steps(1) infinite; }
+@keyframes rwBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.15; } }
+.scene-rooftop .rw-firework { position: absolute; top: 14%; width: 20%; height: 20%; border-radius: 50%; animation: rwBurst 3.6s ease-out infinite; }
+.scene-rooftop .rw-firework-a { left: 12%; background: radial-gradient(circle, hsl(var(--dh), 90%, 70%) 0 6%, transparent 8%, hsl(var(--dh), 90%, 70%) 9%, transparent 11%, hsl(var(--dh), 90%, 70%) 12%, transparent 14%); animation-delay: 0s; }
+.scene-rooftop .rw-firework-b { left: 55%; top: 8%; background: radial-gradient(circle, #fff 0 6%, transparent 8%, #fff 9%, transparent 11%, #fff 12%, transparent 14%); animation-delay: -1.8s; }
+@keyframes rwBurst { 0% { transform: scale(0.2); opacity: 0; } 12% { opacity: 1; } 55% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.3); opacity: 0; } }
+.scene-rooftop.tod-day .rw-firework { display: none; }
+.scene-rooftop .rw-bird { position: absolute; top: 20%; width: 6%; height: 3%; border-top: 2px solid rgba(20,22,34,0.7); border-radius: 50% 50% 0 0; animation: rwFly 6s linear infinite; }
+.scene-rooftop .rw-bird-a { animation-delay: 0s; }
+.scene-rooftop .rw-bird-b { top: 30%; animation-delay: -3s; animation-duration: 7.5s; }
+@keyframes rwFly { from { left: -10%; } to { left: 106%; } }
+.scene-rooftop .rw-figure { position: absolute; left: 8%; bottom: 0; width: 16%; height: 22%; background: #0c0e1a; border-radius: 60% 60% 0 0 / 80% 80% 0 0; }
+.scene-rooftop.tod-day .rw-figure { background: rgba(30,20,25,0.75); }
+
+/* -- Arcade: retro cabinet, scanline screen, blinking marquee -- */
+.scene-arcade .ar-room { position: absolute; inset: 0; background: linear-gradient(180deg, #14101f, #060508 75%); }
+.scene-arcade.tod-day .ar-room { background: linear-gradient(180deg, #c9c2d8, #efe9f4 75%); }
+.scene-arcade .ar-marquee { position: absolute; left: 20%; right: 20%; top: 10%; height: 8%; display: flex; justify-content: space-between; align-items: center; background: #1a1526; border-radius: 4px; padding: 0 6%; }
+.scene-arcade .ar-marquee span { width: 10%; height: 40%; border-radius: 50%; background: hsl(var(--dh), 90%, 65%); box-shadow: 0 0 5px 1px hsla(var(--dh), 90%, 60%, 0.8); animation: arBulb 1.2s steps(1) infinite; }
+.scene-arcade .ar-marquee span:nth-child(2) { animation-delay: -0.24s; }
+.scene-arcade .ar-marquee span:nth-child(3) { animation-delay: -0.48s; }
+.scene-arcade .ar-marquee span:nth-child(4) { animation-delay: -0.72s; }
+.scene-arcade .ar-marquee span:nth-child(5) { animation-delay: -0.96s; }
+@keyframes arBulb { 0%, 60% { opacity: 1; } 80% { opacity: 0.25; } 100% { opacity: 1; } }
+.scene-arcade .ar-cabinet { position: absolute; left: 24%; right: 24%; top: 22%; bottom: 6%; background: #1e1830; border-radius: 3px; }
+.scene-arcade.tod-day .ar-cabinet { background: #3a3050; }
+.scene-arcade .ar-screen { position: absolute; left: 10%; right: 10%; top: 8%; height: 52%; background: #050308; border-radius: 2px; overflow: hidden; box-shadow: 0 0 12px 2px hsla(var(--dh), 85%, 55%, 0.55) inset; }
+.scene-arcade .ar-screen::before {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(hsla(var(--dh), 90%, 60%, 0.5) 0 6%, transparent 6% 18%);
+  animation: arScreenColor 4s linear infinite;
+}
+@keyframes arScreenColor { 0% { filter: hue-rotate(0deg); } 100% { filter: hue-rotate(360deg); } }
+.scene-arcade .ar-scanlines {
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0 1px, transparent 1px 3px);
+  animation: arScan 0.5s linear infinite;
+}
+@keyframes arScan { from { background-position: 0 0; } to { background-position: 0 3px; } }
+.scene-arcade .ar-button { position: absolute; bottom: 18%; width: 10%; height: 6%; border-radius: 50%; background: hsl(var(--dh), 80%, 55%); box-shadow: 0 0 5px 1px hsla(var(--dh), 85%, 60%, 0.7); animation: arBtnPulse 1.6s ease-in-out infinite; }
+.scene-arcade .ar-button-a { left: 20%; }
+.scene-arcade .ar-button-b { left: 34%; animation-delay: -0.5s; background: #fff; box-shadow: 0 0 5px 1px rgba(255,255,255,0.7); }
+@keyframes arBtnPulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+.scene-arcade .ar-joystick { position: absolute; bottom: 16%; right: 18%; width: 16%; height: 20%; }
+.scene-arcade .ar-joystick::before { content: ""; position: absolute; bottom: 0; left: 50%; width: 60%; height: 40%; margin-left: -30%; border-radius: 50%; background: #0d0a16; }
+.scene-arcade .ar-stick { position: absolute; bottom: 20%; left: 50%; width: 14%; height: 70%; margin-left: -7%; background: #4a4560; border-radius: 999px; transform-origin: bottom center; animation: arStickWiggle 1.8s ease-in-out infinite; }
+.scene-arcade .ar-stick::after { content: ""; position: absolute; top: -30%; left: 50%; width: 220%; height: 40%; margin-left: -110%; border-radius: 50%; background: hsl(var(--dh), 80%, 55%); box-shadow: 0 0 4px 1px hsla(var(--dh), 85%, 60%, 0.7); }
+@keyframes arStickWiggle { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+
 /* -- Avatar ring motifs (abstracted per template - not enough room for the full scene) -- */
 .avatar-border-s-cruiser { position: relative; outline-color: hsl(var(--dh), 78%, 55%); animation: ringPulse 2.2s ease-in-out infinite; }
 .avatar-border-s-cruiser::after {
@@ -616,12 +857,36 @@ body {
   100% { outline-color: hsl(calc(var(--dh) + 360deg), 75%, 55%); }
 }
 @keyframes ringGlow { 0%, 100% { box-shadow: 0 0 6px 2px hsla(var(--dh), 85%, 65%, 0.5); } 50% { box-shadow: 0 0 14px 5px hsla(var(--dh), 90%, 70%, 0.85); } }
+.avatar-border-s-rainstreet { position: relative; outline-color: hsl(var(--dh), 85%, 60%); animation: ringSignFlicker 2.4s steps(1) infinite; }
+@keyframes ringSignFlicker { 0%, 89%, 100% { box-shadow: 0 0 6px 2px hsla(var(--dh), 90%, 60%, 0.6); } 91% { box-shadow: none; } 93% { box-shadow: 0 0 6px 2px hsla(var(--dh), 90%, 60%, 0.6); } }
+.avatar-border-s-outrun { position: relative; outline-color: hsl(var(--dh), 90%, 62%); animation: ringSunPulse 3s ease-in-out infinite; }
+@keyframes ringSunPulse { 0%, 100% { box-shadow: 0 0 5px 1px hsla(var(--dh), 90%, 60%, 0.5); } 50% { box-shadow: 0 0 12px 4px hsla(var(--dh), 90%, 60%, 0.9); } }
+.avatar-border-s-aquarium { position: relative; outline-color: hsl(var(--dh), 70%, 55%); }
+.avatar-border-s-aquarium::after {
+  content: "";
+  position: absolute; bottom: -4%; left: 50%; width: 12%; height: 12%; margin-left: -6%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.9), rgba(255,255,255,0.15) 60%, transparent 70%);
+  animation: aqRise 3.2s linear infinite;
+}
+.avatar-border-s-campfire { outline-color: #ff8a2e; animation: ringFireFlicker 0.6s ease-in-out infinite; }
+@keyframes ringFireFlicker { 0%, 100% { box-shadow: 0 0 5px 1px rgba(255,120,40,0.5); } 50% { box-shadow: 0 0 11px 3px rgba(255,170,60,0.85); } }
+.avatar-border-s-rooftop { position: relative; outline-color: hsl(var(--dh), 90%, 65%); animation: rwBlink 1.3s steps(1) infinite; }
+.avatar-border-s-arcade { outline-color: hsl(var(--dh), 85%, 58%); animation: arBulb 1.2s steps(1) infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   .cr-lines, .cr-car, .cr-glow, .cr-headlight, .cr-wheel,
   .bd-cloud, .bd-char, .bd-shadow, .bd-eye, .bd-arm-r,
   .vg-space, .vg-portal, .vg-char, .vg-cape,
-  .avatar-border-s-cruiser, .avatar-border-s-cruiser::after, .avatar-border-s-buddy, .avatar-border-s-voyager {
+  .rs-rain, .rs-walker, .rs-sign, .rs-windows,
+  .ou-sun, .ou-grid::before, .ou-ship,
+  .aq-ray, .aq-seaweed, .aq-bubble, .aq-fish, .aq-fish-tail,
+  .cf-sky::before, .cf-glow, .cf-flame, .cf-spark,
+  .rw-antenna-light, .rw-firework, .rw-bird,
+  .ar-marquee span, .ar-screen::before, .ar-scanlines, .ar-button, .ar-stick,
+  .avatar-border-s-cruiser, .avatar-border-s-cruiser::after, .avatar-border-s-buddy, .avatar-border-s-voyager,
+  .avatar-border-s-rainstreet, .avatar-border-s-outrun, .avatar-border-s-aquarium, .avatar-border-s-aquarium::after,
+  .avatar-border-s-campfire, .avatar-border-s-rooftop, .avatar-border-s-arcade {
     animation: none;
   }
 }

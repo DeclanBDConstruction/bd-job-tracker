@@ -42,20 +42,35 @@ const CALENDAR_COLOR_HEXES = CALENDAR_COLORS.map((c) => c.hex);
 // colour above (plenty of people can have a gold border). The original hand-picked set below
 // ("classic") each has bespoke colours/animation baked into style.css (.avatar-border-X /
 // .profile-bg-X) and is kept as-is for backwards compatibility with whatever people already
-// picked. On top of that there are three hand-illustrated animated scenes - a neon car
-// cruising a road ("cruiser"), a bouncy round character ("buddy"), a character floating past
-// a starfield portal ("voyager") - see the .scene-cruiser/.scene-buddy/.scene-voyager rules in
-// style.css and sceneMarkup() in app.js for the actual artwork/animation. Each scene comes in a
-// day and a night backdrop and 8 neon accent colours (the --dh custom property, set inline per
-// element), giving 3 x 2 x 8 = 48 selectable scenes from 3 hand-built rigs rather than 48 wholly
-// separate illustrations. The same 48 scene ids work for both the avatar (a small ring motif)
-// and the profile card (the full scene) - see PROFILE_BORDER_STYLES/PROFILE_BACKGROUND_THEMES
-// below, both built from this one SCENE_OPTIONS catalogue. Ids look like `s-<template>-<day|
-// night>-<hue3>` e.g. `s-cruiser-night-225`.
+// picked. On top of that there are nine hand-illustrated animated scenes, each its own rig of
+// shapes/layers (not a shared template redrawn) - see the .scene-<id> rules in style.css and
+// SCENE_MARKUP in app.js for the actual artwork/animation:
+//   cruiser    - neon car cruising a road
+//   buddy      - bouncy round character
+//   voyager    - character floating past a starfield portal
+//   rainstreet - rainy neon shopping street with lit signs and a walker
+//   outrun     - synthwave sun + scrolling grid horizon with a flying ship
+//   aquarium   - fish swimming past swaying seaweed and rising bubbles
+//   campfire   - flickering campfire under a starry/dusk sky
+//   rooftop    - city skyline watcher with fireworks and passing birds
+//   arcade     - retro arcade cabinet with a scanline screen and blinking marquee
+// Each scene comes in a day and a night backdrop and 8 neon accent colours (the --dh custom
+// property, set inline per element), so the variety comes from having 9 genuinely different
+// rigs rather than leaning on the day/night x hue axis to manufacture options - that's 9 x 2 x
+// 8 = 144 selectable scenes. The same ids work for both the avatar (a small ring motif) and the
+// profile card (the full scene) - see PROFILE_BORDER_STYLES/PROFILE_BACKGROUND_THEMES below,
+// both built from this one SCENE_OPTIONS catalogue. Ids look like `s-<template>-<day|night>-
+// <hue3>` e.g. `s-cruiser-night-225`.
 const SCENE_TEMPLATES = [
   { id: 'cruiser', label: 'Cruiser' },
   { id: 'buddy', label: 'Buddy' },
   { id: 'voyager', label: 'Voyager' },
+  { id: 'rainstreet', label: 'Rain Street' },
+  { id: 'outrun', label: 'Outrun' },
+  { id: 'aquarium', label: 'Aquarium' },
+  { id: 'campfire', label: 'Campfire' },
+  { id: 'rooftop', label: 'Rooftop' },
+  { id: 'arcade', label: 'Arcade' },
 ];
 const SCENE_TIMES = [
   { id: 'day', label: 'Day' },

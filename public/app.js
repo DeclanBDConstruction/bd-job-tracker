@@ -175,8 +175,75 @@ const SCENE_MARKUP = {
       </div>
     </div>
   `,
+  rainstreet: `
+    <div class="rs-sky"></div>
+    <div class="rs-skyline"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="rs-windows"></div>
+    <div class="rs-sign rs-sign-a">OPEN</div>
+    <div class="rs-sign rs-sign-b">24</div>
+    <div class="rs-rain"></div>
+    <div class="rs-puddle"></div>
+    <div class="rs-walker"><div class="rs-umbrella"></div></div>
+  `,
+  outrun: `
+    <div class="ou-sky"></div>
+    <div class="ou-sun"></div>
+    <div class="ou-mountains"></div>
+    <div class="ou-grid"></div>
+    <div class="ou-ship"><div class="ou-ship-trail"></div></div>
+  `,
+  aquarium: `
+    <div class="aq-water"></div>
+    <div class="aq-ray"></div>
+    <div class="aq-seaweed aq-seaweed-a"></div>
+    <div class="aq-seaweed aq-seaweed-b"></div>
+    <div class="aq-seaweed aq-seaweed-c"></div>
+    <div class="aq-bubble aq-bubble-a"></div>
+    <div class="aq-bubble aq-bubble-b"></div>
+    <div class="aq-bubble aq-bubble-c"></div>
+    <div class="aq-bubble aq-bubble-d"></div>
+    <div class="aq-fish"><div class="aq-fish-tail"></div><div class="aq-fish-eye"></div></div>
+  `,
+  campfire: `
+    <div class="cf-sky"></div>
+    <div class="cf-mountains"></div>
+    <div class="cf-tent"></div>
+    <div class="cf-glow"></div>
+    <div class="cf-fire">
+      <div class="cf-flame cf-flame-a"></div>
+      <div class="cf-flame cf-flame-b"></div>
+      <div class="cf-flame cf-flame-c"></div>
+    </div>
+    <div class="cf-spark cf-spark-a"></div>
+    <div class="cf-spark cf-spark-b"></div>
+    <div class="cf-spark cf-spark-c"></div>
+  `,
+  rooftop: `
+    <div class="rw-sky"></div>
+    <div class="rw-firework rw-firework-a"></div>
+    <div class="rw-firework rw-firework-b"></div>
+    <div class="rw-bird rw-bird-a"></div>
+    <div class="rw-bird rw-bird-b"></div>
+    <div class="rw-skyline"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="rw-antenna"><div class="rw-antenna-light"></div></div>
+    <div class="rw-figure"></div>
+  `,
+  arcade: `
+    <div class="ar-room"></div>
+    <div class="ar-marquee"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="ar-cabinet">
+      <div class="ar-screen"><div class="ar-scanlines"></div></div>
+      <div class="ar-button ar-button-a"></div>
+      <div class="ar-button ar-button-b"></div>
+      <div class="ar-joystick"><div class="ar-stick"></div></div>
+    </div>
+  `,
 };
-const SCENE_GLYPHS = { cruiser: '\u{1F697}', buddy: '\u{1F642}', voyager: '\u{1F300}' };
+const SCENE_GLYPHS = {
+  cruiser: '\u{1F697}', buddy: '\u{1F642}', voyager: '\u{1F300}',
+  rainstreet: '\u{2614}', outrun: '\u{1F305}', aquarium: '\u{1F420}',
+  campfire: '\u{1F525}', rooftop: '\u{1F3D9}', arcade: '\u{1F47E}',
+};
 
 // Shared by the topbar avatar, the Team directory, and the profile view/edit cards - shows the
 // uploaded photo (proxied through the authenticated /api/users/:id/photo route, never a public
