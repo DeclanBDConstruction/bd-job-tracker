@@ -2888,6 +2888,7 @@ function hireEditRow(h) {
     <tr data-id="${h.id}">
       <td><input type="text" class="hire-edit-item" value="${escapeHtml(h.item)}"></td>
       <td><input type="text" class="hire-edit-supplier" value="${escapeHtml(h.supplier)}"></td>
+      <td><input type="text" class="hire-edit-branch" value="${escapeHtml(h.branch)}"></td>
       <td><input type="text" class="hire-edit-jobnumber" value="${escapeHtml(h.jobNumber)}"></td>
       <td><input type="date" class="hire-edit-date" value="${h.hireDate}"></td>
       <td><input type="number" min="1" step="1" class="hire-edit-qty" value="${h.quantity}"></td>
@@ -2913,6 +2914,7 @@ function hireDisplayRow(h) {
     <tr>
       <td>${escapeHtml(h.item)}</td>
       <td>${escapeHtml(h.supplier || '—')}</td>
+      <td>${escapeHtml(h.branch || '—')}</td>
       <td>${escapeHtml(h.jobNumber || '—')}</td>
       <td>${h.hireDate}</td>
       <td>${h.quantity}</td>
@@ -2933,6 +2935,7 @@ function hireOffHiredRow(h) {
     <tr>
       <td>${escapeHtml(h.item)}</td>
       <td>${escapeHtml(h.supplier || '—')}</td>
+      <td>${escapeHtml(h.branch || '—')}</td>
       <td>${escapeHtml(h.jobNumber || '—')}</td>
       <td>${h.hireDate}</td>
       <td>${h.quantity}</td>
@@ -3011,6 +3014,7 @@ function renderHires() {
       const body = {
         item: tr.querySelector('.hire-edit-item').value.trim(),
         supplier: tr.querySelector('.hire-edit-supplier').value.trim(),
+        branch: tr.querySelector('.hire-edit-branch').value.trim(),
         jobNumber: tr.querySelector('.hire-edit-jobnumber').value.trim(),
         hireDate: tr.querySelector('.hire-edit-date').value,
         quantity: Number(tr.querySelector('.hire-edit-qty').value),
@@ -3057,6 +3061,7 @@ document.getElementById('hireAddForm').addEventListener('submit', async (e) => {
   const body = {
     item: document.getElementById('hireItemInput').value.trim(),
     supplier: document.getElementById('hireSupplierInput').value.trim(),
+    branch: document.getElementById('hireBranchInput').value.trim(),
     jobNumber: document.getElementById('hireJobNumberInput').value.trim(),
     hireDate: document.getElementById('hireDateInput').value,
     quantity: Number(document.getElementById('hireQuantityInput').value),

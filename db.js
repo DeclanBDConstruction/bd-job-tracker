@@ -1950,6 +1950,7 @@ function rowToHire(row) {
     id: row.id,
     item: row.item,
     supplier: row.supplier || '',
+    branch: row.branch || '',
     jobNumber: row.job_number || '',
     hireDate: row.hire_date,
     quantity: Number(row.quantity) || 1,
@@ -1986,6 +1987,7 @@ function validateHireInput(input) {
   return {
     item,
     supplier: (input.supplier || '').trim(),
+    branch: (input.branch || '').trim(),
     job_number: (input.jobNumber || '').trim(),
     hire_date: hireDate,
     quantity,

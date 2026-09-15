@@ -259,6 +259,7 @@ create table if not exists hires (
   id uuid primary key,
   item text not null,
   supplier text,
+  branch text,
   -- job_id and job_description: no longer written by the app (job_number below replaced
   -- both as a single free-text field) - left in place rather than dropped so no data is
   -- lost from before this changed.
@@ -280,6 +281,9 @@ create table if not exists hires (
 -- column stays so nothing already saved there is lost.
 alter table hires add column if not exists job_number text;
 alter table hires add column if not exists job_description text;
+-- Which branch the item was hired from, for a hires table that already existed before
+-- this field was added.
+alter table hires add column if not exists branch text;
 
 -- Plant/tools/equipment tracked via QR-code labels. Unlike hires above (whose status is
 -- purely date-derived), status here is event-driven (scan actions), so it's a stored
