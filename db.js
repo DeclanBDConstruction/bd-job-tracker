@@ -1216,6 +1216,154 @@ async function deleteCustomRiskAssessment(id) {
   return ra;
 }
 
+// ---------- Generated RAMS (AI-drafted Method Statement + risk assessment) ----------
+// Produced by the "Create RAMS" form (see server.js POST /api/risk-assessments/generated and
+// ramsGenerator.js) from a short job brief - Claude drafts the whole document, including a
+// tailored hazards list, in one go. Treated as untrusted input the same as any other user
+// input even though it comes from the model, not a form field, since it's still attacker-
+// or-mistake-reachable JSON before it's ever rendered into a document.
+
+const TRAINING_COMPETENCY_KEYS = [
+  'useOfLadders', 'scaffoldTowers', 'mobileAccessPlatforms', 'harnesses',
+  'asbestosAwareness', 'signErection', 'excavations', 'electricalDisconnectionInstallation',
+];
+
+function sanitizeGeneratedHazard(h) {
+  return {
+    title: String((h && h.title) || '').trim() || 'Untitled Hazard',
+    legislation: String((h && h.legislation) || '').trim(),
+    hazard: String((h && h.hazard) || '').trim(),
+    peopleAffected: String((h && h.peopleAffected) || '').trim(),
+    currentControls: sanitizeRaList(h && h.currentControls),
+    currentL: sanitizeRaRating(h && h.currentL),
+    currentC: sanitizeRaRating(h && h.currentC),
+    additionalControls: sanitizeRaList(h && h.additionalControls),
+    additionalL: sanitizeRaRating(h && h.additionalL),
+    additionalC: sanitizeRaRating(h && h.additionalC),
+    ppe: sanitizeRaList(h && h.ppe),
+  };
+}
+
+function sanitizeTrainingCompetencies(tc) {
+  const out = {};
+  TRAINING_COMPETENCY_KEYS.forEach((k) => { out[k] = !!(tc && tc[k]); });
+  return out;
+}
+
+function hazardWithRisk(h) {
+  const currentR = h.currentL * h.currentC;
+  const additionalR = h.additionalL * h.additionalC;
+  return {
+    ...h,
+    currentR,
+    currentBand: riskBand(currentR),
+    additionalR,
+    additionalBand: riskBand(additionalR),
+  };
+}
+
+function rowToGeneratedRams(row) {
+  return {
+    id: row.id,
+    client: row.client,
+    jobNumber: row.job_number || '',
+    location: row.location,
+    task: row.task,
+    startDate: row.start_date,
+    siteContact: row.site_contact || '',
+    siteContactTel: row.site_contact_tel || '',
+    employees: row.employees || [],
+    supervisorName: row.supervisor_name || '',
+    contractorDriver: row.contractor_driver || '',
+    projectReference: row.project_reference,
+    descriptionOfWork: row.description_of_work,
+    accessEquipmentDescription: row.access_equipment_description || '',
+    accessRequirements: row.access_requirements || '',
+    otherPlantOrTools: row.other_plant_or_tools || '',
+    keyHazardsSummary: row.key_hazards_summary || '',
+    trainingCompetencies: sanitizeTrainingCompetencies(row.training_competencies),
+    requiredPpe: row.required_ppe || [],
+    fallProtectionMeasures: row.fall_protection_measures || '',
+    workAreaProtection: row.work_area_protection || '',
+    firstAidLocation: row.first_aid_location || '',
+    nearestAE: row.nearest_ae || '',
+    sequenceOfOperations: row.sequence_of_operations || [],
+    hazards: (row.hazards || []).map(hazardWithRisk),
+    createdBy: row.created_by || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listGeneratedRams() {
+  const { data, error } = await supabase.from('generated_rams').select('*').order('created_at', { ascending: false });
+  check(error);
+  return data.map(rowToGeneratedRams);
+}
+
+async function getGeneratedRams(id) {
+  const { data, error } = await supabase.from('generated_rams').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToGeneratedRams(data) : null;
+}
+
+async function createGeneratedRams(input, createdBy) {
+  const client = (input.client || '').trim();
+  const location = (input.location || '').trim();
+  const task = (input.task || '').trim();
+  const startDate = (input.startDate || '').trim();
+  const projectReference = (input.projectReference || '').trim();
+  const descriptionOfWork = (input.descriptionOfWork || '').trim();
+  if (!client) throw new Error('Client is required');
+  if (!location) throw new Error('Job address is required');
+  if (!task) throw new Error('Task is required');
+  if (!startDate) throw new Error('Start date is required');
+  if (!projectReference) throw new Error('Project reference is required');
+  if (!descriptionOfWork) throw new Error('Description of work is required');
+
+  const row = {
+    id: genId(),
+    client,
+    job_number: (input.jobNumber || '').trim() || null,
+    location,
+    task,
+    start_date: startDate,
+    site_contact: (input.siteContact || '').trim() || null,
+    site_contact_tel: (input.siteContactTel || '').trim() || null,
+    employees: sanitizeRaList(input.employees),
+    supervisor_name: (input.supervisorName || '').trim() || null,
+    contractor_driver: (input.contractorDriver || '').trim() || null,
+    project_reference: projectReference,
+    description_of_work: descriptionOfWork,
+    access_equipment_description: (input.accessEquipmentDescription || '').trim() || null,
+    access_requirements: (input.accessRequirements || '').trim() || null,
+    other_plant_or_tools: (input.otherPlantOrTools || '').trim() || null,
+    key_hazards_summary: (input.keyHazardsSummary || '').trim() || null,
+    training_competencies: sanitizeTrainingCompetencies(input.trainingCompetencies),
+    required_ppe: sanitizeRaList(input.requiredPpe),
+    fall_protection_measures: (input.fallProtectionMeasures || '').trim() || null,
+    work_area_protection: (input.workAreaProtection || '').trim() || null,
+    first_aid_location: (input.firstAidLocation || '').trim() || null,
+    nearest_ae: (input.nearestAE || '').trim() || null,
+    sequence_of_operations: sanitizeRaList(input.sequenceOfOperations),
+    hazards: (Array.isArray(input.hazards) ? input.hazards : []).map(sanitizeGeneratedHazard),
+    created_by: createdBy || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('generated_rams').insert(row).select().single();
+  check(error);
+  return rowToGeneratedRams(data);
+}
+
+async function deleteGeneratedRams(id) {
+  const rams = await getGeneratedRams(id);
+  if (!rams) return null;
+  const { error } = await supabase.from('generated_rams').delete().eq('id', id);
+  check(error);
+  return rams;
+}
+
 // ---------- Reports ----------
 
 // Company-wide breakdown for admins; scoped to just the viewer's own figures (keyed by
@@ -3032,6 +3180,10 @@ module.exports = {
   getCustomRiskAssessment,
   createCustomRiskAssessment,
   deleteCustomRiskAssessment,
+  listGeneratedRams,
+  getGeneratedRams,
+  createGeneratedRams,
+  deleteGeneratedRams,
   yearlyReport,
   monthlyReport,
   clientReport,

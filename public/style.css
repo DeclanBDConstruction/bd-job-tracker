@@ -2243,6 +2243,15 @@ button:disabled {
   align-self: flex-start;
 }
 
+.ra-generated-preview-frame {
+  width: 100%;
+  height: 65vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 10px;
+  background: white;
+}
+
 .ra-download-btn {
   display: inline-flex;
   align-items: center;

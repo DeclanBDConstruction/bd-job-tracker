@@ -21,6 +21,8 @@ at the same live data no matter which device or network they're on.
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SUPABASE_BUCKET` (optional, defaults to `job-documents`)
+   - `ANTHROPIC_API_KEY` (optional — only needed for **Create RAMS**, see below; the rest of
+     the app works fine without it)
 
 ## Running the app locally
 
@@ -55,7 +57,8 @@ like [Render](https://render.com):
    included in this repo, so Render can pick up the build/start commands automatically.
 3. Set the `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables on the
    Render service (same values as your local setup, from the Supabase project's API
-   settings) so it points at the same data everyone already uses.
+   settings) so it points at the same data everyone already uses. Also set
+   `ANTHROPIC_API_KEY` there if you want **Create RAMS** (see below) to work in production.
 4. Once deployed, Render gives you an `https://…onrender.com` URL — open that on any
    phone/laptop, on any network, and sign in as normal.
 
@@ -112,6 +115,23 @@ Employee from that file") so you can fill those in yourself before saving.
 asked whether to update that job (pre-filled with the sheet's latest figures) or create a
 separate new one — it never updates an existing job silently. So once a job's quote is
 updated, re-upload the same sheet and confirm to sync it.
+
+## Create RAMS (AI-drafted Method Statement + risk assessment)
+
+On the **RAMS** tab, click **+ Create RAMS** and fill in the short form (client, job address,
+job number, task, who's working on it, start date). Claude reads that plus BD Construction's
+existing hazard library and drafts a complete, site-specific RAMS — a full Method Statement
+(description of work, access equipment, sequence of operations, PPE, etc.) and the hazard
+risk-assessment table underneath — usually in well under a minute. It appears in the RAMS list
+straight after, ready to download or attach to a job.
+
+This costs a small amount per generation (billed to whichever Anthropic account the
+`ANTHROPIC_API_KEY` belongs to), and needs that key set (see First-time setup above) — without
+it, the rest of the app works fine, but **+ Create RAMS** will show an error asking for one to
+be configured. If you deploy to Render, set `ANTHROPIC_API_KEY` there too.
+
+Like the generic templates, this is a first draft: always review and adjust it for the actual
+site conditions before anyone works to it.
 
 ## Data
 
