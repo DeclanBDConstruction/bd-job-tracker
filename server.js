@@ -7,7 +7,6 @@ const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const importer = require('./import');
 const riskAssessments = require('./riskAssessments');
-const ramsGenerator = require('./ramsGenerator');
 const permitPdf = require('./permitPdf');
 const cadDxf = require('./cadDxf');
 const cadPdf = require('./cadPdf');
@@ -1333,74 +1332,6 @@ app.post('/api/jobs/:id/risk-assessments/custom/:raId/attach', handle(async (req
 
   const html = riskAssessments.renderHtml(ra);
   const originalName = `${ra.title} - Risk Assessment.html`;
-  const storedName = makeStoredName(originalName);
-  const { error } = await supabase.storage
-    .from(DOCUMENTS_BUCKET)
-    .upload(storagePath(req.params.id, 'rams', storedName), Buffer.from(html, 'utf8'), { contentType: 'text/html' });
-  if (error) throw new Error(error.message);
-
-  const doc = await db.addJobDocument(req.params.id, 'rams', {
-    originalName,
-    storedName,
-    size: Buffer.byteLength(html),
-  });
-  logDocumentUpload(req.user, job.jobReference || job.client, job.id, 'rams', doc);
-  broadcast('jobs');
-  res.status(201).json(doc);
-}));
-
-// ---------- Generated RAMS (AI-drafted Method Statement + risk assessment) ----------
-// "Create RAMS" flow: office staff fill in a short job brief and Claude drafts a full,
-// site-specific RAMS from it - see ramsGenerator.js for the prompt/schema and
-// riskAssessments.renderGeneratedRamsHtml for the document layout. Requires ANTHROPIC_API_KEY
-// (see README); generateRams() throws a clear message if it's unset, caught by handle() same
-// as any other request error - no separate crash-prevention needed here since ramsGenerator.js
-// never touches the key at require time.
-
-app.get('/api/risk-assessments/generated', handle(async (req, res) => {
-  res.json(await db.listGeneratedRams());
-}));
-
-app.post('/api/risk-assessments/generated', handle(async (req, res) => {
-  const draft = await ramsGenerator.generateRams(req.body, riskAssessments.listRiskAssessments());
-  const rams = await db.createGeneratedRams({ ...req.body, ...draft }, req.user.name);
-  db.logCrud(req.user, 'created', 'generated_rams', 'RAMS', `${rams.client} — ${rams.projectReference}`, rams.id);
-  res.status(201).json(rams);
-}));
-
-app.get('/api/risk-assessments/generated/:id/download', handle(async (req, res) => {
-  const rams = await db.getGeneratedRams(req.params.id);
-  if (!rams) return res.status(404).json({ error: 'RAMS not found' });
-  const html = riskAssessments.renderGeneratedRamsHtml(rams);
-  res.setHeader('Content-Disposition', `attachment; filename="${(rams.client + ' - ' + rams.projectReference).replace(/[^a-zA-Z0-9_.\- ]/g, '_')} - RAMS.html"`);
-  res.setHeader('Content-Type', 'text/html');
-  res.send(html);
-}));
-
-app.get('/api/risk-assessments/generated/:id/preview', handle(async (req, res) => {
-  const rams = await db.getGeneratedRams(req.params.id);
-  if (!rams) return res.status(404).json({ error: 'RAMS not found' });
-  const html = riskAssessments.renderGeneratedRamsHtml(rams);
-  res.setHeader('Content-Type', 'text/html');
-  res.send(html);
-}));
-
-app.delete('/api/risk-assessments/generated/:id', requireAdmin, handle(async (req, res) => {
-  const rams = await db.deleteGeneratedRams(req.params.id);
-  if (!rams) return res.status(404).json({ error: 'RAMS not found' });
-  db.logCrud(req.user, 'deleted', 'generated_rams', 'RAMS', `${rams.client} — ${rams.projectReference}`, rams.id);
-  res.status(204).end();
-}));
-
-app.post('/api/jobs/:id/risk-assessments/generated/:raId/attach', handle(async (req, res) => {
-  if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
-  const job = await db.getJob(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  const rams = await db.getGeneratedRams(req.params.raId);
-  if (!rams) return res.status(404).json({ error: 'RAMS not found' });
-
-  const html = riskAssessments.renderGeneratedRamsHtml(rams);
-  const originalName = `${rams.client} - ${rams.projectReference} - RAMS.html`;
   const storedName = makeStoredName(originalName);
   const { error } = await supabase.storage
     .from(DOCUMENTS_BUCKET)

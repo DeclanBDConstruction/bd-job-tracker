@@ -144,7 +144,7 @@
     <div class="tab-group" id="reportsTabGroup">
       <button type="button" class="tab-group-btn">Reports <span class="caret">▾</span></button>
       <div class="tab-group-menu">
-        <button class="tab-btn" data-tab="risk">RAMS</button>
+        <button class="tab-btn" data-tab="risk">Risk Assessments</button>
         <button class="tab-btn" data-tab="reports">Yearly Reports</button>
         <button class="tab-btn" data-tab="clients" id="clientsTabBtn" hidden>Client Report</button>
       </div>
@@ -656,16 +656,15 @@
     </div>
   </section>
 
-  <!-- RAMS TAB -->
+  <!-- RISK ASSESSMENTS TAB -->
   <section id="tab-risk" class="tab-panel">
     <div class="panel-header">
-      <h2>RAMS</h2>
+      <h2>Risk Assessments</h2>
       <div class="filters">
-        <input type="text" id="raSearch" placeholder="Search RAMS…">
+        <input type="text" id="raSearch" placeholder="Search risk assessments…">
       </div>
     </div>
-    <p class="hint">Generic hazard templates, plus any risk assessments you've uploaded or saved yourself, and any full RAMS you've had drafted below — view, edit and attach straight to a job's RAMS documents. Editing a generic or saved risk assessment doesn't change the original: use Save As to keep your changes as a new one in this list. Always review and adjust for the actual site conditions before anyone works to one. (This is separate from the on-site RAMS an operative fills in themselves before starting a job assignment — that lives on the Job Assignments tab.)</p>
-    <button type="button" id="raGenerateOpenBtn" class="primary">+ Create RAMS</button>
+    <p class="hint">Generic templates, plus any you've uploaded or saved yourself — view, edit and attach straight to a job's RAMS documents. Editing a generic or saved risk assessment doesn't change the original: use Save As to keep your changes as a new one in this list. Always review and adjust for the actual site conditions before anyone works to one.</p>
     <form id="raLibraryUploadForm" class="ra-library-upload">
       <input type="text" id="raLibraryNameInput" placeholder="Name (e.g. Roof Access - Beehive Carlisle)" required>
       <label class="upload-btn">Choose File<input type="file" id="raLibraryFileInput" hidden required></label>
@@ -1129,54 +1128,6 @@
       <a id="raDownloadLink" class="ra-download-btn" href="#">Download</a>
       <select id="raAttachJobSelect"><option value="">Attach to job…</option></select>
       <button type="button" id="raAttachBtn" class="primary">Attach to Job</button>
-    </div>
-  </div>
-</div>
-
-<!-- Create RAMS Modal (AI-drafted Method Statement + risk assessment) -->
-<div id="raGenerateModal" class="modal-overlay" hidden>
-  <div class="modal">
-    <div class="job-detail-header">
-      <h2>Create RAMS</h2>
-      <button type="button" id="raGenerateModalCloseBtn" class="link-btn">Close</button>
-    </div>
-    <p class="hint">Fill in what you know about the job — Claude reads it, plus the existing hazard library, and drafts a full, site-specific RAMS (Method Statement + risk assessment) for you to review before it goes anywhere near a job.</p>
-    <form id="raGenerateForm" class="detail-form">
-      <label>Client<input type="text" id="raGenClient" list="raGenClientList" required></label>
-      <datalist id="raGenClientList"></datalist>
-      <label>Job Number <span class="hint">(optional)</span><input type="text" id="raGenJobNumber"></label>
-      <label>Job Address<textarea id="raGenLocation" rows="2" required></textarea></label>
-      <label>Task / Description of Work<textarea id="raGenTask" rows="4" required placeholder="e.g. Jetwashing and shrubbery trimming in a secure garden area at a mental health unit"></textarea></label>
-      <label>Start Date<input type="date" id="raGenStartDate" required></label>
-      <label>Lads Working On It</label>
-      <div class="assign-team-checklist" id="raGenEmployeeChecklist"></div>
-      <label>Supervisor <span class="hint">(pick from those ticked above)</span>
-        <select id="raGenSupervisor"><option value="">—</option></select>
-      </label>
-      <label>Contractor/Driver <span class="hint">(optional)</span><input type="text" id="raGenContractorDriver"></label>
-      <label>Site Contact <span class="hint">(optional)</span><input type="text" id="raGenSiteContact"></label>
-      <label>Site Contact Tel <span class="hint">(optional)</span><input type="text" id="raGenSiteContactTel"></label>
-      <div class="modal-actions">
-        <button type="button" id="raGenerateCancelBtn">Cancel</button>
-        <button type="submit" id="raGenerateSubmitBtn" class="primary">Generate RAMS</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Generated RAMS Preview Modal -->
-<div id="raGeneratedModal" class="modal-overlay" hidden>
-  <div class="modal modal-wide">
-    <div class="job-detail-header">
-      <h2 id="raGeneratedModalTitle">RAMS</h2>
-      <button type="button" id="raGeneratedModalCloseBtn" class="link-btn">Close</button>
-    </div>
-    <iframe id="raGeneratedPreviewFrame" class="ra-generated-preview-frame" title="RAMS preview"></iframe>
-    <div class="modal-actions ra-attach-row">
-      <a id="raGenDownloadLink" class="ra-download-btn" href="#">Download</a>
-      <select id="raGenAttachJobSelect"><option value="">Attach to job…</option></select>
-      <button type="button" id="raGenAttachBtn" class="primary">Attach to Job</button>
-      <button type="button" id="raGenDeleteBtn" class="danger" hidden>Delete</button>
     </div>
   </div>
 </div>

@@ -5,7 +5,6 @@ const state = {
   riskAssessments: [],
   raLibrary: [],
   raCustom: [],
-  raGenerated: [],
   calendarEvents: [],
   calendarColors: [],
   userColors: [],
@@ -870,14 +869,13 @@ document.addEventListener('click', (e) => {
 // ---------- Bootstrap ----------
 
 async function bootstrap() {
-  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, raGenerated, calendarEvents, priceListItems, subbies, myAssignments, allAssignments] = await Promise.all([
+  const [jobs, employees, statuses, riskAssessmentsList, raLibrary, raCustom, calendarEvents, priceListItems, subbies, myAssignments, allAssignments] = await Promise.all([
     api('/api/jobs'),
     api('/api/employees'),
     api('/api/statuses'),
     api('/api/risk-assessments'),
     api('/api/risk-assessments/library'),
     api('/api/risk-assessments/custom'),
-    api('/api/risk-assessments/generated'),
     api('/api/calendar'),
     api('/api/price-list'),
     api('/api/subbies'),
@@ -890,7 +888,6 @@ async function bootstrap() {
   state.riskAssessments = riskAssessmentsList;
   state.raLibrary = raLibrary;
   state.raCustom = raCustom;
-  state.raGenerated = raGenerated;
   state.calendarEvents = calendarEvents;
   state.priceListItems = priceListItems;
   state.subbies = subbies;
@@ -5331,10 +5328,6 @@ function renderRiskAssessments() {
   const raLibrary = state.raLibrary.filter((ra) => !term || ra.name.toLowerCase().includes(term));
   const riskAssessments = state.riskAssessments.filter((ra) => !term || ra.title.toLowerCase().includes(term));
   const raCustom = state.raCustom.filter((ra) => !term || ra.title.toLowerCase().includes(term));
-  const raGenerated = state.raGenerated.filter((r) => !term
-    || r.client.toLowerCase().includes(term)
-    || r.projectReference.toLowerCase().includes(term)
-    || (r.location || '').toLowerCase().includes(term));
   const libraryCards = raLibrary.map((ra) => `
     <div class="ra-card">
       <div class="ra-card-top">
@@ -5376,36 +5369,9 @@ function renderRiskAssessments() {
       </div>
     </div>
   `);
-  const generatedCards = raGenerated.map((r) => `
-    <div class="ra-card">
-      <div class="ra-card-top">
-        <h3>${escapeHtml(r.client)} — ${escapeHtml(r.projectReference)}</h3>
-        <span class="risk-badge">AI Generated</span>
-      </div>
-      <p class="ra-card-summary">${escapeHtml(r.location)} · Start ${escapeHtml(r.startDate)}${r.createdBy ? ' · Drafted by ' + escapeHtml(r.createdBy) : ''}</p>
-      <div class="ra-card-actions">
-        <button type="button" class="ra-generated-view-btn" data-ra="${r.id}">View &amp; Attach to Job</button>
-        <a href="/api/risk-assessments/generated/${r.id}/download" class="ra-download-btn">Download</a>
-        ${isAdmin() ? `<button type="button" class="danger ra-generated-delete-btn" data-ra="${r.id}">Delete</button>` : ''}
-      </div>
-    </div>
-  `);
-  const allCards = generatedCards.join('') + libraryCards.join('') + customCards.join('') + genericCards.join('');
-  grid.innerHTML = allCards || `<p class="empty-state">No RAMS match your search.</p>`;
+  const allCards = libraryCards.join('') + customCards.join('') + genericCards.join('');
+  grid.innerHTML = allCards || `<p class="empty-state">No risk assessments match your search.</p>`;
   grid.querySelectorAll('.ra-view-btn').forEach((btn) => btn.addEventListener('click', () => openRaModal(btn.dataset.kind, btn.dataset.ra)));
-  grid.querySelectorAll('.ra-generated-view-btn').forEach((btn) => btn.addEventListener('click', () => openRaGeneratedModal(btn.dataset.ra)));
-  grid.querySelectorAll('.ra-generated-delete-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this generated RAMS? This cannot be undone.')) return;
-      try {
-        await api(`/api/risk-assessments/generated/${btn.dataset.ra}`, { method: 'DELETE' });
-        state.raGenerated = await api('/api/risk-assessments/generated');
-        renderRiskAssessments();
-      } catch (err) {
-        toast(err.message, 'error');
-      }
-    });
-  });
   grid.querySelectorAll('.ra-library-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this saved risk assessment? This cannot be undone.')) return;
@@ -5609,136 +5575,6 @@ document.getElementById('raAttachBtn').addEventListener('click', async () => {
     closeRaModal();
   } catch (err) {
     toast(err.message, 'error');
-  }
-});
-
-// ---------- Create RAMS (AI-drafted Method Statement + risk assessment) ----------
-
-function populateJobAttachSelect(select) {
-  select.innerHTML = '<option value="">Attach to job…</option>';
-  state.jobs
-    .filter((j) => !j.completedAt)
-    .sort((a, b) => a.client.localeCompare(b.client))
-    .forEach((j) => {
-      const o = document.createElement('option');
-      o.value = j.id;
-      o.textContent = `${j.client}${j.location ? ' — ' + j.location : ''}${j.jobReference ? ' (' + j.jobReference + ')' : ''}`;
-      select.appendChild(o);
-    });
-}
-
-let currentGeneratedRamsId = null;
-
-function openRaGeneratedModal(id) {
-  const rams = state.raGenerated.find((r) => r.id === id);
-  if (!rams) return;
-  currentGeneratedRamsId = id;
-  document.getElementById('raGeneratedModalTitle').textContent = `${rams.client} — ${rams.projectReference}`;
-  document.getElementById('raGeneratedPreviewFrame').src = `/api/risk-assessments/generated/${id}/preview`;
-  document.getElementById('raGenDownloadLink').href = `/api/risk-assessments/generated/${id}/download`;
-  populateJobAttachSelect(document.getElementById('raGenAttachJobSelect'));
-  document.getElementById('raGenDeleteBtn').hidden = !isAdmin();
-  document.getElementById('raGeneratedModal').hidden = false;
-}
-
-function closeRaGeneratedModal() {
-  document.getElementById('raGeneratedModal').hidden = true;
-  document.getElementById('raGeneratedPreviewFrame').src = 'about:blank';
-  currentGeneratedRamsId = null;
-}
-
-document.getElementById('raGeneratedModalCloseBtn').addEventListener('click', closeRaGeneratedModal);
-
-document.getElementById('raGenAttachBtn').addEventListener('click', async () => {
-  const jobId = document.getElementById('raGenAttachJobSelect').value;
-  if (!jobId) { toast('Choose a job to attach this RAMS to.', 'error'); return; }
-  try {
-    await api(`/api/jobs/${jobId}/risk-assessments/generated/${currentGeneratedRamsId}/attach`, { method: 'POST' });
-    toast('Attached — you\'ll find it in that job\'s RAMS documents.', 'success');
-    closeRaGeneratedModal();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
-document.getElementById('raGenDeleteBtn').addEventListener('click', async () => {
-  if (!confirm('Delete this generated RAMS? This cannot be undone.')) return;
-  try {
-    await api(`/api/risk-assessments/generated/${currentGeneratedRamsId}`, { method: 'DELETE' });
-    state.raGenerated = await api('/api/risk-assessments/generated');
-    renderRiskAssessments();
-    closeRaGeneratedModal();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
-function renderRaGenEmployeeChecklist() {
-  document.getElementById('raGenEmployeeChecklist').innerHTML = state.employees.map((e) => `
-    <label class="assign-team-checkbox-item">
-      <input type="checkbox" value="${escapeHtml(e.name)}">
-      ${escapeHtml(e.name)}
-    </label>`).join('');
-  updateRaGenSupervisorOptions();
-}
-
-function updateRaGenSupervisorOptions() {
-  const ticked = Array.from(document.querySelectorAll('#raGenEmployeeChecklist input:checked')).map((el) => el.value);
-  const select = document.getElementById('raGenSupervisor');
-  const current = select.value;
-  select.innerHTML = '<option value="">—</option>' + ticked.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
-  if (ticked.includes(current)) select.value = current;
-}
-
-document.getElementById('raGenEmployeeChecklist').addEventListener('change', updateRaGenSupervisorOptions);
-
-function openRaGenerateModal() {
-  document.getElementById('raGenerateForm').reset();
-  document.getElementById('raGenClientList').innerHTML = [...new Set(state.jobs.map((j) => j.client).filter(Boolean))]
-    .map((c) => `<option value="${escapeHtml(c)}"></option>`).join('');
-  renderRaGenEmployeeChecklist();
-  document.getElementById('raGenerateModal').hidden = false;
-}
-
-function closeRaGenerateModal() {
-  document.getElementById('raGenerateModal').hidden = true;
-}
-
-document.getElementById('raGenerateOpenBtn').addEventListener('click', openRaGenerateModal);
-document.getElementById('raGenerateModalCloseBtn').addEventListener('click', closeRaGenerateModal);
-document.getElementById('raGenerateCancelBtn').addEventListener('click', closeRaGenerateModal);
-
-document.getElementById('raGenerateForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const employees = Array.from(document.querySelectorAll('#raGenEmployeeChecklist input:checked')).map((el) => el.value);
-  const payload = {
-    client: document.getElementById('raGenClient').value.trim(),
-    jobNumber: document.getElementById('raGenJobNumber').value.trim(),
-    location: document.getElementById('raGenLocation').value.trim(),
-    task: document.getElementById('raGenTask').value.trim(),
-    startDate: document.getElementById('raGenStartDate').value,
-    employees,
-    supervisorName: document.getElementById('raGenSupervisor').value,
-    contractorDriver: document.getElementById('raGenContractorDriver').value.trim(),
-    siteContact: document.getElementById('raGenSiteContact').value.trim(),
-    siteContactTel: document.getElementById('raGenSiteContactTel').value.trim(),
-  };
-  const btn = document.getElementById('raGenerateSubmitBtn');
-  const originalLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Generating… this can take up to a minute';
-  try {
-    const rams = await api('/api/risk-assessments/generated', { method: 'POST', body: JSON.stringify(payload) });
-    state.raGenerated = await api('/api/risk-assessments/generated');
-    renderRiskAssessments();
-    closeRaGenerateModal();
-    toast('RAMS drafted — review it before attaching to a job.', 'success');
-    openRaGeneratedModal(rams.id);
-  } catch (err) {
-    toast(err.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalLabel;
   }
 });
 

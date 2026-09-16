@@ -386,43 +386,6 @@ create table if not exists custom_risk_assessments (
   updated_at timestamptz not null default now()
 );
 
--- AI-generated RAMS (full Method Statement + hazard risk assessment in one document) - see
--- ramsGenerator.js and the "Create RAMS" flow in the RAMS tab. `hazards` holds the whole
--- picked/tailored hazard list as one jsonb array (same per-hazard shape as
--- custom_risk_assessments' columns, just collapsed into one array since a generated RAMS has
--- several hazards, not one row per hazard). `employees` is a plain array of names, not user
--- IDs, so a frozen document still reads correctly even if that person later leaves.
-create table if not exists generated_rams (
-  id uuid primary key,
-  client text not null,
-  job_number text,
-  location text not null,
-  task text not null,
-  start_date text not null,
-  site_contact text,
-  site_contact_tel text,
-  employees jsonb not null default '[]'::jsonb,
-  supervisor_name text,
-  contractor_driver text,
-  project_reference text not null,
-  description_of_work text not null,
-  access_equipment_description text,
-  access_requirements text,
-  other_plant_or_tools text,
-  key_hazards_summary text,
-  training_competencies jsonb not null default '{}'::jsonb,
-  required_ppe jsonb not null default '[]'::jsonb,
-  fall_protection_measures text,
-  work_area_protection text,
-  first_aid_location text,
-  nearest_ae text,
-  sequence_of_operations jsonb not null default '[]'::jsonb,
-  hazards jsonb not null default '[]'::jsonb,
-  created_by text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
 -- Personal diary: private journal entries, multiple per day, never shown to anyone but
 -- the person who wrote them (not even admins) - the server always scopes reads/writes to
 -- req.user.id, same trust boundary as `is_private` calendar_events but with no exception.
@@ -529,7 +492,6 @@ create index if not exists calendar_events_date_idx on calendar_events (date);
 create index if not exists price_list_items_kind_idx on price_list_items (kind);
 create index if not exists saved_risk_assessments_name_idx on saved_risk_assessments (name);
 create index if not exists custom_risk_assessments_title_idx on custom_risk_assessments (title);
-create index if not exists generated_rams_client_idx on generated_rams (client);
 create index if not exists hires_job_id_idx on hires (job_id);
 create index if not exists hires_hire_date_idx on hires (hire_date);
 
@@ -625,7 +587,6 @@ alter table price_list_items enable row level security;
 alter table saved_risk_assessments enable row level security;
 alter table cad_drawings enable row level security;
 alter table custom_risk_assessments enable row level security;
-alter table generated_rams enable row level security;
 alter table hires enable row level security;
 alter table vehicle_hires enable row level security;
 alter table job_assignment_rams enable row level security;
