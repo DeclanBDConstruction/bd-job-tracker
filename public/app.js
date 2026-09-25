@@ -2640,14 +2640,15 @@ function costingLineRow(line) {
 // as a real <tr> in the same table fixes that structurally: the browser sizes every column
 // (header, data rows, this row) from the same table, so they're guaranteed to align.
 function costingNewLineRowHtml(idPrefix) {
-  // Unit Price/Markup £/Total are computed only once the line's actually saved (same as
-  // every real costingLineRow) - left visibly blank they looked like missing/broken boxes
-  // rather than "not calculated yet", so show a placeholder dash instead.
+  // Amounts (comma-separated, summed) covers several invoices/costs making up one line, but
+  // for the common case of just one price, typing it straight into a Unit Price box is more
+  // direct - see wireAddLine, which uses this instead of Amounts when it's filled in.
+  // Markup £/Total stay placeholders since they're only ever computed off a saved line.
   return `
     <tr class="costing-new-line-row">
       <td><input type="text" id="costingNew${idPrefix}Desc" placeholder="Description"></td>
       <td><input type="text" id="costingNew${idPrefix}Amounts" placeholder="e.g. 120, 45.50"></td>
-      <td class="costing-new-line-computed">—</td>
+      <td><input type="number" id="costingNew${idPrefix}UnitPrice" placeholder="e.g. 150.00" min="0" step="0.01"></td>
       <td><input type="number" id="costingNew${idPrefix}Markup" value="30" min="0" step="1"></td>
       <td class="costing-new-line-computed">—</td>
       <td class="costing-new-line-computed">—</td>
@@ -2773,19 +2774,27 @@ function renderJobCostingSection(costing) {
   wireLineButtons('costingSubbyBody');
   wireLineButtons('costingMaterialsBody');
 
-  function wireAddLine(section, descId, amountsId, markupId, btnId) {
+  function wireAddLine(section, descId, amountsId, unitPriceId, markupId, btnId) {
     document.getElementById(btnId).addEventListener('click', async () => {
       const descInput = document.getElementById(descId);
       const amountsInput = document.getElementById(amountsId);
+      const unitPriceInput = document.getElementById(unitPriceId);
       const markupInput = document.getElementById(markupId);
       if (!descInput.value.trim()) { toast('Enter a description.', 'error'); return; }
+      // A direct Unit Price entry is just a shortcut for "one amount" - the API only ever
+      // stores/sums `amounts`, so a filled Unit Price box takes over as that single amount
+      // (Amounts stays available for the multiple-invoices-summed case, ignored if Unit
+      // Price is filled in rather than trying to combine both).
+      const amounts = unitPriceInput.value.trim()
+        ? [unitPriceInput.value.trim()]
+        : amountsInput.value.split(',').map((s) => s.trim()).filter(Boolean);
       try {
         await api(`/api/jobs/${currentDetailJobId}/costing/lines`, {
           method: 'POST',
           body: JSON.stringify({
             section,
             description: descInput.value,
-            amounts: amountsInput.value.split(',').map((s) => s.trim()).filter(Boolean),
+            amounts,
             markupPercent: markupInput.value,
           }),
         });
@@ -2797,8 +2806,8 @@ function renderJobCostingSection(costing) {
       }
     });
   }
-  wireAddLine('subby', 'costingNewSubbyDesc', 'costingNewSubbyAmounts', 'costingNewSubbyMarkup', 'costingAddSubbyBtn');
-  wireAddLine('materials', 'costingNewMaterialDesc', 'costingNewMaterialAmounts', 'costingNewMaterialMarkup', 'costingAddMaterialBtn');
+  wireAddLine('subby', 'costingNewSubbyDesc', 'costingNewSubbyAmounts', 'costingNewSubbyUnitPrice', 'costingNewSubbyMarkup', 'costingAddSubbyBtn');
+  wireAddLine('materials', 'costingNewMaterialDesc', 'costingNewMaterialAmounts', 'costingNewMaterialUnitPrice', 'costingNewMaterialMarkup', 'costingAddMaterialBtn');
 }
 
 // ---------- Time Log viewer (admin/surveyor, read-only) ----------
