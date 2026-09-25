@@ -1580,6 +1580,20 @@ function renderVariationsSection(variations) {
   });
 }
 
+// Generated RAMS/risk-assessment snapshots are always HTML - opening those via a plain
+// target="_blank" link is unreliable on installed/standalone PWAs (see the Document Preview
+// Modal comment in index.html), so those open in-app instead; every other file type (PDFs,
+// photos, drawings, uploaded office docs) keeps the normal new-tab link, which works fine.
+function isHtmlDocName(name) {
+  return /\.html?$/i.test(name || '');
+}
+
+function docLinkHtml(url, name) {
+  return isHtmlDocName(name)
+    ? `<button type="button" class="link-btn doc-preview-btn" data-url="${url}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`
+    : `<a href="${url}" target="_blank">${escapeHtml(name)}</a>`;
+}
+
 function renderDocumentSection(category, docs) {
   const container = document.getElementById(`jobDetailSection-${category}`);
   // Superseded copies (a manual "this is an old version" flag - see doc-supersede-btn below)
@@ -1587,7 +1601,7 @@ function renderDocumentSection(category, docs) {
   const sorted = [...(docs || [])].sort((a, b) => (a.superseded === b.superseded ? 0 : a.superseded ? 1 : -1));
   const items = sorted.map((d) => `
     <li class="doc-list-item${d.superseded ? ' doc-superseded' : ''}">
-      <a href="/api/jobs/${currentDetailJobId}/documents/${category}/${d.id}/file" target="_blank">${escapeHtml(d.originalName)}</a>
+      ${docLinkHtml(`/api/jobs/${currentDetailJobId}/documents/${category}/${d.id}/file`, d.originalName)}
       <span class="doc-meta">${formatBytes(d.size)} · ${new Date(d.uploadedAt).toLocaleDateString('en-GB')}${d.superseded ? ' · Old version' : ''}</span>
       <button type="button" class="link-btn doc-supersede-btn" data-doc="${d.id}" data-superseded="${d.superseded}">${d.superseded ? 'Restore' : 'Mark as old version'}</button>
       <button type="button" class="danger doc-delete-btn" data-doc="${d.id}">Delete</button>
@@ -1598,6 +1612,9 @@ function renderDocumentSection(category, docs) {
     <ul class="doc-list">${items}</ul>
     ${!docs || !docs.length ? '<p class="empty-state">No files uploaded yet.</p>' : ''}
   `;
+  container.querySelectorAll('.doc-preview-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openDocPreview(btn.dataset.url, btn.dataset.name));
+  });
   container.querySelector('.doc-upload-input').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2623,14 +2640,17 @@ function costingLineRow(line) {
 // as a real <tr> in the same table fixes that structurally: the browser sizes every column
 // (header, data rows, this row) from the same table, so they're guaranteed to align.
 function costingNewLineRowHtml(idPrefix) {
+  // Unit Price/Markup £/Total are computed only once the line's actually saved (same as
+  // every real costingLineRow) - left visibly blank they looked like missing/broken boxes
+  // rather than "not calculated yet", so show a placeholder dash instead.
   return `
     <tr class="costing-new-line-row">
       <td><input type="text" id="costingNew${idPrefix}Desc" placeholder="Description"></td>
       <td><input type="text" id="costingNew${idPrefix}Amounts" placeholder="e.g. 120, 45.50"></td>
-      <td></td>
+      <td class="costing-new-line-computed">—</td>
       <td><input type="number" id="costingNew${idPrefix}Markup" value="30" min="0" step="1"></td>
-      <td></td>
-      <td></td>
+      <td class="costing-new-line-computed">—</td>
+      <td class="costing-new-line-computed">—</td>
       <td class="row-actions"><button type="button" id="costingAdd${idPrefix}Btn" class="primary">+ Add Line</button></td>
     </tr>
   `;
@@ -2902,6 +2922,36 @@ document.getElementById('ramsAttachToJobBtn').addEventListener('click', async ()
   } catch (err) {
     toast(err.message, 'error');
   }
+});
+
+// ---------- Document Preview Modal ----------
+// Fetches an HTML document (a generated RAMS/risk-assessment snapshot) and displays it in an
+// iframe inside the app, rather than a plain target="_blank" link - opening an inline HTML
+// response in a new tab is unreliable on installed/standalone PWAs (see the modal's comment
+// in index.html), which is what was making these show up as raw, unrendered source.
+async function openDocPreview(url, name) {
+  const modal = document.getElementById('docPreviewModal');
+  const frame = document.getElementById('docPreviewFrame');
+  const emptyState = document.getElementById('docPreviewEmptyState');
+  document.getElementById('docPreviewModalTitle').textContent = name || 'Document';
+  frame.hidden = false;
+  frame.srcdoc = '';
+  emptyState.hidden = true;
+  modal.hidden = false;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Could not load that document.');
+    frame.srcdoc = await res.text();
+  } catch (err) {
+    frame.hidden = true;
+    emptyState.hidden = false;
+    emptyState.textContent = err.message;
+  }
+}
+
+document.getElementById('docPreviewModalCloseBtn').addEventListener('click', () => {
+  document.getElementById('docPreviewModal').hidden = true;
+  document.getElementById('docPreviewFrame').srcdoc = '';
 });
 
 // ---------- Hire ----------
@@ -4415,8 +4465,11 @@ function renderAssignmentRamsStatus() {
   } else if (jobDocs.length) {
     box.innerHTML = `
       <span class="status-pill complete">RAMS already on file for this job</span>
-      ${jobDocs.map((d) => `<a class="link-btn" href="/api/job-assignments/${currentAssignmentId}/rams-status/${d.id}/file" target="_blank" rel="noopener">View ${escapeHtml(d.originalName)}</a>`).join('')}
+      ${jobDocs.map((d) => `<button type="button" class="link-btn doc-preview-btn" data-url="/api/job-assignments/${currentAssignmentId}/rams-status/${d.id}/file" data-name="${escapeHtml(d.originalName)}">View ${escapeHtml(d.originalName)}</button>`).join('')}
     `;
+    box.querySelectorAll('.doc-preview-btn').forEach((btn2) => {
+      btn2.addEventListener('click', () => openDocPreview(btn2.dataset.url, btn2.dataset.name));
+    });
     btn.hidden = true; // nothing for this operative to fill in - the links above cover it
   } else {
     box.innerHTML = `<span class="status-pill in-progress">RAMS required before Mark Arrived</span>`;

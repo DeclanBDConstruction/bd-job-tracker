@@ -1118,6 +1118,23 @@
   </div>
 </div>
 
+<!-- Document Preview Modal: HTML documents (generated RAMS/risk assessment snapshots) open
+     here instead of a new browser tab - opening an inline HTML response via target="_blank"
+     is unreliable on installed/standalone PWAs (iOS/Android home-screen mode has known issues
+     rendering a plain new-tab navigation, sometimes falling back to showing raw source), so
+     this fetches the document and displays it in a sandboxed iframe within the app itself,
+     which always works since it never leaves the app's own already-working webview. -->
+<div id="docPreviewModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2 id="docPreviewModalTitle">Document</h2>
+      <button type="button" id="docPreviewModalCloseBtn" class="link-btn">Close</button>
+    </div>
+    <iframe id="docPreviewFrame" class="doc-preview-frame" title="Document preview" sandbox=""></iframe>
+    <p class="empty-state" id="docPreviewEmptyState" hidden></p>
+  </div>
+</div>
+
 <!-- Risk Assessment Detail Modal -->
 <div id="raModal" class="modal-overlay" hidden>
   <div class="modal modal-wide">
