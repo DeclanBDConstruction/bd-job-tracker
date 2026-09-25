@@ -6,6 +6,13 @@ create table if not exists employees (
   name text not null
 );
 
+-- Matches the app's own duplicate check (findEmployeeByName in db.js compares
+-- trimmed+lowercased names) - stops two near-simultaneous requests (e.g. two job-sheet
+-- imports naming a new employee at once) from both passing that check and creating two
+-- separate employee records for the same person, which would silently split their figures
+-- across two IDs on the Yearly/Client Reports.
+create unique index if not exists employees_name_unique_idx on employees (lower(trim(name)));
+
 create table if not exists users (
   id uuid primary key,
   name text not null,

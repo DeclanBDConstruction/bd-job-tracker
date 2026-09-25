@@ -844,7 +844,9 @@
       <div id="fAssignTeamSection" class="assign-team-section" hidden>
         <h3>Assign the Team</h3>
         <p class="hint">Who's assigned to physically carry out this job — any employee, not just Installation/Manufacturing Operatives — separate from who won it above. Tick everyone going on it; they'll all get the same task/dates below. Operatives see their own assignments on My Calendar and Home, and upload photos / mark their own assignment done from there.</p>
+        <input type="text" id="fAssignTeamSearch" class="assign-team-search" placeholder="Search employees…">
         <div class="assign-team-checklist" id="fAssignTeamChecklist"></div>
+        <p class="empty-state" id="fAssignTeamNoResults" hidden>No employees match that search.</p>
         <p class="hint" id="fAssignTeamExistingNote" hidden>Already-assigned lads are ticked and locked here — manage or remove them from this job's Team tab instead.</p>
         <div class="assign-team-shared-fields">
           <label>Task<input type="text" id="fAssignTask" placeholder="e.g. Install signage"></label>

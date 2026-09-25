@@ -109,6 +109,16 @@ function genId() {
   return crypto.randomUUID();
 }
 
+// "Today" as the office actually understands it (UK local date), not the server's own
+// timezone (Render/Node default to UTC). During British Summer Time (UTC+1) the two disagree
+// for the first hour of every UK day - e.g. a job's Start Date of today wouldn't count as
+// "started" (computeProgress), or a clock-in just after UK midnight could land against
+// yesterday's time log, until the UTC date rolled over an hour later. Used everywhere "today"
+// means the day on the office calendar, not a server-clock instant.
+function todayUkDateStr() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+}
+
 function check(error) {
   if (!error) return;
   // Postgres constraint violations carry a stable `code` regardless of wording - rewritten
@@ -221,6 +231,14 @@ async function getOrCreateEmployee(name) {
   const existing = await findEmployeeByName(clean);
   if (existing) return existing;
   const { data, error } = await supabase.from('employees').insert({ id: genId(), name: clean }).select().single();
+  if (error && error.code === '23505') {
+    // Someone else's request (e.g. another job-sheet import) created this same employee in
+    // the gap between the check above and this insert - employees_name_unique_idx (see
+    // scripts/supabase-schema.sql) is what catches that race. That's fine, not a failure:
+    // use the one that won instead of erroring out the job save/import that triggered this.
+    const winner = await findEmployeeByName(clean);
+    if (winner) return winner;
+  }
   check(error);
   return data;
 }
@@ -260,7 +278,7 @@ async function deleteEmployee(id) {
 // because a date has passed or Status changed.
 function computeProgress(row) {
   if (row.completed_at) return 'completed';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayUkDateStr();
   if (row.start_date && row.start_date <= today) return 'active';
   return 'not-started';
 }
@@ -447,10 +465,23 @@ async function completeJob(id, user) {
     }
   }
   const { data, error } = await supabase.from('jobs')
-    .update({ completed_at: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() })
+    .update({ completed_at: todayUkDateStr(), updated_at: new Date().toISOString() })
     .eq('id', id).select().maybeSingle();
   check(error);
   if (!data) throw new Error('Job not found');
+
+  // Closing the job down means there's no more work left on it for anyone assigned - carry
+  // that over to their own assignments too, so it drops off their Current Assignments into
+  // Past Assignments rather than sitting there looking unfinished forever (an operative
+  // shouldn't have to separately remember to mark their own assignment done on a job an
+  // admin/surveyor has already closed out). Unlike the operative's own mark-done
+  // (setJobAssignmentCompleted), this doesn't require today's time log to show arrived -
+  // the job's being closed regardless of whether anyone's on site today.
+  const { error: assignErr } = await supabase.from('job_assignments')
+    .update({ completed: true, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('job_id', id).eq('completed', false);
+  check(assignErr);
+
   return getJob(id);
 }
 
@@ -768,7 +799,7 @@ async function setJobAssignmentCompleted(id, completed, user) {
 // they're given.
 
 function timeLogDateStr() {
-  return new Date().toISOString().slice(0, 10);
+  return todayUkDateStr();
 }
 
 function rowToTimeLog(row) {
@@ -802,6 +833,17 @@ async function listTimeLogs(assignmentId) {
     .eq('assignment_id', assignmentId).order('log_date', { ascending: false });
   check(error);
   return data.map(rowToTimeLog);
+}
+
+// Whether this assignment has ever been marked arrived, on ANY day - not just today. The RAMS
+// lock (see createJobAssignmentRams) is meant to stay locked for the rest of a multi-day
+// assignment once work has actually started, not just for the day they arrived; checking only
+// today's log let it unlock itself again on day 2+ before that day's own clock-in.
+async function hasEverArrived(assignmentId) {
+  const { data, error } = await supabase.from('assignment_time_logs').select('id')
+    .eq('assignment_id', assignmentId).not('arrived_at', 'is', null).limit(1);
+  check(error);
+  return data.length > 0;
 }
 
 async function clockIn(assignmentId) {
@@ -943,8 +985,7 @@ async function createJobAssignmentRams(assignmentId, input) {
 
   const existing = await getJobAssignmentRams(assignmentId);
   if (existing) {
-    const log = await getTodayTimeLog(assignmentId);
-    if (log && log.arrivedAt) throw new Error("RAMS is locked once you've marked yourself arrived - ask an admin to make changes");
+    if (await hasEverArrived(assignmentId)) throw new Error("RAMS is locked once you've marked yourself arrived - ask an admin to make changes");
     const { data, error } = await supabase.from('job_assignment_rams')
       .update({
         method_statement: methodStatement,
@@ -1328,7 +1369,7 @@ function addDaysToDateString(dateStr, days) {
 const EXPIRY_SOON_DAYS = 30;
 function expiryStatus(expiryDate) {
   if (!expiryDate) return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayUkDateStr();
   if (expiryDate < today) return 'expired';
   if (expiryDate <= addDaysToDateString(today, EXPIRY_SOON_DAYS)) return 'expiring-soon';
   return 'ok';
@@ -1547,9 +1588,13 @@ function validateCostingLineInput(input) {
   if (!JOB_COSTING_SECTIONS.includes(input.section)) throw new Error('Invalid costing section');
   const description = (input.description || '').trim();
   if (!description) throw new Error('A description is required');
+  // Negative amounts are kept (not rejected) - a credit note from a subby/supplier is a real
+  // cost line, same "-" -for-a-deduction convention already used by Job Variations. Only
+  // non-numeric entries are dropped. rowToCostingLine already reads amounts this same way.
   const amounts = (Array.isArray(input.amounts) ? input.amounts : [])
-    .map(Number).filter((n) => !isNaN(n) && n >= 0);
+    .map(Number).filter((n) => !isNaN(n));
   const markupPercent = Number(input.markupPercent);
+  if (!isNaN(markupPercent) && markupPercent < 0) throw new Error('Markup % cannot be negative');
   return { description, amounts, markupPercent: isNaN(markupPercent) ? 30 : markupPercent };
 }
 
@@ -1938,7 +1983,7 @@ function hireDueBackDate(hireDate, durationValue, durationUnit) {
 
 function hireStatus(dueBack, returnedAt) {
   if (returnedAt) return 'returned';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayUkDateStr();
   if (dueBack < today) return 'overdue';
   if (dueBack <= addDaysToDateString(today, HIRE_DUE_SOON_DAYS)) return 'due-soon';
   return 'on-hire';
@@ -2019,7 +2064,7 @@ async function updateHire(id, input) {
 
 async function markHireReturned(id) {
   const { data, error } = await supabase.from('hires')
-    .update({ returned_at: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() })
+    .update({ returned_at: todayUkDateStr(), updated_at: new Date().toISOString() })
     .eq('id', id).select().maybeSingle();
   check(error);
   if (!data) throw new Error('Hire not found');
@@ -2103,7 +2148,7 @@ async function markVehicleHireOffHired(id, signedOut, comments) {
   const { data, error } = await supabase.from('vehicle_hires')
     .update({
       signed_out: (signedOut || '').trim() || null,
-      off_hire_date: new Date().toISOString().slice(0, 10),
+      off_hire_date: todayUkDateStr(),
       damage_comments: (comments || '').trim() || null,
       updated_at: new Date().toISOString(),
     })
@@ -2392,7 +2437,7 @@ function rowToDiaryEntry(row) {
 // app, so "at the end of the day" really means "next time you open the tab on/after the
 // next day". Same lazy-at-read-time approach as hire due-back status below.
 async function rolloverDiaryEntries(user) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayUkDateStr();
   const { data: stale, error } = await supabase.from('diary_entries').select('id, completed')
     .eq('user_id', user.id).lt('entry_date', today);
   check(error);
@@ -2510,7 +2555,7 @@ function rowToMiniGameScore(row) {
 }
 
 function todayDateStr() {
-  return new Date().toISOString().slice(0, 10);
+  return todayUkDateStr();
 }
 
 async function getMiniGameToday(user) {

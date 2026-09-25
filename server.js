@@ -3,6 +3,7 @@ const multer = require('multer');
 const archiver = require('archiver');
 const path = require('path');
 const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const importer = require('./import');
@@ -23,6 +24,11 @@ app.set('trust proxy', 1);
 // CSP is left off deliberately: the app relies on inline style attributes (e.g. calendar
 // swatch colours) that helmet's default policy would otherwise block.
 app.use(helmet({ contentSecurityPolicy: false }));
+
+// Gzips every response (the API's JSON, and app.js/style.css since nothing here is
+// pre-minified or bundled) - meaningful over the mobile data connections this app is used
+// on (see README's "on site, on mobile data" use case), for close to zero cost.
+app.use(compression());
 
 function allowlistFilter(allowedRe, expectedLabel) {
   return (req, file, cb) => {
@@ -98,6 +104,24 @@ function storagePath(jobId, category, storedName) {
   return `${jobId}/${category}/${storedName}`;
 }
 
+// Supabase Storage doesn't always hand back a usable Content-Type on download (the Blob's
+// `.type` can come back empty depending on how the object was stored), and when that falls
+// through to a wrong default - e.g. an HTML RAMS snapshot served as application/pdf - browsers
+// render it as raw source text instead of a document. The file's own extension is a much more
+// reliable source of truth than the storage round-trip, so it takes priority; `data.type` is
+// only a fallback for extensions this map doesn't know about.
+const EXT_MIME_TYPES = {
+  html: 'text/html', htm: 'text/html',
+  pdf: 'application/pdf',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+};
+
+function mimeForFilename(name, fallback) {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  return EXT_MIME_TYPES[ext] || fallback || 'application/octet-stream';
+}
+
 // Saved risk assessments (the upload-once, attach-to-any-job library) live under this
 // fixed prefix in the same bucket - `_library` can never collide with a job id (job ids
 // are UUIDs).
@@ -151,10 +175,17 @@ function logDocumentUpload(user, jobRef, jobId, category, doc) {
 app.use(express.json({ limit: '2mb' }));
 // Phones (and some carrier/office networks) cache static JS/HTML far more aggressively
 // than "max-age=0" implies in practice, so people were stuck on stale nav markup/JS
-// after a deploy even after a manual refresh. no-store forces every request to fetch
-// the current file instead of trusting a cached copy.
+// after a deploy even after a manual refresh. no-store forces every request for the actual
+// app shell to fetch the current file instead of trusting a cached copy.
+// Everything else (photos, icons, the vendor QR library) doesn't change on every deploy and
+// never needs that - forcing no-store on those too meant every single page load re-downloaded
+// ~1.8MB of images/vendor JS from scratch, every time, which is a big chunk of why the app
+// felt slow (especially over mobile data on site, see README). Those get a real cache instead.
+const NO_CACHE_RE = /\.(html|js|css|json)$/i;
 app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res) => res.set('Cache-Control', 'no-store'),
+  setHeaders: (res, filePath) => {
+    res.set('Cache-Control', NO_CACHE_RE.test(filePath) ? 'no-store' : 'public, max-age=604800');
+  },
 }));
 
 function handle(fn) {
@@ -747,6 +778,7 @@ app.post('/api/jobs/:id/complete', handle(async (req, res) => {
   const job = await db.completeJob(req.params.id, req.user);
   db.logActivity(req.user, 'job.completed', `Marked job ${job.jobReference || job.client} complete`, 'job', job.id);
   broadcast('jobs');
+  broadcast('jobAssignments'); // completeJob also closes out any open assignments on this job
   res.json(job);
 }));
 
@@ -810,7 +842,7 @@ app.get('/api/jobs/:id/documents/:category/:docId/file', validateDocumentParams,
   // image viewers), same as clicking a PDF/image link anywhere else on the web. Drawings
   // keep the old "always download" behaviour, unchanged.
   if (['rams', 'photos', 'permit'].includes(req.params.category)) {
-    res.setHeader('Content-Type', data.type || 'application/pdf');
+    res.setHeader('Content-Type', mimeForFilename(doc.originalName, data.type));
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
   } else {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1155,7 +1187,7 @@ app.get('/api/job-assignments/:id/rams-status/:docId/file', handle(async (req, r
   if (error) return res.status(404).json({ error: 'File not found in storage' });
   const buffer = Buffer.from(await data.arrayBuffer());
   const filename = doc.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
-  res.setHeader('Content-Type', data.type || 'application/pdf');
+  res.setHeader('Content-Type', mimeForFilename(doc.originalName, data.type));
   res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
   res.send(buffer);
 }));
@@ -1251,6 +1283,7 @@ app.get('/api/risk-assessments/library/:id/file', handle(async (req, res) => {
     .download(libraryStoragePath(ra.storedName));
   if (error) return res.status(404).json({ error: 'File not found in storage' });
   const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Type', mimeForFilename(ra.originalName, data.type));
   res.setHeader('Content-Disposition', `attachment; filename="${ra.originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_')}"`);
   res.send(buffer);
 }));

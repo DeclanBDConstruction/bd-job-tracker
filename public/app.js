@@ -1293,12 +1293,29 @@ document.getElementById('jobCancelBtn').addEventListener('click', closeJobModal)
 function renderAssignTeamChecklist(existingAssignments) {
   const assignedUserIds = new Set((existingAssignments || []).map((a) => a.userId));
   document.getElementById('fAssignTeamChecklist').innerHTML = state.operativeUsers.map((u) => `
-    <label class="assign-team-checkbox-item">
+    <label class="assign-team-checkbox-item" data-name="${escapeHtml(u.name.toLowerCase())}">
       <input type="checkbox" value="${u.id}" ${assignedUserIds.has(u.id) ? 'checked disabled' : ''}>
       ${escapeHtml(u.name)}
     </label>`).join('');
   document.getElementById('fAssignTeamExistingNote').hidden = !assignedUserIds.size;
+  document.getElementById('fAssignTeamSearch').value = '';
+  document.getElementById('fAssignTeamNoResults').hidden = true;
+  filterAssignTeamChecklist();
 }
+
+function filterAssignTeamChecklist() {
+  const search = document.getElementById('fAssignTeamSearch').value.trim().toLowerCase();
+  const items = [...document.querySelectorAll('#fAssignTeamChecklist .assign-team-checkbox-item')];
+  let visibleCount = 0;
+  items.forEach((item) => {
+    const match = !search || item.dataset.name.includes(search);
+    item.hidden = !match;
+    if (match) visibleCount++;
+  });
+  document.getElementById('fAssignTeamNoResults').hidden = visibleCount !== 0;
+}
+
+document.getElementById('fAssignTeamSearch').addEventListener('input', filterAssignTeamChecklist);
 
 async function loadAssignTeamChecklist(id) {
   const existing = id ? await api(`/api/jobs/${id}/time-logs`).catch(() => []) : [];
@@ -1678,9 +1695,11 @@ document.getElementById('employeesSearch').addEventListener('input', (e) => {
   renderEmployees();
 });
 
-document.getElementById('addEmployeeBtn').addEventListener('click', async () => {
+document.getElementById('addEmployeeBtn').addEventListener('click', async (e) => {
   const input = document.getElementById('newEmployeeName');
   if (!input.value.trim()) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
   try {
     await api('/api/employees', { method: 'POST', body: JSON.stringify({ name: input.value }) });
     input.value = '';
@@ -1690,6 +1709,8 @@ document.getElementById('addEmployeeBtn').addEventListener('click', async () => 
     toast('Employee added.', 'success');
   } catch (err) {
     toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -2490,7 +2511,7 @@ function renderJobTeamSection(assignments) {
   container.innerHTML = addRow + list;
 
   if (isAdmin()) {
-    document.getElementById('teamAssignBtn').addEventListener('click', async () => {
+    document.getElementById('teamAssignBtn').addEventListener('click', async (e) => {
       const userSel = document.getElementById('teamAssignUser');
       const taskInput = document.getElementById('teamAssignTask');
       const startInput = document.getElementById('teamAssignStartDate');
@@ -2499,6 +2520,10 @@ function renderJobTeamSection(assignments) {
         toast('Choose an employee and fill in the task and start date.', 'error');
         return;
       }
+      // Guards against a double-click/double-tap on a slow connection firing this twice
+      // before the first request resolves and creating two identical assignments.
+      const btn = e.currentTarget;
+      btn.disabled = true;
       try {
         await api('/api/job-assignments', {
           method: 'POST',
@@ -2513,6 +2538,7 @@ function renderJobTeamSection(assignments) {
         refreshJobDetail();
       } catch (err) {
         toast(err.message, 'error');
+        btn.disabled = false;
       }
     });
   }
@@ -4213,6 +4239,12 @@ function findMyAssignment(id) {
 }
 
 let currentAssignmentTimeLog = null;
+// Whether this assignment has ever been marked arrived, on ANY day - not just today (see
+// currentAssignmentTimeLog, which is filtered to today's log for the clock-in/out buttons).
+// The RAMS lock needs the full history: on day 2+ of a multi-day assignment, today's own log
+// won't have arrivedAt set yet even though the assignment (and the RAMS record) is long since
+// locked - matches the same fix server-side in db.js's hasEverArrived.
+let currentAssignmentEverArrived = false;
 let currentAssignmentRams = null;
 let currentAssignmentRamsStatus = null;
 
@@ -4316,8 +4348,10 @@ async function refreshAssignmentTimeLog() {
   try {
     const logs = await api(`/api/job-assignments/${currentAssignmentId}/time-logs`);
     currentAssignmentTimeLog = logs.find((l) => l.logDate === todayDateStr()) || null;
+    currentAssignmentEverArrived = logs.some((l) => l.arrivedAt);
   } catch (err) {
     currentAssignmentTimeLog = null;
+    currentAssignmentEverArrived = false;
   }
   renderAssignmentTimeLog();
   renderAssignmentDetail();
@@ -4349,7 +4383,7 @@ async function refreshAssignmentRams() {
 function renderAssignmentRamsStatus() {
   const box = document.getElementById('assignmentRamsStatus');
   const btn = document.getElementById('assignmentRamsBtn');
-  const locked = !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+  const locked = currentAssignmentEverArrived;
   const jobDocs = (currentAssignmentRamsStatus && currentAssignmentRamsStatus.documents) || [];
 
   if (currentAssignmentRams) {
@@ -4726,7 +4760,7 @@ document.getElementById('ramsForm').addEventListener('input', saveRamsDraft);
 document.getElementById('assignmentRamsBtn').addEventListener('click', () => {
   const a = findMyAssignment(currentAssignmentId);
   if (!a) return;
-  ramsFormLocked = !!(currentAssignmentTimeLog && currentAssignmentTimeLog.arrivedAt);
+  ramsFormLocked = currentAssignmentEverArrived;
 
   document.getElementById('ramsHazardPicker').innerHTML = '<option value="">Add a hazard…</option>'
     + state.riskAssessments.map((ra) => `<option value="${ra.id}">${escapeHtml(ra.title)}</option>`).join('');
@@ -4968,15 +5002,15 @@ function renderHomeDashboard() {
       <button type="button" class="link-btn" id="homeGoCalendarBtn">Open Calendar</button>
     </div>
     <div class="dashboard-card">
-      <h3>Jobs Missing RAMS</h3>
+      <h3>Jobs Missing RAMS${missingRams.length ? ` (${missingRams.length})` : ''}</h3>
       ${ramsHtml}
     </div>
     <div class="dashboard-card">
-      <h3>Jobs Missing a Permit to Work</h3>
+      <h3>Jobs Missing a Permit to Work${missingPermit.length ? ` (${missingPermit.length})` : ''}</h3>
       ${permitHtml}
     </div>
     <div class="dashboard-card">
-      <h3>Subby Insurance Expiring</h3>
+      <h3>Subby Insurance Expiring${expiringSubbies.length ? ` (${expiringSubbies.length})` : ''}</h3>
       ${subbyHtml}
     </div>
   `;
@@ -5631,7 +5665,7 @@ async function loadReports() {
         <h3>${y.year}</h3>
         <div class="report-summary">
           <div class="stat"><div class="label">Total Turnover</div><div class="value">${money(y.totalTurnover)}</div></div>
-          <div class="stat"><div class="label">Total Profit</div><div class="value green">${money(y.totalProfit)}</div></div>
+          <div class="stat"><div class="label">Total Profit</div><div class="value ${y.totalProfit >= 0 ? 'green' : 'red'}">${money(y.totalProfit)}</div></div>
           <div class="stat"><div class="label">Jobs Won</div><div class="value">${y.jobCount}</div></div>
         </div>
         ${y.topEarner ? `<div class="top-earner">🏆 <strong>${escapeHtml(y.topEarner.employee)}</strong> won the most this year — ${money(y.topEarner.totalValue)} across ${y.topEarner.jobCount} job(s).</div>` : ''}
@@ -5675,7 +5709,7 @@ function renderOwnYearlyReport(container, years) {
       <h3>${y.year}</h3>
       <div class="report-summary">
         <div class="stat"><div class="label">Your Value Won</div><div class="value">${money(y.own.totalValue)}</div></div>
-        <div class="stat"><div class="label">Your Profit</div><div class="value green">${money(y.own.totalProfit)}</div></div>
+        <div class="stat"><div class="label">Your Profit</div><div class="value ${y.own.totalProfit >= 0 ? 'green' : 'red'}">${money(y.own.totalProfit)}</div></div>
         <div class="stat"><div class="label">Your Jobs Won</div><div class="value">${y.own.jobCount}</div></div>
       </div>
     </div>
