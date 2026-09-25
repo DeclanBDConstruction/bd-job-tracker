@@ -1441,6 +1441,10 @@ button:disabled {
   border-bottom-color: var(--blue-dark);
 }
 
+.job-detail-body {
+  padding-top: 4px;
+}
+
 .job-detail-section {
   display: none;
 }
@@ -1608,15 +1612,16 @@ button:disabled {
   border-radius: 8px;
 }
 
-.doc-list-item a {
+.doc-list-item a, .doc-list-item .doc-preview-btn {
   flex: 1 1 auto;
   font-weight: 600;
   color: var(--blue-dark);
   text-decoration: none;
   overflow-wrap: anywhere;
+  text-align: left;
 }
 
-.doc-list-item a:hover {
+.doc-list-item a:hover, .doc-list-item .doc-preview-btn:hover {
   text-decoration: underline;
 }
 
