@@ -2617,12 +2617,32 @@ function costingLineRow(line) {
   `;
 }
 
-function costingSectionTableHtml(bodyId, rows) {
+// The "add a line" inputs used to sit in a separate flex row below the table, which meant
+// they could never actually line up with the header/data columns above - two independent
+// layout systems (flex vs table auto-layout) computing widths independently. Rendering them
+// as a real <tr> in the same table fixes that structurally: the browser sizes every column
+// (header, data rows, this row) from the same table, so they're guaranteed to align.
+function costingNewLineRowHtml(idPrefix) {
+  return `
+    <tr class="costing-new-line-row">
+      <td><input type="text" id="costingNew${idPrefix}Desc" placeholder="Description"></td>
+      <td><input type="text" id="costingNew${idPrefix}Amounts" placeholder="e.g. 120, 45.50"></td>
+      <td></td>
+      <td><input type="number" id="costingNew${idPrefix}Markup" value="30" min="0" step="1"></td>
+      <td></td>
+      <td></td>
+      <td class="row-actions"><button type="button" id="costingAdd${idPrefix}Btn" class="primary">+ Add Line</button></td>
+    </tr>
+  `;
+}
+
+function costingSectionTableHtml(bodyId, rows, newLineRowHtml) {
   return `
     <div class="table-scroll">
       <table class="data-table">
         <thead><tr><th>Description</th><th>Amounts</th><th>Unit Price</th><th>Markup %</th><th>Markup £</th><th>Total</th><th></th></tr></thead>
         <tbody id="${bodyId}">${rows}</tbody>
+        <tfoot>${newLineRowHtml}</tfoot>
       </table>
     </div>
   `;
@@ -2659,22 +2679,10 @@ function renderJobCostingSection(costing) {
     </div>
 
     <h3>Subcontractors</h3>
-    ${costingSectionTableHtml('costingSubbyBody', costing.subbyLines.map(costingLineRow).join(''))}
-    <div class="import-upload">
-      <input type="text" id="costingNewSubbyDesc" placeholder="Description">
-      <input type="text" id="costingNewSubbyAmounts" placeholder="Amounts, e.g. 120, 45.50">
-      <input type="number" id="costingNewSubbyMarkup" placeholder="Markup %" value="30" min="0" step="1">
-      <button type="button" id="costingAddSubbyBtn" class="primary">+ Add Line</button>
-    </div>
+    ${costingSectionTableHtml('costingSubbyBody', costing.subbyLines.map(costingLineRow).join(''), costingNewLineRowHtml('Subby'))}
 
     <h3>Materials</h3>
-    ${costingSectionTableHtml('costingMaterialsBody', costing.materialsLines.map(costingLineRow).join(''))}
-    <div class="import-upload">
-      <input type="text" id="costingNewMaterialDesc" placeholder="Description">
-      <input type="text" id="costingNewMaterialAmounts" placeholder="Amounts, e.g. 120, 45.50">
-      <input type="number" id="costingNewMaterialMarkup" placeholder="Markup %" value="30" min="0" step="1">
-      <button type="button" id="costingAddMaterialBtn" class="primary">+ Add Line</button>
-    </div>
+    ${costingSectionTableHtml('costingMaterialsBody', costing.materialsLines.map(costingLineRow).join(''), costingNewLineRowHtml('Material'))}
 
     <div class="report-summary">
       <div class="stat"><div class="label">Quoted Price</div><div class="value">${money(costing.quotedPrice)}</div></div>

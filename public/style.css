@@ -31,6 +31,17 @@
 
 * { box-sizing: border-box; }
 
+/* An author stylesheet's `display` rule always beats the browser's own
+   `[hidden] { display: none }` default (cascade origin beats specificity, and even beats a
+   more specific author selector) - so any class below that sets `display: flex/grid/block`
+   silently breaks `element.hidden = true` for that element unless it's re-asserted here.
+   Global + !important so this can never regress again as new classes are added - found via
+   .home-rams-list (My Assignments' Current/Past toggle showed both lists at once) and
+   .import-upload (the quoting/employee "add row" ignored its hidden attribute). */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", -apple-system, Roboto, Arial, sans-serif;
@@ -1701,6 +1712,7 @@ button:disabled {
   padding-right: 2px;
 }
 
+
 .home-today-list li {
   display: flex;
   align-items: center;
@@ -2534,14 +2546,15 @@ button:disabled {
 
 /* ---------- Job Costing (labour/subby/materials tables + add-line rows) ---------- */
 
-.costing-hours-input, .costing-edit-desc, .costing-edit-amounts, .costing-edit-markup {
+.costing-hours-input, .costing-edit-desc, .costing-edit-amounts, .costing-edit-markup,
+.costing-new-line-row input {
   width: 100%;
   min-width: 70px;
 }
 
-#costingNewSubbyDesc, #costingNewMaterialDesc { flex: 2 1 200px; }
-#costingNewSubbyAmounts, #costingNewMaterialAmounts { flex: 2 1 200px; }
-#costingNewSubbyMarkup, #costingNewMaterialMarkup { flex: 1 1 100px; }
+.costing-new-line-row .row-actions {
+  white-space: nowrap;
+}
 
 #vehicleHiresTable input[type="text"], #vehicleHiresTable input[type="date"], #vehicleHiresTable select {
   width: 100%;
