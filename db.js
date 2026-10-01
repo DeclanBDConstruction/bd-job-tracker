@@ -812,8 +812,14 @@ function rowToTimeLog(row) {
     completedAt: row.completed_at,
     clockOutAt: row.clock_out_at,
     clockInLocation: row.clock_in_location,
+    clockInLat: row.clock_in_lat,
+    clockInLng: row.clock_in_lng,
     arrivedLocation: row.arrived_location,
+    arrivedLat: row.arrived_lat,
+    arrivedLng: row.arrived_lng,
     clockOutLocation: row.clock_out_location,
+    clockOutLat: row.clock_out_lat,
+    clockOutLng: row.clock_out_lng,
     // Minutes actually on site, computed at read time rather than stored - only present
     // once both ends of the window exist.
     onSiteMinutes: (row.arrived_at && row.completed_at)

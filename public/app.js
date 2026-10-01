@@ -2457,9 +2457,17 @@ function operativeOptionsHtml(selectedId, excludeUserIds) {
     .join('');
 }
 
-function timeLogTimeOfCell(iso, location) {
+// Google Maps link for a captured clock in/arrived/clock out GPS fix - lat/lng are only ever
+// present together (see locationColumns in db.js), so checking one is enough.
+function mapLinkHtml(lat, lng) {
+  if (lat == null || lng == null) return '';
+  const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  return ` <a href="${url}" target="_blank" rel="noopener" class="time-log-map-link">View on map</a>`;
+}
+
+function timeLogTimeOfCell(iso, location, lat, lng) {
   if (!iso) return '—';
-  const loc = location ? `<br><span class="time-log-location">${escapeHtml(location)}</span>` : '';
+  const loc = location ? `<br><span class="time-log-location">${escapeHtml(location)}${mapLinkHtml(lat, lng)}</span>` : '';
   return `${timeLogTimeOf(iso)}${loc}`;
 }
 
@@ -2473,10 +2481,10 @@ function timeLogTableHtml(timeLogs) {
           ${timeLogs.map((l) => `
             <tr>
               <td>${l.logDate}</td>
-              <td>${timeLogTimeOfCell(l.clockInAt, l.clockInLocation)}</td>
-              <td>${timeLogTimeOfCell(l.arrivedAt, l.arrivedLocation)}</td>
+              <td>${timeLogTimeOfCell(l.clockInAt, l.clockInLocation, l.clockInLat, l.clockInLng)}</td>
+              <td>${timeLogTimeOfCell(l.arrivedAt, l.arrivedLocation, l.arrivedLat, l.arrivedLng)}</td>
               <td>${timeLogTimeOf(l.completedAt)}</td>
-              <td>${timeLogTimeOfCell(l.clockOutAt, l.clockOutLocation)}</td>
+              <td>${timeLogTimeOfCell(l.clockOutAt, l.clockOutLocation, l.clockOutLat, l.clockOutLng)}</td>
               <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
             </tr>
           `).join('')}
@@ -2842,10 +2850,10 @@ async function refreshTimeLogModal() {
     tbody.innerHTML = logs.map((l) => `
       <tr>
         <td>${l.logDate}</td>
-        <td>${timeLogTimeOfCell(l.clockInAt, l.clockInLocation)}</td>
-        <td>${timeLogTimeOfCell(l.arrivedAt, l.arrivedLocation)}</td>
+        <td>${timeLogTimeOfCell(l.clockInAt, l.clockInLocation, l.clockInLat, l.clockInLng)}</td>
+        <td>${timeLogTimeOfCell(l.arrivedAt, l.arrivedLocation, l.arrivedLat, l.arrivedLng)}</td>
         <td>${timeLogTimeOf(l.completedAt)}</td>
-        <td>${timeLogTimeOfCell(l.clockOutAt, l.clockOutLocation)}</td>
+        <td>${timeLogTimeOfCell(l.clockOutAt, l.clockOutLocation, l.clockOutLat, l.clockOutLng)}</td>
         <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
       </tr>
     `).join('');
@@ -4364,8 +4372,8 @@ function renderAssignmentTimeLog() {
   const arrived = log && log.arrivedAt;
   const clockedOut = log && log.clockOutAt;
 
-  const locationLine = (loc) => loc
-    ? `<span class="time-log-location">${escapeHtml(loc)}</span>`
+  const locationLine = (loc, lat, lng) => loc
+    ? `<span class="time-log-location">${escapeHtml(loc)}${mapLinkHtml(lat, lng)}</span>`
     : '<span class="time-log-location time-log-location-muted">Location unavailable</span>';
 
   box.innerHTML = `
@@ -4374,13 +4382,13 @@ function renderAssignmentTimeLog() {
       <div class="time-log-step">
         <span class="time-log-label">Clock In</span>
         ${clockedIn
-          ? `<span class="time-log-value">${timeOfDay(log.clockInAt)}</span>${locationLine(log.clockInLocation)}`
+          ? `<span class="time-log-value">${timeOfDay(log.clockInAt)}</span>${locationLine(log.clockInLocation, log.clockInLat, log.clockInLng)}`
           : `<button type="button" id="assignmentClockInBtn">Clock In</button>`}
       </div>
       <div class="time-log-step">
         <span class="time-log-label">Arrived</span>
         ${arrived
-          ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>${locationLine(log.arrivedLocation)}`
+          ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>${locationLine(log.arrivedLocation, log.arrivedLat, log.arrivedLng)}`
           : (() => {
               // Job-level, not per-assignment - see renderAssignmentRamsStatus/db.js markArrived.
               const ramsDone = !!(currentAssignmentRams || (currentAssignmentRamsStatus && currentAssignmentRamsStatus.jobHasRams));
@@ -4392,7 +4400,7 @@ function renderAssignmentTimeLog() {
       <div class="time-log-step">
         <span class="time-log-label">Clock Out</span>
         ${clockedOut
-          ? `<span class="time-log-value">${timeOfDay(log.clockOutAt)}</span>${locationLine(log.clockOutLocation)}`
+          ? `<span class="time-log-value">${timeOfDay(log.clockOutAt)}</span>${locationLine(log.clockOutLocation, log.clockOutLat, log.clockOutLng)}`
           : `<button type="button" id="assignmentClockOutBtn" ${clockedIn ? '' : 'disabled'} title="${clockedIn ? '' : 'Clock in first'}">Clock Out</button>`}
       </div>
     </div>

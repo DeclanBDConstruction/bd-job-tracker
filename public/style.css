@@ -2775,6 +2775,11 @@ button:disabled {
   font-style: italic;
 }
 
+.time-log-map-link {
+  font-size: 11px;
+  color: var(--blue-dark);
+}
+
 .time-log-duration {
   margin: 12px 0 0;
   font-size: 13px;
