@@ -984,10 +984,22 @@ async function loadOwnedAssignment(req, res, message, { strict = false } = {}) {
 // Clock in/arrived/clock out - ownership-checked here (db.js's clockIn/markArrived/clockOut
 // trust the assignmentId they're given, same convention as addJobDocument etc), timestamps
 // are always server-stamped inside those functions, never taken from the request body.
+//
+// The optional {lat, lng} in the body is the operative's browser GPS, sent best-effort - the
+// browser may have denied/lacked location, so this is validated and simply dropped (not
+// rejected) when missing or out of range, rather than failing the clock action over it.
+function parseLocationBody(body) {
+  const lat = Number(body && body.lat);
+  const lng = Number(body && body.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
 app.post('/api/job-assignments/:id/time/clock-in', handle(async (req, res) => {
   const assignment = await loadOwnedAssignment(req, res, 'You can only clock in on your own assignment', { strict: true });
   if (!assignment) return;
-  const log = await db.clockIn(req.params.id);
+  const log = await db.clockIn(req.params.id, parseLocationBody(req.body));
   broadcast('jobAssignments');
   res.json(log);
 }));
@@ -995,7 +1007,7 @@ app.post('/api/job-assignments/:id/time/clock-in', handle(async (req, res) => {
 app.post('/api/job-assignments/:id/time/arrived', handle(async (req, res) => {
   const assignment = await loadOwnedAssignment(req, res, 'You can only mark yourself arrived on your own assignment', { strict: true });
   if (!assignment) return;
-  const log = await db.markArrived(req.params.id);
+  const log = await db.markArrived(req.params.id, parseLocationBody(req.body));
   broadcast('jobAssignments');
   res.json(log);
 }));
@@ -1003,7 +1015,7 @@ app.post('/api/job-assignments/:id/time/arrived', handle(async (req, res) => {
 app.post('/api/job-assignments/:id/time/clock-out', handle(async (req, res) => {
   const assignment = await loadOwnedAssignment(req, res, 'You can only clock out on your own assignment', { strict: true });
   if (!assignment) return;
-  const log = await db.clockOut(req.params.id);
+  const log = await db.clockOut(req.params.id, parseLocationBody(req.body));
   broadcast('jobAssignments');
   res.json(log);
 }));

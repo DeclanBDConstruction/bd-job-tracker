@@ -811,12 +811,46 @@ function rowToTimeLog(row) {
     arrivedAt: row.arrived_at,
     completedAt: row.completed_at,
     clockOutAt: row.clock_out_at,
+    clockInLocation: row.clock_in_location,
+    arrivedLocation: row.arrived_location,
+    clockOutLocation: row.clock_out_location,
     // Minutes actually on site, computed at read time rather than stored - only present
     // once both ends of the window exist.
     onSiteMinutes: (row.arrived_at && row.completed_at)
       ? Math.round((new Date(row.completed_at) - new Date(row.arrived_at)) / 60000)
       : null,
   };
+}
+
+// Best-effort reverse geocoding (GPS coords -> readable place name) via the free OpenStreetMap
+// Nominatim API - no API key/cost, but their usage policy requires an identifying User-Agent
+// and a short timeout so a slow/unreachable geocoder never holds up the clock-in itself.
+// Returns null (never throws) on any failure - the timestamp is still recorded either way.
+async function reverseGeocode(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=0`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'BD-Construction-JobTracker/1.0 (declan@bdconstruction.co.uk)' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data && data.display_name) || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Builds the {prefix}_lat/_lng/_location columns for a time-log write from the browser
+// geolocation the client optionally sent up. `location` is {lat, lng} or null/undefined -
+// capture is always best-effort (see server.js), so a missing/invalid location just means
+// these columns stay unset rather than the clock action failing.
+async function locationColumns(prefix, location) {
+  const lat = location && Number.isFinite(location.lat) ? location.lat : null;
+  const lng = location && Number.isFinite(location.lng) ? location.lng : null;
+  if (lat === null || lng === null) return {};
+  const name = await reverseGeocode(lat, lng);
+  return { [`${prefix}_lat`]: lat, [`${prefix}_lng`]: lng, [`${prefix}_location`]: name };
 }
 
 async function getTodayTimeLog(assignmentId) {
@@ -846,27 +880,28 @@ async function hasEverArrived(assignmentId) {
   return data.length > 0;
 }
 
-async function clockIn(assignmentId) {
+async function clockIn(assignmentId, location) {
   const { data: existing, error: findErr } = await supabase.from('assignment_time_logs').select('*')
     .eq('assignment_id', assignmentId).eq('log_date', timeLogDateStr()).maybeSingle();
   check(findErr);
   if (existing && existing.clock_in_at) throw new Error('Already clocked in today');
   const now = new Date().toISOString();
+  const locationCols = await locationColumns('clock_in', location);
   if (existing) {
     const { error } = await supabase.from('assignment_time_logs')
-      .update({ clock_in_at: now, updated_at: now }).eq('id', existing.id);
+      .update({ clock_in_at: now, updated_at: now, ...locationCols }).eq('id', existing.id);
     check(error);
   } else {
     const { error } = await supabase.from('assignment_time_logs').insert({
       id: genId(), assignment_id: assignmentId, log_date: timeLogDateStr(),
-      clock_in_at: now, created_at: now, updated_at: now,
+      clock_in_at: now, created_at: now, updated_at: now, ...locationCols,
     });
     check(error);
   }
   return getTodayTimeLog(assignmentId);
 }
 
-async function markArrived(assignmentId) {
+async function markArrived(assignmentId, location) {
   // RAMS is required at the JOB level, not per-assignment - if it's already on file (an
   // office upload, or another operative on this same job already did theirs), nobody else
   // assigned to it needs to submit their own. Only fall back to checking this assignment's
@@ -884,21 +919,23 @@ async function markArrived(assignmentId) {
   if (!log || !log.clockInAt) throw new Error('Clock in before marking yourself as arrived');
   if (log.arrivedAt) throw new Error('Already marked as arrived today');
   const now = new Date().toISOString();
+  const locationCols = await locationColumns('arrived', location);
   const { error } = await supabase.from('assignment_time_logs')
-    .update({ arrived_at: now, updated_at: now }).eq('id', log.id);
+    .update({ arrived_at: now, updated_at: now, ...locationCols }).eq('id', log.id);
   check(error);
   return getTodayTimeLog(assignmentId);
 }
 
 // Deliberately doesn't require arrivedAt - if they get called off before reaching site,
 // they should still be able to clock out for the day rather than being stuck.
-async function clockOut(assignmentId) {
+async function clockOut(assignmentId, location) {
   const log = await getTodayTimeLog(assignmentId);
   if (!log || !log.clockInAt) throw new Error('Clock in before clocking out');
   if (log.clockOutAt) throw new Error('Already clocked out today');
   const now = new Date().toISOString();
+  const locationCols = await locationColumns('clock_out', location);
   const { error } = await supabase.from('assignment_time_logs')
-    .update({ clock_out_at: now, updated_at: now }).eq('id', log.id);
+    .update({ clock_out_at: now, updated_at: now, ...locationCols }).eq('id', log.id);
   check(error);
   return getTodayTimeLog(assignmentId);
 }

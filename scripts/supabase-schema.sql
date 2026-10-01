@@ -196,6 +196,20 @@ create table if not exists assignment_time_logs (
 
 create unique index if not exists assignment_time_logs_assignment_date_idx on assignment_time_logs (assignment_id, log_date);
 
+-- GPS location captured (best-effort, from the operative's browser) at the moment of each
+-- button tap, resolved server-side to a readable place name via reverse geocoding - see
+-- reverseGeocode in db.js. Null when the device had no/denied location access; the button
+-- tap itself is never blocked on this.
+alter table assignment_time_logs add column if not exists clock_in_lat double precision;
+alter table assignment_time_logs add column if not exists clock_in_lng double precision;
+alter table assignment_time_logs add column if not exists clock_in_location text;
+alter table assignment_time_logs add column if not exists arrived_lat double precision;
+alter table assignment_time_logs add column if not exists arrived_lng double precision;
+alter table assignment_time_logs add column if not exists arrived_location text;
+alter table assignment_time_logs add column if not exists clock_out_lat double precision;
+alter table assignment_time_logs add column if not exists clock_out_lng double precision;
+alter table assignment_time_logs add column if not exists clock_out_location text;
+
 -- One RAMS (Risk Assessment & Method Statement) submission per job_assignment (not per day) -
 -- operative reviews/adjusts risk controls and hazards before starting work, once for the whole
 -- assignment stint. Submitting this is a prerequisite for marking Arrived (see the gate in

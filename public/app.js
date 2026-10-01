@@ -2457,6 +2457,12 @@ function operativeOptionsHtml(selectedId, excludeUserIds) {
     .join('');
 }
 
+function timeLogTimeOfCell(iso, location) {
+  if (!iso) return '—';
+  const loc = location ? `<br><span class="time-log-location">${escapeHtml(location)}</span>` : '';
+  return `${timeLogTimeOf(iso)}${loc}`;
+}
+
 function timeLogTableHtml(timeLogs) {
   if (!timeLogs.length) return '<p class="empty-state">No time logged yet.</p>';
   return `
@@ -2467,10 +2473,10 @@ function timeLogTableHtml(timeLogs) {
           ${timeLogs.map((l) => `
             <tr>
               <td>${l.logDate}</td>
-              <td>${timeLogTimeOf(l.clockInAt)}</td>
-              <td>${timeLogTimeOf(l.arrivedAt)}</td>
+              <td>${timeLogTimeOfCell(l.clockInAt, l.clockInLocation)}</td>
+              <td>${timeLogTimeOfCell(l.arrivedAt, l.arrivedLocation)}</td>
               <td>${timeLogTimeOf(l.completedAt)}</td>
-              <td>${timeLogTimeOf(l.clockOutAt)}</td>
+              <td>${timeLogTimeOfCell(l.clockOutAt, l.clockOutLocation)}</td>
               <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
             </tr>
           `).join('')}
@@ -2836,10 +2842,10 @@ async function refreshTimeLogModal() {
     tbody.innerHTML = logs.map((l) => `
       <tr>
         <td>${l.logDate}</td>
-        <td>${timeLogTimeOf(l.clockInAt)}</td>
-        <td>${timeLogTimeOf(l.arrivedAt)}</td>
+        <td>${timeLogTimeOfCell(l.clockInAt, l.clockInLocation)}</td>
+        <td>${timeLogTimeOfCell(l.arrivedAt, l.arrivedLocation)}</td>
         <td>${timeLogTimeOf(l.completedAt)}</td>
-        <td>${timeLogTimeOf(l.clockOutAt)}</td>
+        <td>${timeLogTimeOfCell(l.clockOutAt, l.clockOutLocation)}</td>
         <td>${l.onSiteMinutes != null ? `${Math.floor(l.onSiteMinutes / 60)}h ${l.onSiteMinutes % 60}m` : '—'}</td>
       </tr>
     `).join('');
@@ -4358,19 +4364,23 @@ function renderAssignmentTimeLog() {
   const arrived = log && log.arrivedAt;
   const clockedOut = log && log.clockOutAt;
 
+  const locationLine = (loc) => loc
+    ? `<span class="time-log-location">${escapeHtml(loc)}</span>`
+    : '<span class="time-log-location time-log-location-muted">Location unavailable</span>';
+
   box.innerHTML = `
     <h3>Today's Time Log</h3>
     <div class="time-log-row">
       <div class="time-log-step">
         <span class="time-log-label">Clock In</span>
         ${clockedIn
-          ? `<span class="time-log-value">${timeOfDay(log.clockInAt)}</span>`
+          ? `<span class="time-log-value">${timeOfDay(log.clockInAt)}</span>${locationLine(log.clockInLocation)}`
           : `<button type="button" id="assignmentClockInBtn">Clock In</button>`}
       </div>
       <div class="time-log-step">
         <span class="time-log-label">Arrived</span>
         ${arrived
-          ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>`
+          ? `<span class="time-log-value">${timeOfDay(log.arrivedAt)}</span>${locationLine(log.arrivedLocation)}`
           : (() => {
               // Job-level, not per-assignment - see renderAssignmentRamsStatus/db.js markArrived.
               const ramsDone = !!(currentAssignmentRams || (currentAssignmentRamsStatus && currentAssignmentRamsStatus.jobHasRams));
@@ -4382,7 +4392,7 @@ function renderAssignmentTimeLog() {
       <div class="time-log-step">
         <span class="time-log-label">Clock Out</span>
         ${clockedOut
-          ? `<span class="time-log-value">${timeOfDay(log.clockOutAt)}</span>`
+          ? `<span class="time-log-value">${timeOfDay(log.clockOutAt)}</span>${locationLine(log.clockOutLocation)}`
           : `<button type="button" id="assignmentClockOutBtn" ${clockedIn ? '' : 'disabled'} title="${clockedIn ? '' : 'Clock in first'}">Clock Out</button>`}
       </div>
     </div>
@@ -4401,9 +4411,27 @@ function renderAssignmentTimeLog() {
 
 const TIME_LOG_ACTION_LABELS = { 'clock-in': 'Clocked in.', arrived: 'Marked as arrived.', 'clock-out': 'Clocked out.' };
 
+// Best-effort GPS capture for time-log actions - never blocks the clock action on it. Resolves
+// null (rather than rejecting) if the browser has no geolocation support, the operative denied
+// the permission prompt, or a fix isn't found within the timeout.
+function getBrowserLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+    );
+  });
+}
+
 async function runTimeLogAction(action) {
   try {
-    await api(`/api/job-assignments/${currentAssignmentId}/time/${action}`, { method: 'POST' });
+    const location = await getBrowserLocation();
+    await api(`/api/job-assignments/${currentAssignmentId}/time/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(location || {}),
+    });
     await refreshAssignmentTimeLog();
     toast(TIME_LOG_ACTION_LABELS[action] || 'Saved.', 'success');
   } catch (err) {
@@ -5168,7 +5196,8 @@ function assignmentRowHtml(a, todayStr) {
 
 async function quickClockIn(id) {
   try {
-    await api(`/api/job-assignments/${id}/time/clock-in`, { method: 'POST' });
+    const location = await getBrowserLocation();
+    await api(`/api/job-assignments/${id}/time/clock-in`, { method: 'POST', body: JSON.stringify(location || {}) });
     state.myAssignments = await api('/api/job-assignments/mine');
     renderHomeDashboard();
     renderMyAssignmentsTab();

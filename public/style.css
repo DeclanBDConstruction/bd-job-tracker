@@ -2765,6 +2765,16 @@ button:disabled {
   color: var(--text);
 }
 
+.time-log-location {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.time-log-location-muted {
+  font-style: italic;
+}
+
 .time-log-duration {
   margin: 12px 0 0;
   font-size: 13px;
