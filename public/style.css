@@ -971,6 +971,33 @@ main {
 .tab-panel { display: none; animation: fadeIn 0.2s ease; }
 .tab-panel.active { display: block; }
 
+#clientPortal {
+  max-width: 1300px;
+  margin: 28px auto;
+  padding: 0 24px 60px;
+}
+
+.client-portal-section { margin-bottom: 36px; }
+.client-portal-section h2 { margin-bottom: 14px; }
+
+.client-jobs-list { display: grid; gap: 12px; }
+
+.client-job-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.client-job-card-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.client-job-card-meta { color: var(--muted); font-size: var(--font-sm); }
+
 .operative-placeholder {
   max-width: 1300px;
   margin: 80px auto;
@@ -2105,6 +2132,11 @@ button:disabled {
    per-person colour used for ordinary entries, so it needs its own fixed look. */
 .cal-chip-holiday {
   background: #c9722b;
+}
+
+.cal-chip-client {
+  background: var(--blue-dark);
+  cursor: pointer;
 }
 
 .cal-day-event-assignment {

@@ -158,6 +158,9 @@ async function validateDocumentParams(req, res, next) {
     if (!db.DOCUMENT_CATEGORIES.includes(req.params.category)) return res.status(400).json({ error: 'Invalid document category' });
     const job = await db.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (req.user.role === 'client' && !db.sameClientName(job.client, req.user.clientName)) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
     req.job = job;
     next();
   } catch (err) {
@@ -355,6 +358,14 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Strips the internal-sales/profit fields a client must never see - Value stays visible,
+// Profit and who-sold-it don't. Applied only to the two client-reachable job routes below,
+// never to the full job object every other role gets.
+function sanitizeJobForClient(job) {
+  const { profit, employeeId, employeeName, ...rest } = job;
+  return rest;
+}
+
 function requireAssetsAccess(req, res, next) {
   if (!['admin', 'stocks_manager'].includes(req.user.role)) return res.status(403).json({ error: 'Admins and stocks managers only' });
   next();
@@ -446,6 +457,21 @@ const STOCKS_MANAGER_ALLOWED_ROUTES = [
   { method: 'GET', path: /^\/users$/ },  // read-only, for the check-out form's holder picker
 ];
 
+// Clients get neither CALENDAR_DIARY_ROUTES (that's internal staff diary/team calendar,
+// entirely irrelevant to a client) nor any of staff/operative/stocks_manager's routes - just
+// their own jobs (scoped+sanitized in the route handlers below), their documents read-only,
+// and the client-scoped booked-in calendar. The two MFA routes are still needed so every role
+// can get past the mandatory-2FA gate (see MFA_SETUP_ROUTES above).
+const CLIENT_ALLOWED_ROUTES = [
+  { method: 'POST', path: /^\/auth\/mfa\/setup$/ },
+  { method: 'POST', path: /^\/auth\/mfa\/confirm$/ },
+  { method: 'GET', path: /^\/jobs$/ },
+  { method: 'GET', path: /^\/jobs\/[^/]+$/ },
+  { method: 'GET', path: /^\/jobs\/[^/]+\/documents\/[^/]+\/[^/]+\/file$/ },
+  { method: 'GET', path: /^\/jobs\/[^/]+\/documents-zip$/ },
+  { method: 'GET', path: /^\/client\/calendar$/ },
+];
+
 app.use('/api', (req, res, next) => {
   if (req.user.role === 'staff' && !STAFF_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
     return res.status(403).json({ error: 'Not available for your role' });
@@ -454,6 +480,9 @@ app.use('/api', (req, res, next) => {
     return res.status(403).json({ error: 'Not available for your role' });
   }
   if (req.user.role === 'stocks_manager' && !STOCKS_MANAGER_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
+    return res.status(403).json({ error: 'Not available for your role' });
+  }
+  if (req.user.role === 'client' && !CLIENT_ALLOWED_ROUTES.some((r) => r.method === req.method && r.path.test(req.path))) {
     return res.status(403).json({ error: 'Not available for your role' });
   }
   next();
@@ -500,6 +529,13 @@ app.put('/api/users/:id/active', requireAdmin, handle(async (req, res) => {
 app.put('/api/users/:id/employee', requireAdmin, handle(async (req, res) => {
   const user = await db.setUserEmployee(req.params.id, req.body.employeeId || null);
   db.logActivity(req.user, 'user.employee_linked', req.body.employeeId ? `Linked ${user.name} to an employee record` : `Unlinked ${user.name} from their employee record`, 'user', user.id);
+  broadcast('users');
+  res.json(user);
+}));
+
+app.put('/api/users/:id/client-name', requireAdmin, handle(async (req, res) => {
+  const user = await db.setUserClientName(req.params.id, req.body.clientName);
+  db.logActivity(req.user, 'user.client_name_changed', user.clientName ? `Linked ${user.name} to client "${user.clientName}"` : `Unlinked ${user.name} from their client link`, 'user', user.id);
   broadcast('users');
   res.json(user);
 }));
@@ -666,12 +702,20 @@ app.delete('/api/employees/:id', requireAdmin, handle(async (req, res) => {
 // ---------- Jobs ----------
 
 app.get('/api/jobs', handle(async (req, res) => {
+  if (req.user.role === 'client') {
+    const jobs = await db.listJobs({ clientName: req.user.clientName });
+    return res.json(jobs.map(sanitizeJobForClient));
+  }
   res.json(await db.listJobs());
 }));
 
 app.get('/api/jobs/:id', handle(async (req, res) => {
   const job = await db.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (req.user.role === 'client') {
+    if (!db.sameClientName(job.client, req.user.clientName)) return res.status(404).json({ error: 'Job not found' });
+    return res.json(sanitizeJobForClient(job));
+  }
   res.json(job);
 }));
 
@@ -689,6 +733,10 @@ app.get('/api/jobs/:id/time-logs', handle(async (req, res) => {
     timeLogs: await db.listTimeLogs(a.id),
   })));
   res.json(withLogs);
+}));
+
+app.get('/api/client/calendar', handle(async (req, res) => {
+  res.json(await db.getClientBookedDates(req.user.clientName));
 }));
 
 // ---------- Job Costing (profit/loss) ----------
@@ -875,6 +923,9 @@ app.get('/api/jobs/:id/documents-zip', handle(async (req, res) => {
   if (!JOB_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Invalid job id' });
   const job = await db.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (req.user.role === 'client' && !db.sameClientName(job.client, req.user.clientName)) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
 
   const namePart = [job.jobReference, job.location].filter(Boolean).join(' - ') || job.client || 'Job';
   const filename = namePart.replace(/[\\/:*?"<>|]/g, '-').trim() || 'Job';
@@ -1885,4 +1936,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, STAFF_ALLOWED_ROUTES, OPERATIVE_ALLOWED_ROUTES, CALENDAR_DIARY_ROUTES };
+module.exports = { app, STAFF_ALLOWED_ROUTES, OPERATIVE_ALLOWED_ROUTES, CALENDAR_DIARY_ROUTES, CLIENT_ALLOWED_ROUTES };

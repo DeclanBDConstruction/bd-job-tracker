@@ -27,6 +27,7 @@ const state = {
   minigameMyBest: null,
   myQualifications: [],
   profileStyleOptions: null,
+  clientBookedDates: [],
 };
 
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
@@ -35,6 +36,7 @@ const isOperative = () => !!(state.currentUser && OPERATIVE_ROLES.includes(state
 const isStaff = () => !!(state.currentUser && state.currentUser.role === 'staff');
 const isSurveyor = () => !!(state.currentUser && state.currentUser.role === 'surveyor');
 const isStocksManager = () => !!(state.currentUser && state.currentUser.role === 'stocks_manager');
+const isClient = () => !!(state.currentUser && state.currentUser.role === 'client');
 const canManageQuotes = () => !!(state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.canManageQuotes));
 
 const money = (n) => '£' + (Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -263,8 +265,16 @@ async function showApp(user) {
     document.querySelector(`.tab-btn[data-tab="${tab}"]`).hidden = isStocksManager();
   });
 
-  const bootstrapPromise = isStaff() ? bootstrapStaff() : isOperative() ? bootstrapOperative() : isStocksManager() ? bootstrapStocksManager() : bootstrap();
-  connectLiveUpdates();
+  // Clients get no tab nav at all - just the dedicated portal view (job list + calendar)
+  // below the header. Real enforcement is server-side (see CLIENT_ALLOWED_ROUTES in server.js).
+  document.getElementById('mainTabsNav').hidden = isClient();
+  document.getElementById('clientPortal').hidden = !isClient();
+  if (isClient()) {
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+  }
+
+  const bootstrapPromise = isClient() ? bootstrapClient() : isStaff() ? bootstrapStaff() : isOperative() ? bootstrapOperative() : isStocksManager() ? bootstrapStocksManager() : bootstrap();
+  if (!isClient()) connectLiveUpdates();
   const minDisplay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
   try {
     await Promise.all([bootstrapPromise, minDisplay]);
@@ -1026,6 +1036,20 @@ async function bootstrapStocksManager() {
     const container = document.getElementById('calColorPicker');
     if (container) container.innerHTML = `<span class="color-picker-error">Couldn't load colours: ${escapeHtml(err.message)}</span>`;
   }
+}
+
+// Clients get neither the tab nav nor any of the other bootstraps' data - just their own
+// jobs (list + detail, read-only, already scoped+sanitized server-side) and the client-
+// scoped booked-in calendar. No colour picker, no calendar-events, no live updates.
+async function bootstrapClient() {
+  const [jobs, bookedDates] = await Promise.all([
+    api('/api/jobs'),
+    api('/api/client/calendar'),
+  ]);
+  state.jobs = jobs;
+  state.clientBookedDates = bookedDates;
+  renderClientJobsList();
+  renderClientCalendar();
 }
 
 function renderStatusOptions() {
@@ -4311,6 +4335,180 @@ function renderCalendar() {
   myCalendar.render();
 }
 
+// ---------- Client Portal (read-only: own jobs + on-site calendar) ----------
+// Everything here trusts the server to have already scoped state.jobs/clientBookedDates to
+// this account's own client_name and stripped profit/employeeName (see CLIENT_ALLOWED_ROUTES
+// and sanitizeJobForClient in server.js) - there's no client-side filtering to get wrong.
+
+function renderClientJobsList() {
+  const container = document.getElementById('clientJobsList');
+  if (!state.jobs.length) {
+    container.innerHTML = '<p class="empty-state">No jobs on file yet.</p>';
+    return;
+  }
+  container.innerHTML = state.jobs.map((j) => `
+    <div class="client-job-card">
+      <div class="client-job-card-main">
+        <strong>${escapeHtml(j.jobReference || j.client)}${j.location ? ' — ' + escapeHtml(j.location) : ''}</strong>
+        <span class="status-pill ${slug(j.status)}">${escapeHtml(j.status)}</span>
+        <span class="status-pill ${slug(j.progress)}">${escapeHtml(j.progress)}</span>
+      </div>
+      <div class="client-job-card-meta">${money(j.value)} · Won ${j.dateWon || '—'}</div>
+      <button type="button" class="client-job-view-btn" data-job="${j.id}">View</button>
+    </div>
+  `).join('');
+  container.querySelectorAll('.client-job-view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openClientJobDetail(btn.dataset.job));
+  });
+}
+
+let currentClientJobId = null;
+
+async function openClientJobDetail(id, section) {
+  currentClientJobId = id;
+  const target = section || 'info';
+  document.querySelectorAll('.client-job-detail-tab').forEach((b) => b.classList.toggle('active', b.dataset.section === target));
+  document.querySelectorAll('#clientJobDetailModal .job-detail-section').forEach((s) => s.classList.toggle('active', s.id === `clientJobDetailSection-${target}`));
+  document.getElementById('clientJobDetailModal').hidden = false;
+  try {
+    const job = await api(`/api/jobs/${id}`);
+    renderClientJobInfo(job);
+    renderClientVariations(job.variations || []);
+    DOCUMENT_SECTIONS.forEach((category) => renderClientDocumentSection(category, (job.documents || {})[category]));
+  } catch (err) {
+    toast(err.message, 'error');
+    closeClientJobDetail();
+  }
+}
+
+function renderClientJobInfo(job) {
+  document.getElementById('clientJobDetailTitle').textContent = `${job.jobReference || job.client}${job.location ? ' — ' + job.location : ''}`;
+  const varTotal = variationsTotal(job.variations);
+  document.getElementById('clientJobDetailSection-info').innerHTML = `
+    <dl class="detail-grid">
+      <div><dt>Job Number</dt><dd>${escapeHtml(job.jobReference || '—')}</dd></div>
+      <div><dt>Location</dt><dd>${escapeHtml(job.location || '—')}</dd></div>
+      <div><dt>Date Won</dt><dd>${job.dateWon || '—'}</dd></div>
+      <div><dt>Start Date</dt><dd>${job.startDate || '—'}</dd></div>
+      <div><dt>Value</dt><dd>${money(job.value)}</dd></div>
+      ${varTotal ? `<div><dt>Variations Total</dt><dd>${money(varTotal)}</dd></div>
+      <div><dt>Adjusted Value</dt><dd>${money(job.value + varTotal)}</dd></div>` : ''}
+      <div><dt>Status</dt><dd><span class="status-pill ${slug(job.status)}">${escapeHtml(job.status)}</span></dd></div>
+      <div><dt>Description</dt><dd>${escapeHtml(job.description || '—')}</dd></div>
+    </dl>
+  `;
+}
+
+function renderClientVariations(variations) {
+  const container = document.getElementById('clientJobDetailSection-variations');
+  const items = variations.map((v) => `
+    <li class="doc-list-item">
+      <span class="variation-desc">${escapeHtml(v.description)}</span>
+      <span class="doc-meta">${money(v.value)} · ${new Date(v.createdAt).toLocaleDateString('en-GB')}</span>
+    </li>
+  `).join('');
+  container.innerHTML = `
+    <ul class="doc-list">${items}</ul>
+    ${!variations.length ? '<p class="empty-state">No variations recorded.</p>' : `<p class="variation-total">Variations total: <strong>${money(variationsTotal(variations))}</strong></p>`}
+  `;
+}
+
+function renderClientDocumentSection(category, docs) {
+  const container = document.getElementById(`clientJobDetailSection-${category}`);
+  const sorted = [...(docs || [])].sort((a, b) => (a.superseded === b.superseded ? 0 : a.superseded ? 1 : -1));
+  const items = sorted.map((d) => `
+    <li class="doc-list-item${d.superseded ? ' doc-superseded' : ''}">
+      ${docLinkHtml(`/api/jobs/${currentClientJobId}/documents/${category}/${d.id}/file`, d.originalName)}
+      <span class="doc-meta">${formatBytes(d.size)} · ${new Date(d.uploadedAt).toLocaleDateString('en-GB')}${d.superseded ? ' · Old version' : ''}</span>
+    </li>
+  `).join('');
+  container.innerHTML = `
+    <ul class="doc-list">${items}</ul>
+    ${!docs || !docs.length ? '<p class="empty-state">No files uploaded yet.</p>' : ''}
+  `;
+  container.querySelectorAll('.doc-preview-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openDocPreview(btn.dataset.url, btn.dataset.name));
+  });
+}
+
+function closeClientJobDetail() {
+  document.getElementById('clientJobDetailModal').hidden = true;
+  currentClientJobId = null;
+}
+
+document.getElementById('clientJobDetailCloseBtn').addEventListener('click', closeClientJobDetail);
+
+document.querySelectorAll('.client-job-detail-tab').forEach((btn) => {
+  btn.addEventListener('click', () => openClientJobDetail(currentClientJobId, btn.dataset.section));
+});
+
+// Lightweight, separate month-grid renderer (reuses only calDateStr/the day-grid math above,
+// not createCalendarView - that factory is built around staff-diary add/delete/holiday forms
+// that don't apply to a read-only client view). Chips show jobReference/location only - never
+// who's assigned - because getClientBookedDates never reads job_assignments.user_id at all.
+let clientCalViewYear = calToday.getFullYear();
+let clientCalViewMonth = calToday.getMonth();
+
+function clientBookedOnDate(ds) {
+  const matches = [];
+  state.clientBookedDates.forEach((j) => {
+    j.windows.forEach((w) => {
+      if (ds >= w.startDate && ds <= (w.endDate || w.startDate)) matches.push(j);
+    });
+  });
+  return matches;
+}
+
+function renderClientCalendar() {
+  const grid = document.getElementById('clientCalGrid');
+  const label = new Date(clientCalViewYear, clientCalViewMonth, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  document.getElementById('clientCalMonthLabel').textContent = label;
+
+  const firstOfMonth = new Date(clientCalViewYear, clientCalViewMonth, 1);
+  const startWeekday = (firstOfMonth.getDay() + 6) % 7;
+  const daysInMonth = new Date(clientCalViewYear, clientCalViewMonth + 1, 0).getDate();
+  const todayStr = calDateStr(calToday.getFullYear(), calToday.getMonth(), calToday.getDate());
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  grid.innerHTML = cells.map((d) => {
+    if (!d) return '<div class="cal-cell cal-cell-empty"></div>';
+    const ds = calDateStr(clientCalViewYear, clientCalViewMonth, d);
+    const isToday = ds === todayStr;
+    const matches = clientBookedOnDate(ds);
+    const chips = matches.map((j) => `<div class="cal-chip cal-chip-client" data-job="${j.jobId}" title="${escapeHtml(j.jobReference)}${j.location ? ' — ' + escapeHtml(j.location) : ''}">${escapeHtml(truncate(j.jobReference || j.location, 20))}</div>`).join('');
+    return `
+      <div class="cal-cell${isToday ? ' cal-cell-today' : ''}">
+        <div class="cal-cell-date">${d}${isToday ? '<span class="cal-today-badge">Today</span>' : ''}</div>
+        <div class="cal-cell-events">${chips}</div>
+      </div>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.cal-chip[data-job]').forEach((chip) => {
+    chip.addEventListener('click', () => openClientJobDetail(chip.dataset.job));
+  });
+}
+
+document.getElementById('clientCalPrevBtn').addEventListener('click', () => {
+  clientCalViewMonth--;
+  if (clientCalViewMonth < 0) { clientCalViewMonth = 11; clientCalViewYear--; }
+  renderClientCalendar();
+});
+document.getElementById('clientCalNextBtn').addEventListener('click', () => {
+  clientCalViewMonth++;
+  if (clientCalViewMonth > 11) { clientCalViewMonth = 0; clientCalViewYear++; }
+  renderClientCalendar();
+});
+document.getElementById('clientCalTodayBtn').addEventListener('click', () => {
+  clientCalViewYear = calToday.getFullYear();
+  clientCalViewMonth = calToday.getMonth();
+  renderClientCalendar();
+});
+
 // ---------- Assignment Detail (operative self-service: view, upload photo, mark done) ----------
 
 let currentAssignmentId = null;
@@ -6123,11 +6321,17 @@ const ROLE_LABELS = {
   installation_operative: 'Installation Operative',
   manufacturing_operative: 'Manufacturing Operative',
   stocks_manager: 'Stocks Manager',
+  client: 'Client',
 };
 
 async function loadAdminUsers() {
   const users = await api('/api/users');
   const tbody = document.querySelector('#adminUsersTable tbody');
+  const clientNameOptions = document.getElementById('adminClientNameOptions');
+  if (clientNameOptions) {
+    clientNameOptions.innerHTML = [...new Set(state.jobs.map((j) => (j.client || '').trim()).filter(Boolean))]
+      .sort().map((c) => `<option value="${escapeHtml(c)}"></option>`).join('');
+  }
   tbody.innerHTML = users.map((u) => `
     <tr>
       <td>${escapeHtml(u.name)}</td>
@@ -6142,6 +6346,9 @@ async function loadAdminUsers() {
           <option value="">— Not linked —</option>
           ${state.employees.map((e) => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
         </select>
+      </td>
+      <td>
+        <input type="text" class="admin-clientname-input" data-user="${u.id}" value="${escapeHtml(u.clientName || '')}" list="adminClientNameOptions" placeholder="e.g. Acme Ltd" ${u.role !== 'client' ? 'disabled title="Only used for the Client role"' : ''}>
       </td>
       <td>
         ${u.id === state.currentUser.id
@@ -6185,6 +6392,20 @@ async function loadAdminUsers() {
         });
         state.employees = await api('/api/employees');
         renderEmployees();
+      } catch (err) {
+        toast(err.message, 'error');
+        loadAdminUsers();
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.admin-clientname-input').forEach((input) => {
+    input.addEventListener('change', async () => {
+      try {
+        await api(`/api/users/${input.dataset.user}/client-name`, {
+          method: 'PUT',
+          body: JSON.stringify({ clientName: input.value || null }),
+        });
       } catch (err) {
         toast(err.message, 'error');
         loadAdminUsers();

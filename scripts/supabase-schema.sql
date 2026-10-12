@@ -75,6 +75,12 @@ alter table users add column if not exists avatar_stored_name text;
 alter table users add column if not exists profile_border text;
 alter table users add column if not exists profile_background text;
 
+-- Links a client-role account to the client company name it should see jobs for (free text,
+-- matched case-insensitively/trimmed against jobs.client via sameClientName in db.js - clients
+-- aren't a first-class table, just jobs.client's free-text string). Set by an admin from the
+-- Admin tab. Null for every other role.
+alter table users add column if not exists client_name text;
+
 -- Qualifications/certifications a person holds (e.g. CSCS card, First Aid) shown on their
 -- Profile tab - expiry_date is optional free-text (not every qualification expires) so the
 -- office can see at a glance what's coming up for renewal.

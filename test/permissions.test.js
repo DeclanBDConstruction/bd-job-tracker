@@ -10,7 +10,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { STAFF_ALLOWED_ROUTES, OPERATIVE_ALLOWED_ROUTES } = require('../server');
+const { STAFF_ALLOWED_ROUTES, OPERATIVE_ALLOWED_ROUTES, CLIENT_ALLOWED_ROUTES } = require('../server');
 
 function allowed(routes, method, path) {
   return routes.some((r) => r.method === method && r.path.test(path));
@@ -52,4 +52,25 @@ test('operatives cannot reach Jobs, the full job-assignments list, or admin-only
   assert.equal(allowed(OPERATIVE_ALLOWED_ROUTES, 'DELETE', '/job-assignments/abc123'), false);
   assert.equal(allowed(OPERATIVE_ALLOWED_ROUTES, 'GET', '/users'), false);
   assert.equal(allowed(OPERATIVE_ALLOWED_ROUTES, 'GET', '/subbies'), false);
+});
+
+test('clients can reach their own jobs, documents, zip download and booked-in calendar', () => {
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/jobs'), true);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/jobs/abc123'), true);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/jobs/abc123/documents/rams/doc1/file'), true);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/jobs/abc123/documents-zip'), true);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/client/calendar'), true);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'POST', '/auth/mfa/setup'), true);
+});
+
+test('clients cannot reach costing, time-logs, document uploads/deletes, variations, users or employees', () => {
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/jobs/abc123/costing'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/jobs/abc123/time-logs'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'POST', '/jobs/abc123/documents/photos'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'DELETE', '/jobs/abc123/documents/rams/doc1'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'POST', '/jobs/abc123/variations'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'DELETE', '/jobs/abc123/variations/v1'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/users'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/employees'), false);
+  assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/calendar'), false);
 });

@@ -103,7 +103,7 @@
       <button id="logoutBtn">Sign Out</button>
     </div>
   </div>
-  <nav class="tabs">
+  <nav class="tabs" id="mainTabsNav">
     <button class="tab-btn active" data-tab="home">Home</button>
     <button class="tab-btn" data-tab="assignments" id="assignmentsTabBtn" hidden>Assignments</button>
 
@@ -773,9 +773,10 @@
     </div>
     <p class="hint">Set each account's role — Admin (full access, can delete jobs and manage the employee list), Staff (general office access), Surveyor (office access plus quoting rights), or Installation/Manufacturing Operative (no office access yet). Link each account to the matching employee so their Yearly Report shows only their own figures — this happens automatically at sign-up when the name matches, but you can fix it here if it didn't (or the account was created before this existed).</p>
     <table class="data-table" id="adminUsersTable">
-      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Account</th><th>Two-Factor</th></tr></thead>
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked Employee</th><th>Client Link</th><th>Account</th><th>Two-Factor</th></tr></thead>
       <tbody></tbody>
     </table>
+    <datalist id="adminClientNameOptions"></datalist>
   </section>
 
   <!-- LOGS TAB (admin-only activity/audit trail) -->
@@ -816,6 +817,53 @@
 
 </main>
 
+<!-- CLIENT PORTAL (client role only - single restricted view, no tab nav, see isClient() in app.js) -->
+<div id="clientPortal" hidden>
+  <section class="client-portal-section">
+    <h2>Your Jobs</h2>
+    <div id="clientJobsList" class="client-jobs-list"></div>
+  </section>
+  <section class="client-portal-section">
+    <h2>On-Site Calendar</h2>
+    <div class="filters calendar-nav">
+      <button type="button" id="clientCalPrevBtn" title="Previous month">‹</button>
+      <span id="clientCalMonthLabel" class="cal-month-label"></span>
+      <button type="button" id="clientCalNextBtn" title="Next month">›</button>
+      <button type="button" id="clientCalTodayBtn">Today</button>
+    </div>
+    <div class="calendar-weekdays">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+    <div class="calendar-grid" id="clientCalGrid"></div>
+  </section>
+</div>
+
+</div>
+
+<!-- Client Job Detail Modal (read-only subset of Job Detail Modal below) -->
+<div id="clientJobDetailModal" class="modal-overlay" hidden>
+  <div class="modal modal-wide">
+    <div class="job-detail-header">
+      <h2 id="clientJobDetailTitle">Job</h2>
+      <button type="button" id="clientJobDetailCloseBtn" class="link-btn">Close</button>
+    </div>
+    <nav class="job-detail-tabs">
+      <button type="button" class="client-job-detail-tab active" data-section="info">Job Information</button>
+      <button type="button" class="client-job-detail-tab" data-section="variations">Variations</button>
+      <button type="button" class="client-job-detail-tab" data-section="rams">RAMS</button>
+      <button type="button" class="client-job-detail-tab" data-section="drawings">Drawings</button>
+      <button type="button" class="client-job-detail-tab" data-section="photos">Photos</button>
+      <button type="button" class="client-job-detail-tab" data-section="permit">Permit to Work</button>
+    </nav>
+    <div class="job-detail-body">
+      <div id="clientJobDetailSection-info" class="job-detail-section active"></div>
+      <div id="clientJobDetailSection-variations" class="job-detail-section"></div>
+      <div id="clientJobDetailSection-rams" class="job-detail-section"></div>
+      <div id="clientJobDetailSection-drawings" class="job-detail-section"></div>
+      <div id="clientJobDetailSection-photos" class="job-detail-section"></div>
+      <div id="clientJobDetailSection-permit" class="job-detail-section"></div>
+    </div>
+  </div>
 </div>
 
 <!-- Job Edit Modal -->

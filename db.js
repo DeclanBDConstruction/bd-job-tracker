@@ -360,13 +360,16 @@ async function employeeNameMap() {
   return Object.fromEntries(data.map((e) => [e.id, e.name]));
 }
 
-async function listJobs() {
+async function listJobs(filter) {
   const [{ data: rows, error }, empNameById] = await Promise.all([
     supabase.from('jobs').select('*'),
     employeeNameMap(),
   ]);
   check(error);
-  const jobs = rows.map((r) => rowToJob(r, empNameById));
+  let jobs = rows.map((r) => rowToJob(r, empNameById));
+  if (filter && filter.clientName) {
+    jobs = jobs.filter((j) => sameClientName(j.client, filter.clientName));
+  }
   await Promise.all([attachDocuments(jobs), attachVariations(jobs)]);
   return jobs.sort((a, b) => (b.dateWon || '').localeCompare(a.dateWon || ''));
 }
@@ -659,6 +662,37 @@ async function attachTodayTimeLog(assignments) {
   const logByAssignment = Object.fromEntries(data.map((row) => [row.assignment_id, rowToTimeLog(row)]));
   assignments.forEach((a) => { a.todayTimeLog = logByAssignment[a.id] || null; });
   return assignments;
+}
+
+// What a client sees instead of the team calendar: just the date window(s) their own jobs are
+// booked on site, with no staff/operative identity attached (job_assignments.user_id is never
+// read here - only start_date/end_date). Falls back to the job's own single start_date when
+// nothing's been assigned yet, so a client isn't shown nothing just because scheduling hasn't
+// happened.
+async function getClientBookedDates(clientName) {
+  const norm = (clientName || '').trim();
+  if (!norm) return [];
+  const { data: jobRows, error } = await supabase.from('jobs')
+    .select('id, job_reference, client, location, start_date');
+  check(error);
+  const myJobs = jobRows.filter((j) => sameClientName(j.client, norm));
+  if (!myJobs.length) return [];
+  const jobIds = myJobs.map((j) => j.id);
+  const { data: assignmentRows, error: aErr } = await supabase.from('job_assignments')
+    .select('job_id, start_date, end_date').in('job_id', jobIds);
+  check(aErr);
+  const byJob = {};
+  assignmentRows.forEach((a) => {
+    (byJob[a.job_id] = byJob[a.job_id] || []).push({ startDate: a.start_date, endDate: a.end_date });
+  });
+  return myJobs
+    .map((j) => ({
+      jobId: j.id,
+      jobReference: j.job_reference || '',
+      location: j.location || '',
+      windows: (byJob[j.id] && byJob[j.id].length) ? byJob[j.id] : (j.start_date ? [{ startDate: j.start_date, endDate: j.start_date }] : []),
+    }))
+    .filter((j) => j.windows.length);
 }
 
 // Every assignment against one job, regardless of which operative - used by the Jobs tab's
@@ -1371,6 +1405,15 @@ async function monthlyReport() {
     byYear[year][month] += job.value || 0;
   }
   return Object.keys(byYear).sort().map((year) => ({ year, months: byYear[year] }));
+}
+
+// Shared client-name comparison (trimmed + case-insensitive, same normalization clientReport
+// below already uses for grouping jobs.client) - used to scope a client-role account to its
+// own jobs and to stop one client guessing another's job id.
+function sameClientName(a, b) {
+  const normA = (a || '').trim().toLowerCase();
+  const normB = (b || '').trim().toLowerCase();
+  return !!normA && normA === normB;
 }
 
 async function clientReport() {
@@ -2668,7 +2711,7 @@ async function submitMiniGameScore(user, input) {
 // any features built for them yet, so every /api route except auth blocks them for now
 // (see the operative-lockout middleware in server.js) - extend that allowlist as
 // operative-specific screens get built instead of loosening this list.
-const ROLES = ['admin', 'staff', 'surveyor', 'installation_operative', 'manufacturing_operative', 'stocks_manager'];
+const ROLES = ['admin', 'staff', 'surveyor', 'installation_operative', 'manufacturing_operative', 'stocks_manager', 'client'];
 const OPERATIVE_ROLES = ['installation_operative', 'manufacturing_operative'];
 
 function sanitizeUser(row) {
@@ -2680,6 +2723,7 @@ function sanitizeUser(row) {
     role: row.role,
     color: row.color || null,
     employeeId: row.employee_id || null,
+    clientName: row.client_name || null,
     // Derived from role rather than the old can_manage_quotes column - admins and
     // surveyors can always manage quotes, nobody else can.
     canManageQuotes: row.role === 'admin' || row.role === 'surveyor',
@@ -2895,6 +2939,17 @@ async function setUserEmployee(userId, employeeId) {
   return sanitizeUser(data);
 }
 
+// Mirrors setUserEmployee above but for the client role: links the account to a client
+// company name (free text, matched against jobs.client via sameClientName), not a foreign
+// key, since there's no clients table.
+async function setUserClientName(userId, clientName) {
+  const clean = (clientName || '').trim() || null;
+  const { data, error } = await supabase.from('users').update({ client_name: clean }).eq('id', userId).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('User not found');
+  return sanitizeUser(data);
+}
+
 // Everyone signed in needs to see who's using which colour (to grey out taken ones), so
 // this is deliberately not admin-only like listUsers().
 async function listUserColors() {
@@ -3068,6 +3123,9 @@ module.exports = {
   setUserRole,
   setUserActive,
   setUserEmployee,
+  setUserClientName,
+  sameClientName,
+  getClientBookedDates,
   ROLES,
   OPERATIVE_ROLES,
   listUserColors,

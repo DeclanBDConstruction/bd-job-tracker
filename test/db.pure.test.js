@@ -98,3 +98,12 @@ test('rowToCostingLine: non-numeric entries are excluded (not just zeroed), zero
   assert.equal(line.markupAmount, 0);
   assert.equal(line.total, 150);
 });
+
+test('sameClientName: trims/lowercases both sides, rejects blank, never matches two blanks', () => {
+  assert.equal(db.sameClientName('Greene King', 'greene king'), true);
+  assert.equal(db.sameClientName('  Greene King  ', 'Greene King'), true);
+  assert.equal(db.sameClientName('Greene King', 'Acme Ltd'), false);
+  assert.equal(db.sameClientName('', 'Acme Ltd'), false);
+  assert.equal(db.sameClientName(null, null), false);
+  assert.equal(db.sameClientName('  ', '  '), false);
+});
