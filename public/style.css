@@ -3746,20 +3746,49 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   margin: var(--space-3) 0;
   padding: var(--space-3);
   background: var(--bg);
   border-radius: var(--radius);
 }
 
-.fire-door-total-row strong {
-  font-size: var(--font-lg);
+.fire-door-total-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-sm);
+  color: var(--muted);
 }
 
-.fire-door-total-actions {
+.fire-door-total-breakdown strong {
+  color: var(--text);
+}
+
+.fire-door-total-breakdown .fire-door-total-grand {
+  font-size: var(--font-lg);
+  margin-top: 2px;
+}
+
+.fire-door-total-right {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+.fire-door-description-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.fire-door-description-row label {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .hint-inline {
@@ -3774,6 +3803,19 @@ button:disabled {
 .fd-quote-item-list {
   margin: var(--space-1) 0;
   padding-left: var(--space-4);
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+.fd-quote-description {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-sm);
+  font-style: italic;
+  color: var(--text);
+}
+
+.fd-quote-breakdown {
+  margin: var(--space-2) 0 0;
   font-size: var(--font-sm);
   color: var(--muted);
 }

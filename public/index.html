@@ -801,14 +801,23 @@
           <input type="text" id="fireDoorQuoteClient" placeholder="Client name">
           <input type="text" id="fireDoorQuoteAddress" placeholder="Site address (optional)">
         </div>
-        <textarea id="fireDoorQuoteNotes" placeholder="Notes (optional)" rows="2"></textarea>
+        <div class="fire-door-description-row">
+          <label for="fireDoorQuoteNotes">Description of works</label>
+          <button type="button" id="autoGenerateFireDoorDescriptionBtn" class="link-btn">Auto-generate from ticked items</button>
+        </div>
+        <textarea id="fireDoorQuoteNotes" placeholder="e.g. Supply and install 2x FD30 Fire Door Set…" rows="2"></textarea>
         <div id="fireDoorChecklist"></div>
         <div class="fire-door-total-row">
-          <span>Total: <strong id="fireDoorQuoteTotal">£0.00</strong> <span id="fireDoorQuoteCount" class="hint-inline"></span></span>
-          <span class="fire-door-total-actions">
+          <div class="fire-door-total-breakdown">
+            <span>Subtotal: <strong id="fireDoorQuoteSubtotal">£0.00</strong></span>
+            <span>VAT (20%): <strong id="fireDoorQuoteVat">£0.00</strong></span>
+            <span class="fire-door-total-grand">Total: <strong id="fireDoorQuoteTotal">£0.00</strong></span>
+          </div>
+          <div class="fire-door-total-right">
+            <span id="fireDoorQuoteCount" class="hint-inline"></span>
             <button type="button" id="clearFireDoorQuoteBtn" class="link-btn">Clear</button>
             <button type="button" id="saveFireDoorQuoteBtn" class="primary">Save &amp; Download PDF</button>
-          </span>
+          </div>
         </div>
 
         <h3>Saved Quotes</h3>

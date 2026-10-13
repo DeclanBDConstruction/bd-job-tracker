@@ -1700,6 +1700,11 @@ async function deleteFireDoorItem(id) {
   check(error);
 }
 
+// Matches the VAT rate on the company's real "Quotes Example.xlsx" estimate template
+// (TOTAL ESTIMATE, then VAT @ 20%, then TOTAL) - computed here rather than stored, since it's
+// always 20% of the items subtotal, never a value that needs to be edited or persisted.
+const FIRE_DOOR_VAT_RATE = 0.2;
+
 function rowToFireDoorQuote(row, items) {
   const lineItems = (items || []).map((it) => ({
     id: it.id,
@@ -1708,6 +1713,8 @@ function rowToFireDoorQuote(row, items) {
     price: Number(it.price),
     quantity: Number(it.quantity),
   }));
+  const subtotal = lineItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+  const vat = subtotal * FIRE_DOOR_VAT_RATE;
   return {
     id: row.id,
     clientName: row.client_name,
@@ -1717,7 +1724,9 @@ function rowToFireDoorQuote(row, items) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     items: lineItems,
-    total: lineItems.reduce((sum, it) => sum + it.price * it.quantity, 0),
+    subtotal,
+    vat,
+    total: subtotal + vat,
   };
 }
 

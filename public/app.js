@@ -2270,7 +2270,13 @@ document.getElementById('addFireDoorItemBtn').addEventListener('click', async ()
   }
 });
 
-function fireDoorQuoteTotal() {
+// Matches the VAT rate on the company's real "Quotes Example.xlsx" estimate template
+// (Estimate Total, then VAT @ 20%, then Total) - see FIRE_DOOR_VAT_RATE in db.js, which the
+// saved quote's own subtotal/vat/total come from; this just mirrors it for the live total
+// while the quote is still being built, before it's saved.
+const FIRE_DOOR_VAT_RATE = 0.2;
+
+function fireDoorQuoteSubtotal() {
   let total = 0;
   tickedFireDoorItems.forEach((quantity, itemId) => {
     const item = state.fireDoorItems.find((it) => it.id === itemId);
@@ -2280,10 +2286,46 @@ function fireDoorQuoteTotal() {
 }
 
 function updateFireDoorQuoteTotal() {
-  document.getElementById('fireDoorQuoteTotal').textContent = money(fireDoorQuoteTotal());
+  const subtotal = fireDoorQuoteSubtotal();
+  const vat = subtotal * FIRE_DOOR_VAT_RATE;
+  document.getElementById('fireDoorQuoteSubtotal').textContent = money(subtotal);
+  document.getElementById('fireDoorQuoteVat').textContent = money(vat);
+  document.getElementById('fireDoorQuoteTotal').textContent = money(subtotal + vat);
   const count = tickedFireDoorItems.size;
-  document.getElementById('fireDoorQuoteCount').textContent = count ? `(${count} item${count === 1 ? '' : 's'} selected)` : '';
+  document.getElementById('fireDoorQuoteCount').textContent = count ? `${count} item${count === 1 ? '' : 's'} selected` : '';
 }
+
+// Composes a plain-English description from whatever's currently ticked (e.g. "Supply and
+// install: 2x FD30 Fire Door Set, 1x Door Closer") so a surveyor doesn't have to type one out
+// by hand. Only overwrites the field while it's still in its auto-filled state - see the
+// fireDoorQuoteNotes 'input' listener below, which drops out of auto-fill the moment someone
+// types their own wording, so ticking another item afterwards doesn't clobber their edit.
+function fireDoorAutoDescription() {
+  const parts = Array.from(tickedFireDoorItems.entries())
+    .map(([itemId, quantity]) => {
+      const item = state.fireDoorItems.find((it) => it.id === itemId);
+      return item ? `${quantity}x ${item.name}` : null;
+    })
+    .filter(Boolean);
+  return parts.length ? `Supply and install: ${parts.join(', ')}` : '';
+}
+
+function maybeAutoFillFireDoorDescription() {
+  const notesInput = document.getElementById('fireDoorQuoteNotes');
+  if (notesInput.dataset.autoFilled !== 'false') {
+    notesInput.value = fireDoorAutoDescription();
+    notesInput.dataset.autoFilled = 'true';
+  }
+}
+
+const fireDoorNotesInput = document.getElementById('fireDoorQuoteNotes');
+fireDoorNotesInput.dataset.autoFilled = 'true';
+fireDoorNotesInput.addEventListener('input', () => { fireDoorNotesInput.dataset.autoFilled = 'false'; });
+
+document.getElementById('autoGenerateFireDoorDescriptionBtn').addEventListener('click', () => {
+  fireDoorNotesInput.value = fireDoorAutoDescription();
+  fireDoorNotesInput.dataset.autoFilled = 'true';
+});
 
 function renderFireDoorChecklist() {
   const container = document.getElementById('fireDoorChecklist');
@@ -2319,6 +2361,7 @@ function renderFireDoorChecklist() {
         qtyInput.hidden = true;
         tickedFireDoorItems.delete(id);
       }
+      maybeAutoFillFireDoorDescription();
       updateFireDoorQuoteTotal();
     });
   });
@@ -2328,6 +2371,7 @@ function renderFireDoorChecklist() {
       const id = row.dataset.id;
       if (tickedFireDoorItems.has(id)) {
         tickedFireDoorItems.set(id, Number(e.target.value) || 1);
+        maybeAutoFillFireDoorDescription();
         updateFireDoorQuoteTotal();
       }
     });
@@ -2338,7 +2382,8 @@ function renderFireDoorChecklist() {
 document.getElementById('clearFireDoorQuoteBtn').addEventListener('click', () => {
   document.getElementById('fireDoorQuoteClient').value = '';
   document.getElementById('fireDoorQuoteAddress').value = '';
-  document.getElementById('fireDoorQuoteNotes').value = '';
+  fireDoorNotesInput.value = '';
+  fireDoorNotesInput.dataset.autoFilled = 'true';
   tickedFireDoorItems.clear();
   renderFireDoorChecklist();
 });
@@ -2366,6 +2411,7 @@ document.getElementById('saveFireDoorQuoteBtn').addEventListener('click', async 
     clientInput.value = '';
     addressInput.value = '';
     notesInput.value = '';
+    notesInput.dataset.autoFilled = 'true';
     tickedFireDoorItems.clear();
     await loadFireDoorData();
     toast('Quote saved - downloading PDF…', 'success');
@@ -2383,9 +2429,11 @@ function renderFireDoorQuotesList() {
     const detailRow = expanded ? `
       <tr class="fd-quote-detail-row">
         <td colspan="4">
+          ${q.notes ? `<p class="fd-quote-description">${escapeHtml(q.notes)}</p>` : ''}
           <ul class="fd-quote-item-list">
             ${q.items.map((it) => `<li>${it.quantity} × ${escapeHtml(it.name)} @ ${money(it.price)} = ${money(it.price * it.quantity)}</li>`).join('')}
           </ul>
+          <p class="fd-quote-breakdown">Subtotal: ${money(q.subtotal)} &nbsp; VAT (20%): ${money(q.vat)} &nbsp; <strong>Total: ${money(q.total)}</strong></p>
         </td>
       </tr>` : '';
     return `
