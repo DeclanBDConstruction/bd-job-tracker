@@ -253,20 +253,20 @@ async function showApp(user) {
   document.getElementById('assignmentsTabBtn').hidden = isStaff() || isStocksManager();
 
   // Staff and operatives both only get Home, My Calendar and My Diary - everything else
-  // (Jobs, Team, Operations, Reports, and the shared team Calendar) is hidden here for UI
-  // purposes, but the real enforcement is server-side (see the allowlists in server.js).
-  // Stocks managers are restricted the same way, except they keep the Operations dropdown
-  // open specifically for Assets - every other button inside it is individually hidden below.
+  // (Jobs, Team, Quoting, Resources, Reports, and the shared team Calendar) is hidden here
+  // for UI purposes, but the real enforcement is server-side (see the allowlists in
+  // server.js). Stocks managers are restricted the same way, except they keep the Plant &
+  // Equipment dropdown open specifically for Assets - Hire/Vehicle Hire inside it stay
+  // individually hidden (admin-only, set above) since a stocks manager isn't one of them.
   const restricted = isStaff() || isOperative() || isStocksManager();
   document.getElementById('jobsTabGroup').hidden = restricted;
   document.getElementById('employeesTabBtn').hidden = restricted;
-  document.getElementById('operationsTabGroup').hidden = restricted && !isStocksManager();
+  document.getElementById('quotingTabGroup').hidden = restricted;
+  document.getElementById('resourcesTabGroup').hidden = restricted;
+  document.getElementById('plantTabGroup').hidden = restricted && !isStocksManager();
   document.getElementById('reportsTabGroup').hidden = restricted;
   document.getElementById('calendarTabBtn').hidden = restricted;
   document.getElementById('headerSearchWrap').hidden = restricted;
-  ['labour', 'subbies', 'quoting', 'signage', 'pricelist'].forEach((tab) => {
-    document.querySelector(`.tab-btn[data-tab="${tab}"]`).hidden = isStocksManager();
-  });
 
   // Clients get no tab nav at all - just the dedicated portal view (job list + calendar)
   // below the header. Real enforcement is server-side (see CLIENT_ALLOWED_ROUTES in server.js).
