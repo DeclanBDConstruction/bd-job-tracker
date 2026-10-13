@@ -3696,3 +3696,61 @@ button:disabled {
   .cad-toolbar-row { gap: var(--space-2); }
   .cad-toolbar-divider { display: none; }
 }
+
+.fire-door-columns {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+}
+
+.fire-door-catalog, .fire-door-quote-builder {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.fire-door-quote-builder textarea {
+  width: 100%;
+  margin-top: var(--space-2);
+  resize: vertical;
+}
+
+.fire-door-category-heading {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.fire-door-check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.fire-door-check-row label {
+  flex: 1 1 auto;
+}
+
+.fire-door-check-row input[type="number"] {
+  width: 70px;
+}
+
+.fire-door-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--space-3) 0;
+}
+
+@media (max-width: 900px) {
+  .fire-door-columns { flex-direction: column; }
+}
+
+.fd-quote-item-list {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-sm);
+  color: var(--muted);
+}

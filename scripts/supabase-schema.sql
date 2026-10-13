@@ -278,6 +278,43 @@ create table if not exists price_list_items (
   updated_at timestamptz not null default now()
 );
 
+-- Fire door catalog: priced items admins/surveyors maintain themselves, ticked off when
+-- building a fire door quote. `category` is free text (e.g. Doors, Frames, Ironmongery,
+-- Labour) purely to group the checklist on the quote screen - no separate category table.
+create table if not exists fire_door_items (
+  id uuid primary key,
+  category text not null default 'General',
+  name text not null,
+  price numeric not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- A fire door quote is standalone like `quotes` - not linked to a job, since it's often
+-- built before a job exists. Items are snapshotted into fire_door_quote_items (name/price
+-- copied at tick time) so a quote's total doesn't shift if the catalog price changes later.
+create table if not exists fire_door_quotes (
+  id uuid primary key,
+  client_name text not null,
+  site_address text,
+  notes text,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists fire_door_quote_items (
+  id uuid primary key,
+  quote_id uuid not null references fire_door_quotes(id) on delete cascade,
+  item_id uuid references fire_door_items(id) on delete set null,
+  name text not null,
+  price numeric not null default 0,
+  quantity numeric not null default 1
+);
+
+create index if not exists fire_door_items_category_idx on fire_door_items (category);
+create index if not exists fire_door_quote_items_quote_id_idx on fire_door_quote_items (quote_id);
+
 -- Hired-in plant/equipment, admin-only. Job number is free text (typed in directly)
 -- rather than linked to a row in `jobs`, since a hire doesn't need to match an existing
 -- job entry. Due-back date and overdue/due-soon flagging are computed from hire_date +
@@ -611,6 +648,9 @@ alter table job_assignments enable row level security;
 alter table assignment_time_logs enable row level security;
 alter table calendar_events enable row level security;
 alter table price_list_items enable row level security;
+alter table fire_door_items enable row level security;
+alter table fire_door_quotes enable row level security;
+alter table fire_door_quote_items enable row level security;
 alter table saved_risk_assessments enable row level security;
 alter table cad_drawings enable row level security;
 alter table custom_risk_assessments enable row level security;

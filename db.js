@@ -1637,6 +1637,191 @@ async function deletePriceListItem(id) {
   check(error);
 }
 
+// ---------- Fire Door Quotes (admin & surveyor only) ----------
+// A priced catalog (fire_door_items) maintained by admins/surveyors, plus standalone quotes
+// (fire_door_quotes) built by ticking catalog items with a quantity. Quote items snapshot
+// name/price at save time (fire_door_quote_items) so a quote's total doesn't shift if the
+// catalog price is edited later.
+
+function rowToFireDoorItem(row) {
+  return {
+    id: row.id,
+    category: row.category,
+    name: row.name,
+    price: Number(row.price),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listFireDoorItems() {
+  const { data, error } = await supabase.from('fire_door_items').select('*').order('category').order('name');
+  check(error);
+  return data.map(rowToFireDoorItem);
+}
+
+async function createFireDoorItem(input) {
+  const name = (input.name || '').trim();
+  if (!name) throw new Error('Item name is required');
+  const price = Number(input.price);
+  if (isNaN(price) || price < 0) throw new Error('Price must be a valid number');
+  const category = (input.category || '').trim() || 'General';
+
+  const row = {
+    id: genId(),
+    category,
+    name,
+    price,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('fire_door_items').insert(row).select().single();
+  check(error);
+  return rowToFireDoorItem(data);
+}
+
+async function updateFireDoorItem(id, input) {
+  const name = (input.name || '').trim();
+  if (!name) throw new Error('Item name is required');
+  const price = Number(input.price);
+  if (isNaN(price) || price < 0) throw new Error('Price must be a valid number');
+  const category = (input.category || '').trim() || 'General';
+
+  const { data, error } = await supabase.from('fire_door_items')
+    .update({ category, name, price, updated_at: new Date().toISOString() })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) throw new Error('Item not found');
+  return rowToFireDoorItem(data);
+}
+
+async function deleteFireDoorItem(id) {
+  const { error } = await supabase.from('fire_door_items').delete().eq('id', id);
+  check(error);
+}
+
+function rowToFireDoorQuote(row, items) {
+  const lineItems = (items || []).map((it) => ({
+    id: it.id,
+    itemId: it.item_id,
+    name: it.name,
+    price: Number(it.price),
+    quantity: Number(it.quantity),
+  }));
+  return {
+    id: row.id,
+    clientName: row.client_name,
+    siteAddress: row.site_address,
+    notes: row.notes,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    items: lineItems,
+    total: lineItems.reduce((sum, it) => sum + it.price * it.quantity, 0),
+  };
+}
+
+async function listFireDoorQuotes() {
+  const { data: quotes, error } = await supabase.from('fire_door_quotes').select('*').order('created_at', { ascending: false });
+  check(error);
+  if (!quotes.length) return [];
+  const { data: items, error: itemsError } = await supabase.from('fire_door_quote_items')
+    .select('*').in('quote_id', quotes.map((q) => q.id));
+  check(itemsError);
+  return quotes.map((q) => rowToFireDoorQuote(q, items.filter((it) => it.quote_id === q.id)));
+}
+
+async function getFireDoorQuote(id) {
+  const { data: quote, error } = await supabase.from('fire_door_quotes').select('*').eq('id', id).maybeSingle();
+  check(error);
+  if (!quote) return null;
+  const { data: items, error: itemsError } = await supabase.from('fire_door_quote_items').select('*').eq('quote_id', id);
+  check(itemsError);
+  return rowToFireDoorQuote(quote, items);
+}
+
+function validateFireDoorQuoteItems(input) {
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (!items.length) throw new Error('At least one item is required');
+  return items.map((it) => {
+    const name = (it.name || '').trim();
+    if (!name) throw new Error('Each item needs a name');
+    const price = Number(it.price);
+    if (isNaN(price) || price < 0) throw new Error('Each item needs a valid price');
+    const quantity = Number(it.quantity);
+    if (isNaN(quantity) || quantity <= 0) throw new Error('Each item needs a quantity greater than 0');
+    return { itemId: it.itemId || null, name, price, quantity };
+  });
+}
+
+async function createFireDoorQuote(input, user) {
+  const clientName = (input.clientName || '').trim();
+  if (!clientName) throw new Error('Client name is required');
+  const items = validateFireDoorQuoteItems(input);
+
+  const row = {
+    id: genId(),
+    client_name: clientName,
+    site_address: (input.siteAddress || '').trim() || null,
+    notes: (input.notes || '').trim() || null,
+    created_by: user ? user.id : null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { data: quote, error } = await supabase.from('fire_door_quotes').insert(row).select().single();
+  check(error);
+
+  const itemRows = items.map((it) => ({
+    id: genId(),
+    quote_id: quote.id,
+    item_id: it.itemId,
+    name: it.name,
+    price: it.price,
+    quantity: it.quantity,
+  }));
+  const { data: insertedItems, error: itemsError } = await supabase.from('fire_door_quote_items').insert(itemRows).select();
+  check(itemsError);
+
+  return rowToFireDoorQuote(quote, insertedItems);
+}
+
+async function updateFireDoorQuote(id, input) {
+  const clientName = (input.clientName || '').trim();
+  if (!clientName) throw new Error('Client name is required');
+  const items = validateFireDoorQuoteItems(input);
+
+  const { data: quote, error } = await supabase.from('fire_door_quotes')
+    .update({
+      client_name: clientName,
+      site_address: (input.siteAddress || '').trim() || null,
+      notes: (input.notes || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id).select().maybeSingle();
+  check(error);
+  if (!quote) throw new Error('Quote not found');
+
+  const { error: deleteError } = await supabase.from('fire_door_quote_items').delete().eq('quote_id', id);
+  check(deleteError);
+  const itemRows = items.map((it) => ({
+    id: genId(),
+    quote_id: id,
+    item_id: it.itemId,
+    name: it.name,
+    price: it.price,
+    quantity: it.quantity,
+  }));
+  const { data: insertedItems, error: itemsError } = await supabase.from('fire_door_quote_items').insert(itemRows).select();
+  check(itemsError);
+
+  return rowToFireDoorQuote(quote, insertedItems);
+}
+
+async function deleteFireDoorQuote(id) {
+  const { error } = await supabase.from('fire_door_quotes').delete().eq('id', id);
+  check(error);
+}
+
 // ---------- Job Costing (profit/loss) ----------
 // Per-job costing breakdown shown in the Job Detail modal's Costing tab - same shape as the
 // paper job-costing spreadsheet this replaces (Employee Hours / Sub Contractor / Materials
@@ -3188,6 +3373,15 @@ module.exports = {
   createPriceListItem,
   updatePriceListItem,
   deletePriceListItem,
+  listFireDoorItems,
+  createFireDoorItem,
+  updateFireDoorItem,
+  deleteFireDoorItem,
+  listFireDoorQuotes,
+  getFireDoorQuote,
+  createFireDoorQuote,
+  updateFireDoorQuote,
+  deleteFireDoorQuote,
   listJobCostingLines,
   createJobCostingLine,
   updateJobCostingLine,

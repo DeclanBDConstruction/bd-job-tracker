@@ -74,3 +74,12 @@ test('clients cannot reach costing, time-logs, document uploads/deletes, variati
   assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/employees'), false);
   assert.equal(allowed(CLIENT_ALLOWED_ROUTES, 'GET', '/calendar'), false);
 });
+
+test('fire door catalog and quotes are admin/surveyor only, so not on the staff, operative or client allowlists', () => {
+  for (const routes of [STAFF_ALLOWED_ROUTES, OPERATIVE_ALLOWED_ROUTES, CLIENT_ALLOWED_ROUTES]) {
+    assert.equal(allowed(routes, 'GET', '/fire-door-items'), false);
+    assert.equal(allowed(routes, 'POST', '/fire-door-items'), false);
+    assert.equal(allowed(routes, 'GET', '/fire-door-quotes'), false);
+    assert.equal(allowed(routes, 'POST', '/fire-door-quotes'), false);
+  }
+});

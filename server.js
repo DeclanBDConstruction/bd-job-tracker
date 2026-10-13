@@ -1721,6 +1721,59 @@ app.delete('/api/quotes/:id', handle(async (req, res) => {
   res.status(204).end();
 }));
 
+// ---------- Fire Door Quotes (admin & surveyor only) ----------
+
+app.get('/api/fire-door-items', requireAdminOrSurveyor, handle(async (req, res) => {
+  res.json(await db.listFireDoorItems());
+}));
+
+app.post('/api/fire-door-items', requireAdminOrSurveyor, handle(async (req, res) => {
+  const item = await db.createFireDoorItem(req.body);
+  db.logCrud(req.user, 'created', 'fire_door_item', 'Fire door item', item.name, item.id);
+  broadcast('fireDoor');
+  res.status(201).json(item);
+}));
+
+app.put('/api/fire-door-items/:id', requireAdminOrSurveyor, handle(async (req, res) => {
+  const item = await db.updateFireDoorItem(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'fire_door_item', 'Fire door item', item.name, item.id);
+  broadcast('fireDoor');
+  res.json(item);
+}));
+
+app.delete('/api/fire-door-items/:id', requireAdminOrSurveyor, handle(async (req, res) => {
+  await db.deleteFireDoorItem(req.params.id);
+  db.logCrud(req.user, 'deleted', 'fire_door_item', 'Fire door item', req.params.id, req.params.id);
+  broadcast('fireDoor');
+  res.status(204).end();
+}));
+
+app.get('/api/fire-door-quotes', requireAdminOrSurveyor, handle(async (req, res) => {
+  res.json(await db.listFireDoorQuotes());
+}));
+
+app.post('/api/fire-door-quotes', requireAdminOrSurveyor, handle(async (req, res) => {
+  const quote = await db.createFireDoorQuote(req.body, req.user);
+  db.logCrud(req.user, 'created', 'fire_door_quote', 'Fire door quote', quote.clientName, quote.id);
+  broadcast('fireDoor');
+  res.status(201).json(quote);
+}));
+
+app.put('/api/fire-door-quotes/:id', requireAdminOrSurveyor, handle(async (req, res) => {
+  const quote = await db.updateFireDoorQuote(req.params.id, req.body);
+  db.logCrud(req.user, 'updated', 'fire_door_quote', 'Fire door quote', quote.clientName, quote.id);
+  broadcast('fireDoor');
+  res.json(quote);
+}));
+
+app.delete('/api/fire-door-quotes/:id', requireAdminOrSurveyor, handle(async (req, res) => {
+  const quote = await db.getFireDoorQuote(req.params.id);
+  await db.deleteFireDoorQuote(req.params.id);
+  if (quote) db.logCrud(req.user, 'deleted', 'fire_door_quote', 'Fire door quote', quote.clientName, quote.id);
+  broadcast('fireDoor');
+  res.status(204).end();
+}));
+
 // ---------- Hire (admin only) ----------
 
 app.get('/api/hires', requireAdmin, handle(async (req, res) => {

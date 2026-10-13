@@ -9,6 +9,8 @@ const state = {
   calendarColors: [],
   userColors: [],
   priceListItems: [],
+  fireDoorItems: [],
+  fireDoorQuotes: [],
   subbies: [],
   quotes: [],
   hires: [],
@@ -238,6 +240,7 @@ async function showApp(user) {
   document.getElementById('adminTabBtn').hidden = !isAdmin();
   document.getElementById('logsTabBtn').hidden = !isAdmin();
   document.getElementById('cadTabBtn').hidden = !(isAdmin() || isSurveyor());
+  document.getElementById('fireDoorTabBtn').hidden = !(isAdmin() || isSurveyor());
   document.getElementById('clientsTabBtn').hidden = !isAdmin();
   document.getElementById('hireTabBtn').hidden = !isAdmin();
   document.getElementById('vehicleHireTabBtn').hidden = !isAdmin();
@@ -321,6 +324,7 @@ function connectLiveUpdates() {
     else if (type === 'calendar') handleLiveCalendarChange();
     else if (type === 'users') handleLiveUsersChange();
     else if (type === 'priceList') handleLivePriceListChange();
+    else if (type === 'fireDoor') handleLiveFireDoorChange();
     else if (type === 'subbies') handleLiveSubbiesChange();
     else if (type === 'quotes') handleLiveQuotesChange();
     else if (type === 'hires') handleLiveHiresChange();
@@ -370,6 +374,10 @@ async function handleLiveSignageChange() {
 
 async function handleLiveQuotesChange() {
   if (activeTab() === 'quoting') loadQuotes();
+}
+
+async function handleLiveFireDoorChange() {
+  if (activeTab() === 'firedoor') loadFireDoorData();
 }
 
 async function handleLiveDiaryChange() {
@@ -747,6 +755,7 @@ function goToTab(tab) {
     showTabLoading('#cadGrid');
     loadCadDrawings();
   }
+  if (tab === 'firedoor') loadFireDoorData();
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -2119,6 +2128,267 @@ const materialList = createPriceListView({
 function renderPriceLists() {
   labourList.render();
   materialList.render();
+}
+
+// ---------- Fire Door Quotes (admin & surveyor only) ----------
+// Catalog (state.fireDoorItems) is a flat priced list like the Price List, grouped here by
+// free-text category. The quote builder keeps a local tickedFireDoorItems map of
+// itemId -> quantity, live-totalling as the user ticks/unticks/adjusts quantity, then posts
+// a snapshot of the ticked items to /api/fire-door-quotes on Save.
+
+let editingFireDoorItemId = null;
+const tickedFireDoorItems = new Map();
+let expandedFireDoorQuoteId = null;
+
+async function loadFireDoorData() {
+  [state.fireDoorItems, state.fireDoorQuotes] = await Promise.all([
+    api('/api/fire-door-items'),
+    api('/api/fire-door-quotes'),
+  ]);
+  renderFireDoorCatalog();
+  renderFireDoorChecklist();
+  renderFireDoorQuotesList();
+}
+
+function fireDoorItemsByCategory() {
+  const groups = new Map();
+  state.fireDoorItems
+    .slice()
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
+    .forEach((it) => {
+      if (!groups.has(it.category)) groups.set(it.category, []);
+      groups.get(it.category).push(it);
+    });
+  return groups;
+}
+
+function renderFireDoorCatalog() {
+  const tbody = document.querySelector('#fireDoorCatalogTable tbody');
+  const rows = [];
+  fireDoorItemsByCategory().forEach((items) => {
+    items.forEach((it) => {
+      if (editingFireDoorItemId === it.id) {
+        rows.push(`
+          <tr data-id="${it.id}">
+            <td><input type="text" class="fd-edit-category" value="${escapeHtml(it.category)}"></td>
+            <td><input type="text" class="fd-edit-name" value="${escapeHtml(it.name)}"></td>
+            <td><input type="number" step="0.01" min="0" class="fd-edit-price" value="${it.price}"></td>
+            <td class="row-actions">
+              <button type="button" class="primary fd-save-btn">Save</button>
+              <button type="button" class="fd-cancel-btn">Cancel</button>
+            </td>
+          </tr>`);
+      } else {
+        rows.push(`
+          <tr data-id="${it.id}">
+            <td>${escapeHtml(it.category)}</td>
+            <td>${escapeHtml(it.name)}</td>
+            <td>${money(it.price)}</td>
+            <td class="row-actions">
+              <button type="button" class="fd-edit-btn">Edit</button>
+              <button type="button" class="danger fd-delete-btn">Delete</button>
+            </td>
+          </tr>`);
+      }
+    });
+  });
+  tbody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4" class="empty-state">Nothing added yet.</td></tr>';
+
+  tbody.querySelectorAll('.fd-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingFireDoorItemId = btn.closest('tr').dataset.id; renderFireDoorCatalog(); });
+  });
+  tbody.querySelectorAll('.fd-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { editingFireDoorItemId = null; renderFireDoorCatalog(); });
+  });
+  tbody.querySelectorAll('.fd-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const payload = {
+        category: tr.querySelector('.fd-edit-category').value,
+        name: tr.querySelector('.fd-edit-name').value,
+        price: tr.querySelector('.fd-edit-price').value,
+      };
+      try {
+        await api(`/api/fire-door-items/${tr.dataset.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+        editingFireDoorItemId = null;
+        await loadFireDoorData();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+  tbody.querySelectorAll('.fd-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('tr').dataset.id;
+      if (!confirm('Delete this item?')) return;
+      try {
+        await api(`/api/fire-door-items/${id}`, { method: 'DELETE' });
+        tickedFireDoorItems.delete(id);
+        await loadFireDoorData();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+}
+
+document.getElementById('addFireDoorItemBtn').addEventListener('click', async () => {
+  const categoryInput = document.getElementById('newFireDoorCategory');
+  const nameInput = document.getElementById('newFireDoorName');
+  const priceInput = document.getElementById('newFireDoorPrice');
+  if (!nameInput.value.trim()) return;
+  try {
+    await api('/api/fire-door-items', {
+      method: 'POST',
+      body: JSON.stringify({ category: categoryInput.value, name: nameInput.value, price: priceInput.value }),
+    });
+    categoryInput.value = '';
+    nameInput.value = '';
+    priceInput.value = '';
+    await loadFireDoorData();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+function fireDoorQuoteTotal() {
+  let total = 0;
+  tickedFireDoorItems.forEach((quantity, itemId) => {
+    const item = state.fireDoorItems.find((it) => it.id === itemId);
+    if (item) total += item.price * quantity;
+  });
+  return total;
+}
+
+function updateFireDoorQuoteTotal() {
+  document.getElementById('fireDoorQuoteTotal').textContent = money(fireDoorQuoteTotal());
+}
+
+function renderFireDoorChecklist() {
+  const container = document.getElementById('fireDoorChecklist');
+  const groups = fireDoorItemsByCategory();
+  if (!groups.size) {
+    container.innerHTML = '<p class="empty-state">Add some catalog items above first.</p>';
+  } else {
+    let html = '';
+    groups.forEach((items, category) => {
+      html += `<div class="fire-door-category-heading">${escapeHtml(category)}</div>`;
+      items.forEach((it) => {
+        const checked = tickedFireDoorItems.has(it.id);
+        const quantity = checked ? tickedFireDoorItems.get(it.id) : 1;
+        html += `
+          <div class="fire-door-check-row" data-id="${it.id}">
+            <label><input type="checkbox" class="fd-check" ${checked ? 'checked' : ''}> ${escapeHtml(it.name)} (${money(it.price)})</label>
+            <input type="number" class="fd-qty" min="1" step="1" value="${quantity}" ${checked ? '' : 'hidden'}>
+          </div>`;
+      });
+    });
+    container.innerHTML = html;
+  }
+
+  container.querySelectorAll('.fd-check').forEach((checkbox) => {
+    checkbox.addEventListener('change', (e) => {
+      const row = e.target.closest('.fire-door-check-row');
+      const id = row.dataset.id;
+      const qtyInput = row.querySelector('.fd-qty');
+      if (e.target.checked) {
+        qtyInput.hidden = false;
+        tickedFireDoorItems.set(id, Number(qtyInput.value) || 1);
+      } else {
+        qtyInput.hidden = true;
+        tickedFireDoorItems.delete(id);
+      }
+      updateFireDoorQuoteTotal();
+    });
+  });
+  container.querySelectorAll('.fd-qty').forEach((qtyInput) => {
+    qtyInput.addEventListener('input', (e) => {
+      const row = e.target.closest('.fire-door-check-row');
+      const id = row.dataset.id;
+      if (tickedFireDoorItems.has(id)) {
+        tickedFireDoorItems.set(id, Number(e.target.value) || 1);
+        updateFireDoorQuoteTotal();
+      }
+    });
+  });
+  updateFireDoorQuoteTotal();
+}
+
+document.getElementById('saveFireDoorQuoteBtn').addEventListener('click', async () => {
+  const clientInput = document.getElementById('fireDoorQuoteClient');
+  const addressInput = document.getElementById('fireDoorQuoteAddress');
+  const notesInput = document.getElementById('fireDoorQuoteNotes');
+  if (!clientInput.value.trim()) { toast('Client name is required.', 'error'); return; }
+  if (!tickedFireDoorItems.size) { toast('Tick at least one item.', 'error'); return; }
+  const items = Array.from(tickedFireDoorItems.entries()).map(([itemId, quantity]) => {
+    const item = state.fireDoorItems.find((it) => it.id === itemId);
+    return { itemId, name: item.name, price: item.price, quantity };
+  });
+  try {
+    await api('/api/fire-door-quotes', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientName: clientInput.value,
+        siteAddress: addressInput.value,
+        notes: notesInput.value,
+        items,
+      }),
+    });
+    clientInput.value = '';
+    addressInput.value = '';
+    notesInput.value = '';
+    tickedFireDoorItems.clear();
+    await loadFireDoorData();
+    toast('Quote saved.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+function renderFireDoorQuotesList() {
+  const tbody = document.querySelector('#fireDoorQuotesTable tbody');
+  const quotes = state.fireDoorQuotes;
+  tbody.innerHTML = quotes.length ? quotes.map((q) => {
+    const expanded = expandedFireDoorQuoteId === q.id;
+    const detailRow = expanded ? `
+      <tr class="fd-quote-detail-row">
+        <td colspan="4">
+          <ul class="fd-quote-item-list">
+            ${q.items.map((it) => `<li>${it.quantity} × ${escapeHtml(it.name)} @ ${money(it.price)} = ${money(it.price * it.quantity)}</li>`).join('')}
+          </ul>
+        </td>
+      </tr>` : '';
+    return `
+      <tr data-id="${q.id}">
+        <td>${escapeHtml(q.clientName)}</td>
+        <td>${new Date(q.createdAt).toLocaleDateString('en-GB')}</td>
+        <td>${money(q.total)}</td>
+        <td class="row-actions">
+          <button type="button" class="fd-quote-view-btn">${expanded ? 'Hide' : 'View'}</button>
+          <button type="button" class="danger fd-quote-delete-btn">Delete</button>
+        </td>
+      </tr>${detailRow}`;
+  }).join('') : '<tr><td colspan="4" class="empty-state">No quotes saved yet.</td></tr>';
+
+  tbody.querySelectorAll('.fd-quote-view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.closest('tr').dataset.id;
+      expandedFireDoorQuoteId = expandedFireDoorQuoteId === id ? null : id;
+      renderFireDoorQuotesList();
+    });
+  });
+  tbody.querySelectorAll('.fd-quote-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('tr').dataset.id;
+      if (!confirm('Delete this quote?')) return;
+      try {
+        await api(`/api/fire-door-quotes/${id}`, { method: 'DELETE' });
+        await loadFireDoorData();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
 }
 
 // ---------- Subbies (subcontractor directory) ----------

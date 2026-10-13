@@ -151,6 +151,7 @@
     </div>
 
     <button class="tab-btn" data-tab="cad" id="cadTabBtn" hidden>CAD</button>
+    <button class="tab-btn" data-tab="firedoor" id="fireDoorTabBtn" hidden>Fire Door Quotes</button>
     <button class="tab-btn" data-tab="admin" id="adminTabBtn" hidden>Admin</button>
     <button class="tab-btn" data-tab="logs" id="logsTabBtn" hidden>Logs</button>
   </nav>
@@ -762,6 +763,50 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FIRE DOOR QUOTES TAB (admin/surveyor only) -->
+  <section id="tab-firedoor" class="tab-panel">
+    <div class="panel-header">
+      <h2>Fire Door Quotes</h2>
+    </div>
+    <p class="hint">Maintain a priced catalog of fire door items below, then tick off what's needed in the quote builder to get a total — admins and surveyors only.</p>
+
+    <div class="fire-door-columns">
+      <div class="fire-door-catalog">
+        <h3>Catalog</h3>
+        <div class="import-upload">
+          <input type="text" id="newFireDoorCategory" placeholder="Category (e.g. Doors)">
+          <input type="text" id="newFireDoorName" placeholder="Item name">
+          <input type="number" id="newFireDoorPrice" placeholder="Price (£)" step="0.01" min="0">
+          <button type="button" id="addFireDoorItemBtn" class="primary">+ Add</button>
+        </div>
+        <table class="data-table" id="fireDoorCatalogTable">
+          <thead><tr><th>Category</th><th>Item</th><th>Price</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="fire-door-quote-builder">
+        <h3>Build a Quote</h3>
+        <div class="import-upload">
+          <input type="text" id="fireDoorQuoteClient" placeholder="Client name">
+          <input type="text" id="fireDoorQuoteAddress" placeholder="Site address (optional)">
+        </div>
+        <textarea id="fireDoorQuoteNotes" placeholder="Notes (optional)" rows="2"></textarea>
+        <div id="fireDoorChecklist"></div>
+        <div class="fire-door-total-row">
+          <strong>Total: <span id="fireDoorQuoteTotal">£0.00</span></strong>
+          <button type="button" id="saveFireDoorQuoteBtn" class="primary">Save Quote</button>
+        </div>
+
+        <h3>Saved Quotes</h3>
+        <table class="data-table" id="fireDoorQuotesTable">
+          <thead><tr><th>Client</th><th>Date</th><th>Total</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
   </section>
