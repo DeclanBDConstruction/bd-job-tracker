@@ -11,6 +11,7 @@ const state = {
   priceListItems: [],
   fireDoorItems: [],
   fireDoorQuotes: [],
+  profileGifs: [],
   subbies: [],
   quotes: [],
   hires: [],
@@ -204,8 +205,9 @@ function renderAvatar(el, { id, name, hasPhoto, profileBorder }) {
 // Applies a person's chosen profile-card background (see PROFILE_BACKGROUND_THEMES in db.js) to
 // the card wrapping their photo/name on My Profile and the read-only profile view - same
 // "follows them around" cosmetic as the avatar border, just scoped to their own card. Scene ids
-// get the full illustrated scene injected as a background layer (see SCENE_MARKUP above); legacy
-// ids stay a plain CSS class on the card itself like before.
+// get the full illustrated scene injected as a background layer (see SCENE_MARKUP above); a
+// `gif-<id>` points at the shared upload library instead (state.profileGifs, proxied through
+// /api/profile-gifs/:id/file); legacy ids stay a plain CSS class on the card itself like before.
 function applyProfileBackground(el, profileBackground) {
   if (!el) return;
   const existingScene = el.querySelector(':scope > .profile-scene');
@@ -220,6 +222,11 @@ function applyProfileBackground(el, profileBackground) {
     scene.className = `profile-scene scene-${gen.template}`;
     scene.style.setProperty('--dh', `${gen.hue}deg`);
     scene.innerHTML = SCENE_MARKUP[gen.template] || '';
+    el.insertBefore(scene, el.firstChild);
+  } else if (profileBackground.startsWith('gif-')) {
+    const scene = document.createElement('div');
+    scene.className = 'profile-scene profile-scene-gif';
+    scene.innerHTML = `<img src="/api/profile-gifs/${profileBackground.slice(4)}/file" alt="">`;
     el.insertBefore(scene, el.firstChild);
   } else {
     el.classList.add(`profile-bg-${profileBackground}`);
@@ -307,9 +314,9 @@ function connectLiveUpdates() {
     // Staff/operatives only load a narrow slice of data (see bootstrapStaff/
     // bootstrapOperative), so ignore pings for everything else rather than firing
     // requests the server will 403.
-    if (isStaff() && !['calendar', 'diary', 'users'].includes(type)) return;
-    if (isOperative() && !['calendar', 'diary', 'users', 'jobAssignments'].includes(type)) return;
-    if (isStocksManager() && !['calendar', 'diary', 'users', 'assets', 'jobs'].includes(type)) return;
+    if (isStaff() && !['calendar', 'diary', 'users', 'profileGifs'].includes(type)) return;
+    if (isOperative() && !['calendar', 'diary', 'users', 'jobAssignments', 'profileGifs'].includes(type)) return;
+    if (isStocksManager() && !['calendar', 'diary', 'users', 'assets', 'jobs', 'profileGifs'].includes(type)) return;
     // Virtually every mutation already broadcasts some type - piggyback on all of them to
     // refresh the Logs tab live if it's open, rather than adding a dedicated broadcast call
     // at every one of the ~50 activity-logging call sites in server.js. Only while still on
@@ -325,6 +332,7 @@ function connectLiveUpdates() {
     else if (type === 'users') handleLiveUsersChange();
     else if (type === 'priceList') handleLivePriceListChange();
     else if (type === 'fireDoor') handleLiveFireDoorChange();
+    else if (type === 'profileGifs') handleLiveProfileGifsChange();
     else if (type === 'subbies') handleLiveSubbiesChange();
     else if (type === 'quotes') handleLiveQuotesChange();
     else if (type === 'hires') handleLiveHiresChange();
@@ -378,6 +386,11 @@ async function handleLiveQuotesChange() {
 
 async function handleLiveFireDoorChange() {
   if (activeTab() === 'firedoor') loadFireDoorData();
+}
+
+async function handleLiveProfileGifsChange() {
+  state.profileGifs = await api('/api/profile-gifs');
+  if (profileBackgroundCategory === 'Uploads') renderProfileStyleSection('background', state.profileStyleOptions.backgrounds, state.currentUser.profileBackground);
 }
 
 async function handleLiveDiaryChange() {
@@ -1821,23 +1834,27 @@ let profileBackgroundCategory = 'Classic';
 async function renderProfileStylePicker() {
   const user = state.currentUser;
   if (!user) return;
-  if (!state.profileStyleOptions) {
-    try {
-      state.profileStyleOptions = await api('/api/profile-styles');
-    } catch (err) {
-      toast(err.message, 'error');
-      return;
-    }
+  try {
+    if (!state.profileStyleOptions) state.profileStyleOptions = await api('/api/profile-styles');
+    state.profileGifs = await api('/api/profile-gifs');
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
   }
   renderProfileStyleSection('border', state.profileStyleOptions.borders, user.profileBorder);
   renderProfileStyleSection('background', state.profileStyleOptions.backgrounds, user.profileBackground);
 }
 
+// Backgrounds get an extra "Uploads" category backed by the shared GIF library (state.
+// profileGifs, see /api/profile-gifs) instead of a generated design list - the upload form
+// itself is static markup (#profileGifUploadSection) just shown/hidden here rather than
+// rebuilt, so an in-progress file pick/name isn't wiped out by a re-render.
 function renderProfileStyleSection(kind, options, selectedId) {
   const isBorder = kind === 'border';
   const categoriesEl = document.getElementById(isBorder ? 'profileBorderCategories' : 'profileBackgroundCategories');
   const gridEl = document.getElementById(isBorder ? 'profileBorderPicker' : 'profileBackgroundPicker');
   const categories = ['Classic', ...new Set(options.filter((o) => o.category !== 'Classic').map((o) => o.category))];
+  if (!isBorder) categories.push('Uploads');
   const activeCategory = isBorder ? profileBorderCategory : profileBackgroundCategory;
 
   categoriesEl.innerHTML = categories.map((cat) => `
@@ -1851,29 +1868,58 @@ function renderProfileStyleSection(kind, options, selectedId) {
     });
   });
 
-  // Swatches show a real (still) thumbnail of the scene's own art plus a small hue-tinted dot
-  // for the accent colour, rather than the live animated scene/ring - only 24 scene options now
-  // (3 templates x 8 accents) so this is cheap, and it means you're picking what you'll
-  // actually see rather than a flat colour chip standing in for it.
-  const visible = options.filter((o) => o.id === 'none' || o.category === activeCategory);
-  gridEl.innerHTML = visible.map((o) => {
-    const gen = parseGeneratedDesign(o.id);
-    const classes = ['profile-style-swatch-btn'];
-    let styleAttr = '';
-    let glyph = '';
-    if (o.id === 'none') {
-      classes.push('style-none');
-      glyph = '—';
-    } else if (gen) {
-      classes.push('style-scene', `style-scene-${gen.template}`);
-      styleAttr = ` style="--dh:${gen.hue}deg"`;
-    } else {
-      classes.push(`style-${o.id}`);
-    }
-    if (o.id === selectedId) classes.push('selected');
-    return `<button type="button" class="${classes.join(' ')}" data-id="${escapeHtml(o.id)}"
-      title="${escapeHtml(o.label)}" aria-label="${escapeHtml(o.label)}"${styleAttr}>${glyph}</button>`;
-  }).join('');
+  if (!isBorder) document.getElementById('profileGifUploadSection').hidden = activeCategory !== 'Uploads';
+
+  if (!isBorder && activeCategory === 'Uploads') {
+    gridEl.innerHTML = state.profileGifs.length ? state.profileGifs.map((g) => {
+      const id = `gif-${g.id}`;
+      const selected = id === selectedId;
+      return `
+        <span class="profile-style-gif-wrap">
+          <button type="button" class="profile-style-swatch-btn style-gif${selected ? ' selected' : ''}" data-id="${escapeHtml(id)}"
+            style="background-image:url('/api/profile-gifs/${g.id}/file')" title="${escapeHtml(g.name)}" aria-label="${escapeHtml(g.name)}"></button>
+          ${isAdmin() ? `<button type="button" class="profile-style-gif-delete" data-gif-id="${g.id}" title="Delete this GIF">×</button>` : ''}
+        </span>`;
+    }).join('') : '<p class="empty-state">No GIFs uploaded yet - be the first!</p>';
+    gridEl.querySelectorAll('.profile-style-gif-delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this GIF? Anyone currently using it will have their background reset.')) return;
+        try {
+          await api(`/api/profile-gifs/${btn.dataset.gifId}`, { method: 'DELETE' });
+          state.profileGifs = await api('/api/profile-gifs');
+          renderProfileStyleSection(kind, options, state.currentUser.profileBackground);
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    });
+  } else {
+    // Swatches show a real (still) thumbnail of the scene's own art/pattern plus a small
+    // hue-tinted dot for the accent colour, rather than the live animated scene/ring - under
+    // 100 generated options total (see SCENE_TEMPLATES/PATTERN_TEMPLATES in db.js) so this is
+    // cheap, and it means you're picking what you'll actually see rather than a flat colour
+    // chip standing in for it.
+    const visible = options.filter((o) => o.id === 'none' || o.category === activeCategory);
+    gridEl.innerHTML = visible.map((o) => {
+      const gen = parseGeneratedDesign(o.id);
+      const classes = ['profile-style-swatch-btn'];
+      let styleAttr = '';
+      let glyph = '';
+      if (o.id === 'none') {
+        classes.push('style-none');
+        glyph = '—';
+      } else if (gen) {
+        classes.push('style-scene', `style-scene-${gen.template}`);
+        styleAttr = ` style="--dh:${gen.hue}deg"`;
+      } else {
+        classes.push(`style-${o.id}`);
+      }
+      if (o.id === selectedId) classes.push('selected');
+      return `<button type="button" class="${classes.join(' ')}" data-id="${escapeHtml(o.id)}"
+        title="${escapeHtml(o.label)}" aria-label="${escapeHtml(o.label)}"${styleAttr}>${glyph}</button>`;
+    }).join('');
+  }
+
   gridEl.querySelectorAll('[data-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const user = state.currentUser;
@@ -1894,6 +1940,36 @@ async function saveProfileStyle(body) {
     toast(err.message, 'error');
   }
 }
+
+document.getElementById('profileGifFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  document.getElementById('profileGifFileName').textContent = file ? file.name : '';
+});
+
+document.getElementById('uploadProfileGifBtn').addEventListener('click', async () => {
+  const nameInput = document.getElementById('profileGifNameInput');
+  const fileInput = document.getElementById('profileGifFileInput');
+  if (!nameInput.value.trim()) { toast('Give your GIF a name.', 'error'); return; }
+  if (!fileInput.files[0]) { toast('Choose a GIF file to upload.', 'error'); return; }
+  try {
+    const formData = new FormData();
+    formData.append('name', nameInput.value);
+    formData.append('file', fileInput.files[0]);
+    const res = await fetch('/api/profile-gifs', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Upload failed');
+    }
+    nameInput.value = '';
+    fileInput.value = '';
+    document.getElementById('profileGifFileName').textContent = '';
+    state.profileGifs = await api('/api/profile-gifs');
+    renderProfileStyleSection('background', state.profileStyleOptions.backgrounds, state.currentUser.profileBackground);
+    toast('GIF uploaded.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
 
 document.getElementById('myProfileBtn').addEventListener('click', () => openMyProfileModal());
 

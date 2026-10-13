@@ -75,6 +75,20 @@ alter table users add column if not exists avatar_stored_name text;
 alter table users add column if not exists profile_border text;
 alter table users add column if not exists profile_background text;
 
+-- Shared GIF library for profile card backgrounds - anyone can upload one (see
+-- createProfileGif in db.js), everyone can then pick it as their profile_background (stored as
+-- `gif-<id>` there, validated dynamically against this table rather than the fixed
+-- PROFILE_BACKGROUND_THEMES list since new ones can be added at any time). Deleting a gif
+-- (admin-only, for moderation) also clears it from anyone currently using it as their
+-- background - see deleteProfileGif.
+create table if not exists profile_gifs (
+  id uuid primary key,
+  name text not null,
+  stored_name text not null,
+  uploaded_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 -- Links a client-role account to the client company name it should see jobs for (free text,
 -- matched case-insensitively/trimmed against jobs.client via sameClientName in db.js - clients
 -- aren't a first-class table, just jobs.client's free-text string). Set by an admin from the
@@ -664,6 +678,7 @@ alter table signage enable row level security;
 alter table job_costing_labour_overrides enable row level security;
 alter table job_costing_lines enable row level security;
 alter table minigame_scores enable row level security;
+alter table profile_gifs enable row level security;
 alter table activity_log enable row level security;
 alter table assets enable row level security;
 

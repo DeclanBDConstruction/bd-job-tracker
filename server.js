@@ -146,6 +146,12 @@ function avatarStoragePath(storedName) {
   return `_library/avatars/${storedName}`;
 }
 
+// Shared profile-background GIF library lives under this fixed prefix in the same bucket -
+// see createProfileGif in db.js.
+function profileGifStoragePath(storedName) {
+  return `_library/profile-gifs/${storedName}`;
+}
+
 function makeStoredName(originalName) {
   const safeName = originalName.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
@@ -398,6 +404,9 @@ const CALENDAR_DIARY_ROUTES = [
   { method: 'PUT', path: /^\/users\/me\/color$/ },
   { method: 'GET', path: /^\/profile-styles$/ },
   { method: 'PUT', path: /^\/users\/me\/profile-style$/ },
+  { method: 'GET', path: /^\/profile-gifs$/ },
+  { method: 'POST', path: /^\/profile-gifs$/ },
+  { method: 'GET', path: /^\/profile-gifs\/[^/]+\/file$/ },
   // Every role gets to protect their own account, same reasoning as the colour picker above.
   { method: 'POST', path: /^\/auth\/mfa\/setup$/ },
   { method: 'POST', path: /^\/auth\/mfa\/confirm$/ },
@@ -587,6 +596,50 @@ app.put('/api/users/me/profile-style', handle(async (req, res) => {
   const user = await db.setUserProfileStyle(req.user.id, req.body);
   broadcast('users');
   res.json(user);
+}));
+
+// ---------- Profile GIF library (shared uploads for the profile card background) ----------
+// Anyone signed in can upload and browse; deleting is admin-only (moderation - see the
+// "Uploads" category in the profile style picker in app.js).
+
+app.get('/api/profile-gifs', handle(async (req, res) => {
+  res.json(await db.listProfileGifs());
+}));
+
+app.post('/api/profile-gifs', uploadImage.single('file'), handle(async (req, res) => {
+  if (!req.file) throw new Error('A GIF file is required');
+  if (req.file.mimetype !== 'image/gif' && !/\.gif$/i.test(req.file.originalname)) {
+    throw new Error('Only GIF files are accepted here');
+  }
+  const storedName = makeStoredName(req.file.originalname);
+  const { error } = await supabase.storage.from(DOCUMENTS_BUCKET)
+    .upload(profileGifStoragePath(storedName), req.file.buffer, { contentType: 'image/gif' });
+  if (error) throw new Error(error.message);
+  const gif = await db.createProfileGif({ name: req.body.name, storedName }, req.user);
+  db.logCrud(req.user, 'created', 'profile_gif', 'Profile GIF', gif.name, gif.id);
+  broadcast('profileGifs');
+  res.status(201).json(gif);
+}));
+
+app.get('/api/profile-gifs/:id/file', handle(async (req, res) => {
+  const gif = await db.getProfileGif(req.params.id);
+  if (!gif) return res.status(404).json({ error: 'GIF not found' });
+  const { data, error } = await supabase.storage.from(DOCUMENTS_BUCKET).download(profileGifStoragePath(gif.storedName));
+  if (error) return res.status(404).json({ error: 'File not found in storage' });
+  const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Type', 'image/gif');
+  res.send(buffer);
+}));
+
+app.delete('/api/profile-gifs/:id', requireAdmin, handle(async (req, res) => {
+  const gif = await db.deleteProfileGif(req.params.id);
+  if (gif) {
+    await supabase.storage.from(DOCUMENTS_BUCKET).remove([profileGifStoragePath(gif.storedName)]);
+    db.logCrud(req.user, 'deleted', 'profile_gif', 'Profile GIF', gif.name, gif.id);
+  }
+  broadcast('profileGifs');
+  broadcast('users');
+  res.status(204).end();
 }));
 
 // ---------- Profiles (photo + qualifications) ----------

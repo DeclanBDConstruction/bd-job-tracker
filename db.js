@@ -61,6 +61,19 @@ const SCENE_TEMPLATES = [
   { id: 'rooftop', label: 'Rooftop' },
   { id: 'cruiser', label: 'Cruiser' },
 ];
+// A second, smaller batch on top of the illustrated scenes above - same id scheme and hue
+// trick (see buildTemplateOptions), but pure CSS gradients/animations (style.css .scene-<id> /
+// .avatar-border-s-<id>) rather than licensed pixel-art PNGs, so new genres can be added here
+// freely without sourcing new artwork. Deliberately generic ("Music Beat", not a real band -
+// using an actual band's name/logo would be a trademark problem) so nothing here risks IP.
+const PATTERN_TEMPLATES = [
+  { id: 'musicbeat', label: 'Music Beat' },
+  { id: 'xmaslights', label: 'Xmas Lights' },
+  { id: 'halloweenfog', label: 'Halloween' },
+  { id: 'starfield', label: 'Starfield' },
+  { id: 'discoball', label: 'Disco Ball' },
+  { id: 'retropixel', label: 'Retro Pixel' },
+];
 const NEON_HUES = [
   { hue: 0, name: 'Ruby' },
   { hue: 45, name: 'Sunset' },
@@ -72,9 +85,9 @@ const NEON_HUES = [
   { hue: 315, name: 'Magenta' },
 ];
 
-function buildSceneOptions() {
+function buildTemplateOptions(templates) {
   const options = [];
-  for (const template of SCENE_TEMPLATES) {
+  for (const template of templates) {
     for (const neon of NEON_HUES) {
       options.push({
         id: `s-${template.id}-${String(neon.hue).padStart(3, '0')}`,
@@ -85,7 +98,7 @@ function buildSceneOptions() {
   }
   return options;
 }
-const SCENE_OPTIONS = buildSceneOptions();
+const SCENE_OPTIONS = [...buildTemplateOptions(SCENE_TEMPLATES), ...buildTemplateOptions(PATTERN_TEMPLATES)];
 
 const LEGACY_BORDER_LABELS = {
   none: 'None', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', blue: 'Blue', green: 'Green',
@@ -3168,16 +3181,82 @@ async function setUserColor(userId, color) {
 // throwing - both fields are always sent together on every save (see saveProfileStyle in
 // app.js), so a stale id left over from a retired design batch would otherwise block someone
 // from saving *either* field, not just the one that changed. This is a purely cosmetic free
-// pick, so losing a retired design is a fine trade for never getting stuck.
+// pick, so losing a retired design is a fine trade for never getting stuck. Backgrounds can
+// also be `gif-<id>`, pointing at a shared upload (see profile_gifs below) - those aren't in
+// the fixed PROFILE_BACKGROUND_THEMES list since they're added/removed at any time, so they're
+// checked against the live table instead.
 async function setUserProfileStyle(userId, { profileBorder, profileBackground }) {
   const border = PROFILE_BORDER_STYLES.includes(profileBorder) ? profileBorder : 'none';
-  const background = PROFILE_BACKGROUND_THEMES.includes(profileBackground) ? profileBackground : 'none';
+  let background = 'none';
+  if (PROFILE_BACKGROUND_THEMES.includes(profileBackground)) {
+    background = profileBackground;
+  } else if (typeof profileBackground === 'string' && profileBackground.startsWith('gif-')) {
+    const { data: gif } = await supabase.from('profile_gifs').select('id').eq('id', profileBackground.slice(4)).maybeSingle();
+    if (gif) background = profileBackground;
+  }
   const { data, error } = await supabase.from('users')
     .update({ profile_border: border, profile_background: background })
     .eq('id', userId).select().maybeSingle();
   check(error);
   if (!data) throw new Error('User not found');
   return sanitizeUser(data);
+}
+
+// ---------- Profile GIF library ----------
+// Shared, upload-once-everyone-can-pick GIFs for the profile card background (see the
+// "Uploads" category in renderProfileStyleSection in app.js) - stored_name is the file's key
+// in Supabase Storage under the `_library/profile-gifs/` prefix (see profileGifStoragePath in
+// server.js), same private-bucket-proxied-through-an-authenticated-route pattern as every
+// other upload in this app.
+
+function rowToProfileGif(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    storedName: row.stored_name,
+    uploadedBy: row.uploaded_by,
+    createdAt: row.created_at,
+  };
+}
+
+async function listProfileGifs() {
+  const { data, error } = await supabase.from('profile_gifs').select('*').order('created_at', { ascending: false });
+  check(error);
+  return data.map(rowToProfileGif);
+}
+
+async function getProfileGif(id) {
+  const { data, error } = await supabase.from('profile_gifs').select('*').eq('id', id).maybeSingle();
+  check(error);
+  return data ? rowToProfileGif(data) : null;
+}
+
+async function createProfileGif({ name, storedName }, user) {
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) throw new Error('Name is required');
+  if (!storedName) throw new Error('File is required');
+  const row = {
+    id: genId(),
+    name: trimmedName,
+    stored_name: storedName,
+    uploaded_by: user ? user.id : null,
+    created_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from('profile_gifs').insert(row).select().single();
+  check(error);
+  return rowToProfileGif(data);
+}
+
+// Returns the deleted row's stored_name so the caller can also remove the file from Storage,
+// and clears it from anyone currently using it as their background so nobody's left with a
+// profile card pointing at a now-404 image.
+async function deleteProfileGif(id) {
+  const { data, error } = await supabase.from('profile_gifs').delete().eq('id', id).select().maybeSingle();
+  check(error);
+  if (!data) return null;
+  const { error: clearError } = await supabase.from('users').update({ profile_background: 'none' }).eq('profile_background', `gif-${id}`);
+  check(clearError);
+  return rowToProfileGif(data);
 }
 
 // ---------- Profiles (photo + qualifications) ----------
@@ -3300,6 +3379,10 @@ module.exports = {
   PROFILE_BORDER_STYLES,
   PROFILE_BACKGROUND_THEMES,
   PROFILE_STYLE_OPTIONS,
+  listProfileGifs,
+  getProfileGif,
+  createProfileGif,
+  deleteProfileGif,
   logActivity,
   logCrud,
   listActivityLog,

@@ -554,6 +554,137 @@ body {
   .scene-rooftop .rf-banner-frame:first-child, .scene-rooftop .rf-drone-frame:first-child { opacity: 1; }
 }
 
+/* -- Pure-CSS pattern templates (no licensed artwork needed - see PATTERN_TEMPLATES in db.js).
+   Each gets a ring motif for the avatar border and a full gradient/animation for the profile
+   card background, both driven by the same --dh hue custom property as the illustrated scenes
+   above, so one pattern produces 8 colour picks instead of needing 8 hand-made variants. -- */
+
+.avatar-border-s-musicbeat { outline-color: hsl(var(--dh), 80%, 55%); animation: eqPulse 0.5s ease-in-out infinite alternate; }
+@keyframes eqPulse { from { box-shadow: 0 0 3px 1px hsla(var(--dh), 80%, 55%, 0.35); } to { box-shadow: 0 0 10px 3px hsla(var(--dh), 85%, 60%, 0.8); } }
+.scene-musicbeat { background: linear-gradient(180deg, hsl(var(--dh), 35%, 10%), hsl(var(--dh), 45%, 18%)); }
+.scene-musicbeat::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+  background-image: repeating-linear-gradient(90deg, hsl(var(--dh), 80%, 60%) 0 10%, transparent 10% 16%);
+  transform-origin: bottom; animation: eqBeat 0.6s ease-in-out infinite alternate; opacity: 0.85;
+}
+@keyframes eqBeat { from { transform: scaleY(0.4); } to { transform: scaleY(1); } }
+
+.avatar-border-s-xmaslights { outline-color: hsl(var(--dh), 80%, 55%); animation: xmasTwinkle 1s steps(2) infinite; }
+@keyframes xmasTwinkle {
+  0%, 100% { box-shadow: 0 0 6px 2px hsla(var(--dh), 85%, 60%, 0.5); }
+  50% { box-shadow: 0 0 10px 3px hsla(calc(var(--dh) + 60deg), 85%, 60%, 0.7); }
+}
+.scene-xmaslights { background: linear-gradient(180deg, hsl(var(--dh), 30%, 10%), hsl(var(--dh), 35%, 16%)); }
+.scene-xmaslights::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 8%; height: 14px;
+  background-image: radial-gradient(circle, hsl(var(--dh), 90%, 65%) 3px, transparent 4px);
+  background-size: 11% 100%;
+  animation: xmasBlink 1.2s steps(2) infinite;
+}
+@keyframes xmasBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.avatar-border-s-halloweenfog { outline-color: hsl(var(--dh), 70%, 45%); animation: spookyPulse 2.4s ease-in-out infinite; }
+@keyframes spookyPulse {
+  0%, 100% { box-shadow: 0 0 4px 1px hsla(var(--dh), 70%, 45%, 0.35); }
+  50% { box-shadow: 0 0 14px 5px hsla(var(--dh), 80%, 40%, 0.75); }
+}
+.scene-halloweenfog {
+  background:
+    radial-gradient(circle at 30% 70%, hsla(var(--dh), 70%, 35%, 0.5), transparent 60%),
+    radial-gradient(circle at 70% 30%, hsla(var(--dh), 60%, 25%, 0.5), transparent 60%),
+    linear-gradient(180deg, #0b0710, #1a0f22);
+  background-size: 160% 160%, 160% 160%, 100% 100%;
+  animation: fogDrift 10s ease-in-out infinite alternate;
+}
+@keyframes fogDrift { from { background-position: 0% 0%, 100% 100%, 0 0; } to { background-position: 30% 20%, 70% 80%, 0 0; } }
+
+.avatar-border-s-starfield { outline-color: hsl(var(--dh), 70%, 70%); animation: starTwinkleRing 1.8s ease-in-out infinite; }
+@keyframes starTwinkleRing {
+  0%, 100% { box-shadow: 0 0 4px 1px hsla(var(--dh), 80%, 75%, 0.5); }
+  50% { box-shadow: 0 0 10px 3px hsla(var(--dh), 90%, 80%, 0.9); }
+}
+.scene-starfield {
+  background:
+    radial-gradient(circle at 15% 20%, hsl(var(--dh), 90%, 85%) 0 1px, transparent 1px),
+    radial-gradient(circle at 70% 15%, hsl(var(--dh), 90%, 85%) 0 1px, transparent 1px),
+    radial-gradient(circle at 85% 60%, hsl(var(--dh), 90%, 85%) 0 1px, transparent 1px),
+    radial-gradient(circle at 30% 80%, hsl(var(--dh), 90%, 85%) 0 1px, transparent 1px),
+    radial-gradient(circle at 55% 45%, hsl(var(--dh), 90%, 85%) 0 1px, transparent 1px),
+    linear-gradient(160deg, #060818, #0d1230 60%, #060818);
+  background-size: 60px 60px, 90px 90px, 70px 70px, 80px 80px, 50px 50px, cover;
+  animation: starTwinkleBg 3s ease-in-out infinite;
+}
+@keyframes starTwinkleBg { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+.avatar-border-s-discoball { outline-color: hsl(var(--dh), 85%, 65%); animation: discoRing 2s steps(4) infinite; }
+@keyframes discoRing {
+  0% { box-shadow: 0 0 5px 1px hsla(var(--dh), 85%, 65%, 0.4); }
+  25% { box-shadow: 0 0 10px 3px hsla(calc(var(--dh) + 90deg), 85%, 65%, 0.6); }
+  50% { box-shadow: 0 0 5px 1px hsla(calc(var(--dh) + 180deg), 85%, 65%, 0.4); }
+  75% { box-shadow: 0 0 10px 3px hsla(calc(var(--dh) + 270deg), 85%, 65%, 0.6); }
+}
+.scene-discoball {
+  background: conic-gradient(hsl(var(--dh), 85%, 70%), hsl(calc(var(--dh) + 40deg), 85%, 55%), hsl(calc(var(--dh) + 80deg), 85%, 70%),
+    hsl(calc(var(--dh) + 120deg), 85%, 55%), hsl(calc(var(--dh) + 160deg), 85%, 70%), hsl(calc(var(--dh) + 200deg), 85%, 55%),
+    hsl(calc(var(--dh) + 240deg), 85%, 70%), hsl(calc(var(--dh) + 280deg), 85%, 55%), hsl(calc(var(--dh) + 320deg), 85%, 70%), hsl(var(--dh), 85%, 70%));
+  filter: blur(1px) brightness(0.8);
+}
+.scene-discoball::before {
+  content: ""; position: absolute; inset: -40%;
+  background: repeating-conic-gradient(from 0deg, rgba(255,255,255,0) 0deg 8deg, rgba(255,255,255,0.35) 8deg 9deg);
+  animation: discoSpinBg 5s linear infinite;
+  mix-blend-mode: screen;
+}
+@keyframes discoSpinBg { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.avatar-border-s-retropixel { outline-color: hsl(var(--dh), 85%, 55%); outline-style: double; animation: retroFlicker 0.3s steps(2) infinite; }
+@keyframes retroFlicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.75; } }
+.scene-retropixel { background: repeating-linear-gradient(0deg, hsl(var(--dh), 60%, 20%) 0 3px, hsl(var(--dh), 55%, 14%) 3px 6px); }
+.scene-retropixel::before {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, hsla(var(--dh), 90%, 70%, 0.12) 0 2px, transparent 2px 6px);
+  animation: retroScan 4s linear infinite;
+}
+@keyframes retroScan { from { transform: translateY(0); } to { transform: translateY(-20%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-border-s-musicbeat, .scene-musicbeat::before,
+  .avatar-border-s-xmaslights, .scene-xmaslights::before,
+  .avatar-border-s-halloweenfog, .scene-halloweenfog,
+  .avatar-border-s-starfield, .scene-starfield,
+  .avatar-border-s-discoball, .scene-discoball::before,
+  .avatar-border-s-retropixel, .scene-retropixel::before {
+    animation: none;
+  }
+}
+
+/* Small picker-swatch previews for the pattern templates - same --dh hue set inline per swatch
+   (see renderProfileStyleSection in app.js), just a flatter non-animated read of the pattern
+   rather than the full card treatment (there's no room for the real animation at 32px). */
+.profile-style-swatch-btn.style-scene-musicbeat { background: linear-gradient(0deg, hsl(var(--dh), 80%, 55%) 0 40%, hsl(var(--dh), 40%, 15%) 40%); }
+.profile-style-swatch-btn.style-scene-xmaslights { background: radial-gradient(circle, hsl(var(--dh), 90%, 65%), hsl(var(--dh), 30%, 12%) 70%); }
+.profile-style-swatch-btn.style-scene-halloweenfog { background: radial-gradient(circle, hsla(var(--dh), 70%, 40%, 0.9), #150a1c 70%); }
+.profile-style-swatch-btn.style-scene-starfield { background: radial-gradient(circle, hsl(var(--dh), 90%, 85%) 0 2px, #0a0d1f 3px); }
+.profile-style-swatch-btn.style-scene-discoball { background: conic-gradient(hsl(var(--dh), 85%, 70%), hsl(calc(var(--dh) + 120deg), 85%, 55%), hsl(calc(var(--dh) + 240deg), 85%, 70%), hsl(var(--dh), 85%, 70%)); }
+.profile-style-swatch-btn.style-scene-retropixel { background: repeating-linear-gradient(0deg, hsl(var(--dh), 60%, 25%) 0 3px, hsl(var(--dh), 55%, 15%) 3px 6px); }
+
+/* Shared GIF library background (see profileGifStoragePath in server.js) - a real <img>, not a
+   generated CSS pattern, fitted to cover the card same as the illustrated scenes. */
+.profile-scene-gif img { width: 100%; height: 100%; object-fit: cover; }
+.profile-style-swatch-btn.style-gif { background-size: cover; background-position: center; background-color: #e3e9ef; }
+
+.profile-style-gif-wrap { position: relative; display: inline-flex; }
+.profile-style-gif-delete {
+  position: absolute; top: -4px; right: -4px; width: 16px; height: 16px;
+  border-radius: 50%; border: none; background: var(--red, #b6402e); color: white;
+  font-size: 11px; line-height: 1; cursor: pointer; padding: 0;
+}
+.profile-style-gif-delete:hover { background: #8e3122; }
+
+.profile-gif-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; }
+.profile-gif-upload .hint { flex-basis: 100%; margin: 0 0 4px; }
+.profile-gif-upload input[type="text"] { max-width: 220px; }
+
 .profile-style-picker-wrap { margin: 8px 0 16px; }
 .profile-style-categories { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .profile-style-category-btn {
