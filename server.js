@@ -11,6 +11,7 @@ const riskAssessments = require('./riskAssessments');
 const permitPdf = require('./permitPdf');
 const cadDxf = require('./cadDxf');
 const cadPdf = require('./cadPdf');
+const fireDoorQuotePdf = require('./fireDoorQuotePdf');
 const { supabase, DOCUMENTS_BUCKET } = require('./supabaseClient');
 
 const app = express();
@@ -1772,6 +1773,16 @@ app.delete('/api/fire-door-quotes/:id', requireAdminOrSurveyor, handle(async (re
   if (quote) db.logCrud(req.user, 'deleted', 'fire_door_quote', 'Fire door quote', quote.clientName, quote.id);
   broadcast('fireDoor');
   res.status(204).end();
+}));
+
+app.get('/api/fire-door-quotes/:id/pdf', requireAdminOrSurveyor, handle(async (req, res) => {
+  const quote = await db.getFireDoorQuote(req.params.id);
+  if (!quote) return res.status(404).json({ error: 'Quote not found' });
+  const pdfBuffer = await fireDoorQuotePdf.generateFireDoorQuotePdf(quote);
+  const filename = `Fire Door Quote - ${quote.clientName}`.replace(/[^a-zA-Z0-9_.\- ]/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+  res.send(pdfBuffer);
 }));
 
 // ---------- Hire (admin only) ----------

@@ -772,13 +772,19 @@
     <div class="panel-header">
       <h2>Fire Door Quotes</h2>
     </div>
-    <p class="hint">Maintain a priced catalog of fire door items below, then tick off what's needed in the quote builder to get a total — admins and surveyors only.</p>
+    <p class="hint">Maintain a priced catalog of fire door items below, then tick off what's needed in the quote builder to get a total — admins and surveyors only. Saving a quote downloads a PDF automatically.</p>
 
     <div class="fire-door-columns">
       <div class="fire-door-catalog">
-        <h3>Catalog</h3>
+        <div class="panel-header">
+          <h3>Catalog</h3>
+          <div class="filters">
+            <input type="text" id="fireDoorCatalogSearch" placeholder="Search catalog…">
+          </div>
+        </div>
         <div class="import-upload">
-          <input type="text" id="newFireDoorCategory" placeholder="Category (e.g. Doors)">
+          <input type="text" id="newFireDoorCategory" list="fireDoorCategoryOptions" placeholder="Category (e.g. Doors)">
+          <datalist id="fireDoorCategoryOptions"></datalist>
           <input type="text" id="newFireDoorName" placeholder="Item name">
           <input type="number" id="newFireDoorPrice" placeholder="Price (£)" step="0.01" min="0">
           <button type="button" id="addFireDoorItemBtn" class="primary">+ Add</button>
@@ -798,8 +804,11 @@
         <textarea id="fireDoorQuoteNotes" placeholder="Notes (optional)" rows="2"></textarea>
         <div id="fireDoorChecklist"></div>
         <div class="fire-door-total-row">
-          <strong>Total: <span id="fireDoorQuoteTotal">£0.00</span></strong>
-          <button type="button" id="saveFireDoorQuoteBtn" class="primary">Save Quote</button>
+          <span>Total: <strong id="fireDoorQuoteTotal">£0.00</strong> <span id="fireDoorQuoteCount" class="hint-inline"></span></span>
+          <span class="fire-door-total-actions">
+            <button type="button" id="clearFireDoorQuoteBtn" class="link-btn">Clear</button>
+            <button type="button" id="saveFireDoorQuoteBtn" class="primary">Save &amp; Download PDF</button>
+          </span>
         </div>
 
         <h3>Saved Quotes</h3>

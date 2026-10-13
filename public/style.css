@@ -3737,11 +3737,34 @@ button:disabled {
   width: 70px;
 }
 
+.fire-door-check-row.fd-no-match {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .fire-door-total-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.fire-door-total-row strong {
+  font-size: var(--font-lg);
+}
+
+.fire-door-total-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hint-inline {
+  color: var(--muted);
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 900px) {
