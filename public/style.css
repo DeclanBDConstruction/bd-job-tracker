@@ -1111,6 +1111,26 @@ main {
 .client-portal-section { margin-bottom: 36px; }
 .client-portal-section h2 { margin-bottom: 14px; }
 
+.client-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.client-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.client-summary-label { color: var(--muted); font-size: var(--font-sm); }
+.client-summary-value { font-size: 1.4rem; font-weight: 700; color: var(--blue-dark); }
+
 .client-jobs-list { display: grid; gap: 12px; }
 
 .client-job-card {
@@ -1832,6 +1852,35 @@ button:disabled {
 
 .variation-total strong {
   color: var(--blue-dark);
+}
+
+/* ---------- Job Checklist ---------- */
+
+.checklist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.checklist-item label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 /* ---------- Home ---------- */
@@ -2791,13 +2840,13 @@ button:disabled {
   min-width: 90px;
 }
 
-.hire-edit-length {
+.hire-edit-length-inner {
   display: flex;
   gap: 6px;
 }
 
-.hire-edit-length input { min-width: 50px; }
-.hire-edit-length select { flex: 0 0 auto; }
+.hire-edit-length-inner input { min-width: 50px; }
+.hire-edit-length-inner select { flex: 0 0 auto; }
 
 /* ---------- Signage Tracker ---------- */
 

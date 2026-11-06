@@ -19,6 +19,18 @@ const DOCUMENT_LABELS = { rams: 'RAMS', drawings: 'Drawings', photos: 'Photos', 
 // has one), so neither blocks marking a job complete like rams/photos do.
 const REQUIRED_DOCUMENT_CATEGORIES = DOCUMENT_CATEGORIES.filter((c) => c !== 'drawings' && c !== 'permit');
 
+// Fixed progress checklist shown on every job (Job Detail > Checklist tab) - purely
+// informational, doesn't gate anything else, just gives surveyors running many jobs at
+// once a record of what's been done instead of relying on memory.
+const CHECKLIST_ITEMS = [
+  { key: 'survey_complete', label: 'Survey Complete' },
+  { key: 'rams_submitted', label: 'RAMS Submitted' },
+  { key: 'materials_ordered', label: 'Materials Ordered' },
+  { key: 'permit_obtained', label: 'Permit to Work Obtained' },
+  { key: 'install_booked', label: 'Install Booked In' },
+  { key: 'job_complete', label: 'Job Complete' },
+];
+
 // Fixed 10-colour set for the calendar: chosen so every colour stays legible with white
 // text on it and any two are tell-apart-able (including colour-blind vision), verified with
 // the data-viz skill's palette validator rather than picked by eye. Each person picks one
@@ -313,6 +325,7 @@ function rowToJob(row, empNameById) {
     completedAt: row.completed_at || '',
     documents: { rams: [], drawings: [], photos: [], permit: [] },
     variations: [],
+    checklist: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     progress: computeProgress(row),
@@ -367,6 +380,34 @@ async function attachVariations(jobs) {
   return jobs;
 }
 
+function rowToChecklistItem(row) {
+  const def = CHECKLIST_ITEMS.find((c) => c.key === row.item_key);
+  return {
+    id: row.id,
+    key: row.item_key,
+    label: def ? def.label : row.item_key,
+    sortOrder: row.sort_order,
+    done: !!row.done,
+    doneAt: row.done_at || null,
+    doneByName: row.done_by_name || null,
+  };
+}
+
+async function attachChecklist(jobs) {
+  if (!jobs.length) return jobs;
+  const { data: rows, error } = await supabase.from('job_checklist_items').select('*').in('job_id', jobs.map((j) => j.id));
+  check(error);
+  const byJob = {};
+  for (const r of rows) {
+    if (!byJob[r.job_id]) byJob[r.job_id] = [];
+    byJob[r.job_id].push(rowToChecklistItem(r));
+  }
+  jobs.forEach((j) => {
+    j.checklist = (byJob[j.id] || []).sort((a, b) => a.sortOrder - b.sortOrder);
+  });
+  return jobs;
+}
+
 async function employeeNameMap() {
   const { data, error } = await supabase.from('employees').select('*');
   check(error);
@@ -383,7 +424,7 @@ async function listJobs(filter) {
   if (filter && filter.clientName) {
     jobs = jobs.filter((j) => sameClientName(j.client, filter.clientName));
   }
-  await Promise.all([attachDocuments(jobs), attachVariations(jobs)]);
+  await Promise.all([attachDocuments(jobs), attachVariations(jobs), attachChecklist(jobs)]);
   return jobs.sort((a, b) => (b.dateWon || '').localeCompare(a.dateWon || ''));
 }
 
@@ -395,7 +436,7 @@ async function getJob(id) {
   check(error);
   if (!row) return null;
   const job = rowToJob(row, empNameById);
-  await Promise.all([attachDocuments([job]), attachVariations([job])]);
+  await Promise.all([attachDocuments([job]), attachVariations([job]), attachChecklist([job])]);
   return job;
 }
 
@@ -432,7 +473,19 @@ async function createJob(input) {
   };
   const { data, error } = await supabase.from('jobs').insert(row).select().single();
   check(error);
-  return rowToJob(data, { [emp.id]: emp.name });
+  const checklistRows = CHECKLIST_ITEMS.map((c, i) => ({
+    id: genId(),
+    job_id: data.id,
+    item_key: c.key,
+    sort_order: i,
+    done: false,
+    created_at: now,
+  }));
+  const { error: checklistErr } = await supabase.from('job_checklist_items').insert(checklistRows);
+  check(checklistErr);
+  const job = rowToJob(data, { [emp.id]: emp.name });
+  job.checklist = checklistRows.map(rowToChecklistItem);
+  return job;
 }
 
 async function updateJob(id, input) {
@@ -456,7 +509,7 @@ async function updateJob(id, input) {
   check(error);
   if (!data) throw new Error('Job not found');
   const job = rowToJob(data, { [emp.id]: emp.name });
-  await Promise.all([attachDocuments([job]), attachVariations([job])]);
+  await Promise.all([attachDocuments([job]), attachVariations([job]), attachChecklist([job])]);
   return job;
 }
 
@@ -542,6 +595,25 @@ async function deleteJobVariation(jobId, variationId) {
   const { error: delErr } = await supabase.from('job_variations').delete().eq('id', variationId);
   check(delErr);
   return rowToVariation(data);
+}
+
+// ---------- Job Checklist ----------
+// Fixed progress checklist (see CHECKLIST_ITEMS) - toggle only, no add/delete, since the
+// steps are the same on every job.
+
+async function toggleChecklistItem(jobId, itemId, done, user) {
+  const { data: existing, error: findErr } = await supabase.from('job_checklist_items').select('*')
+    .eq('id', itemId).eq('job_id', jobId).maybeSingle();
+  check(findErr);
+  if (!existing) return null;
+  const row = {
+    done,
+    done_at: done ? new Date().toISOString() : null,
+    done_by_name: done ? (user ? user.name : null) : null,
+  };
+  const { data, error } = await supabase.from('job_checklist_items').update(row).eq('id', itemId).select().single();
+  check(error);
+  return rowToChecklistItem(data);
 }
 
 // ---------- Job Documents ----------
@@ -3421,6 +3493,8 @@ module.exports = {
   reopenJob,
   addJobVariation,
   deleteJobVariation,
+  CHECKLIST_ITEMS,
+  toggleChecklistItem,
   addJobDocument,
   getJobDocument,
   deleteJobDocument,

@@ -896,6 +896,22 @@
 
 <!-- CLIENT PORTAL (client role only - single restricted view, no tab nav, see isClient() in app.js) -->
 <div id="clientPortal" hidden>
+  <section class="client-portal-section client-summary-section">
+    <div class="client-summary-grid">
+      <div class="client-summary-card">
+        <span class="client-summary-label">Active Jobs</span>
+        <span class="client-summary-value" id="clientSummaryActiveJobs">0</span>
+      </div>
+      <div class="client-summary-card">
+        <span class="client-summary-label">Total Value (active)</span>
+        <span class="client-summary-value" id="clientSummaryValue">£0.00</span>
+      </div>
+      <div class="client-summary-card">
+        <span class="client-summary-label">Next Visit</span>
+        <span class="client-summary-value" id="clientSummaryNextVisit">—</span>
+      </div>
+    </div>
+  </section>
   <section class="client-portal-section">
     <h2>Your Jobs</h2>
     <div id="clientJobsList" class="client-jobs-list"></div>
@@ -922,7 +938,10 @@
   <div class="modal modal-wide">
     <div class="job-detail-header">
       <h2 id="clientJobDetailTitle">Job</h2>
-      <button type="button" id="clientJobDetailCloseBtn" class="link-btn">Close</button>
+      <div class="job-detail-header-actions">
+        <a href="#" id="clientJobDetailDownloadBtn" class="link-btn" title="Download RAMS, drawings and photos as one zip">Download All Documents</a>
+        <button type="button" id="clientJobDetailCloseBtn" class="link-btn">Close</button>
+      </div>
     </div>
     <nav class="job-detail-tabs">
       <button type="button" class="client-job-detail-tab active" data-section="info">Job Information</button>
@@ -1000,6 +1019,7 @@
     </div>
     <nav class="job-detail-tabs">
       <button type="button" class="job-detail-tab active" data-section="info">Job Information</button>
+      <button type="button" class="job-detail-tab" data-section="checklist">Checklist</button>
       <button type="button" class="job-detail-tab" data-section="variations">Variations</button>
       <button type="button" class="job-detail-tab" data-section="rams">RAMS</button>
       <button type="button" class="job-detail-tab" data-section="drawings">Drawings</button>
@@ -1010,6 +1030,7 @@
     </nav>
     <div class="job-detail-body">
       <div id="jobDetailSection-info" class="job-detail-section active"></div>
+      <div id="jobDetailSection-checklist" class="job-detail-section"></div>
       <div id="jobDetailSection-variations" class="job-detail-section"></div>
       <div id="jobDetailSection-rams" class="job-detail-section"></div>
       <div id="jobDetailSection-drawings" class="job-detail-section"></div>

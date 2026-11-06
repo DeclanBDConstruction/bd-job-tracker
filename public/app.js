@@ -1070,8 +1070,32 @@ async function bootstrapClient() {
   ]);
   state.jobs = jobs;
   state.clientBookedDates = bookedDates;
+  renderClientSummary();
   renderClientJobsList();
   renderClientCalendar();
+}
+
+// At-a-glance strip above the job list: how many jobs are still live, what they're worth
+// (value + variations, same figure as the job detail's "Adjusted Value"), and the soonest
+// upcoming/ongoing on-site window from the same booked-dates data the calendar below uses.
+function renderClientSummary() {
+  const activeJobs = state.jobs.filter((j) => j.progress !== 'completed');
+  document.getElementById('clientSummaryActiveJobs').textContent = activeJobs.length;
+  const totalValue = activeJobs.reduce((sum, j) => sum + (j.value || 0) + variationsTotal(j.variations), 0);
+  document.getElementById('clientSummaryValue').textContent = money(totalValue);
+
+  const todayStr = calDateStr(calToday.getFullYear(), calToday.getMonth(), calToday.getDate());
+  let next = null;
+  state.clientBookedDates.forEach((j) => {
+    j.windows.forEach((w) => {
+      const end = w.endDate || w.startDate;
+      if (end < todayStr) return;
+      if (!next || w.startDate < next.startDate) next = { startDate: w.startDate, jobReference: j.jobReference, location: j.location };
+    });
+  });
+  document.getElementById('clientSummaryNextVisit').textContent = next
+    ? `${new Date(next.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} — ${next.jobReference || next.location || 'Job'}`
+    : '—';
 }
 
 function renderStatusOptions() {
@@ -1528,6 +1552,7 @@ async function refreshJobDetail() {
   renderJobDetailInfo(job);
   DOCUMENT_SECTIONS.forEach((category) => renderDocumentSection(category, (job.documents || {})[category]));
   renderVariationsSection(job.variations || []);
+  renderChecklistSection(job.checklist || []);
   // Scoped to just this job while its detail modal is open - see renderJobTeamSection.
   state.jobAssignments = await api(`/api/jobs/${currentDetailJobId}/time-logs`);
   renderJobTeamSection(state.jobAssignments);
@@ -1571,6 +1596,44 @@ function formatBytes(bytes) {
   if (!bytes) return '0 KB';
   const kb = bytes / 1024;
   return kb < 1024 ? `${kb.toFixed(0)} KB` : `${(kb / 1024).toFixed(1)} MB`;
+}
+
+// ---------- Job Checklist ----------
+// Fixed progress steps (same on every job) so surveyors running several jobs at once
+// have a record of what's been done instead of relying on memory - purely informational,
+// ticking/unticking doesn't gate anything else.
+
+function renderChecklistSection(items) {
+  const container = document.getElementById('jobDetailSection-checklist');
+  container.innerHTML = `
+    <ul class="checklist-list">
+      ${items.map((it) => `
+        <li class="checklist-item">
+          <label>
+            <input type="checkbox" data-checklist-item="${it.id}" ${it.done ? 'checked' : ''}>
+            ${escapeHtml(it.label)}
+          </label>
+          ${it.done ? `<span class="hint">done${it.doneByName ? ' by ' + escapeHtml(it.doneByName) : ''} · ${new Date(it.doneAt).toLocaleDateString('en-GB')}</span>` : ''}
+        </li>
+      `).join('')}
+    </ul>
+    ${!items.length ? '<p class="empty-state">No checklist items yet.</p>' : ''}
+  `;
+
+  container.querySelectorAll('[data-checklist-item]').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      try {
+        await api(`/api/jobs/${currentDetailJobId}/checklist/${cb.dataset.checklistItem}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ done: cb.checked }),
+        });
+        await refreshJobDetail();
+      } catch (err) {
+        cb.checked = !cb.checked;
+        toast(err.message, 'error');
+      }
+    });
+  });
 }
 
 // ---------- Job Variations ----------
@@ -3452,11 +3515,13 @@ function hireEditRow(h) {
       <td><input type="date" class="hire-edit-date" value="${h.hireDate}"></td>
       <td><input type="number" min="1" step="1" class="hire-edit-qty" value="${h.quantity}"></td>
       <td class="hire-edit-length">
-        <input type="number" min="1" step="1" class="hire-edit-duration" value="${h.durationValue}">
-        <select class="hire-edit-unit">
-          <option value="days" ${h.durationUnit === 'days' ? 'selected' : ''}>Days</option>
-          <option value="weeks" ${h.durationUnit === 'weeks' ? 'selected' : ''}>Weeks</option>
-        </select>
+        <div class="hire-edit-length-inner">
+          <input type="number" min="1" step="1" class="hire-edit-duration" value="${h.durationValue}">
+          <select class="hire-edit-unit">
+            <option value="days" ${h.durationUnit === 'days' ? 'selected' : ''}>Days</option>
+            <option value="weeks" ${h.durationUnit === 'weeks' ? 'selected' : ''}>Weeks</option>
+          </select>
+        </div>
       </td>
       <td>${h.dueBack}</td>
       <td><span class="hire-status ${h.status}">${HIRE_STATUS_LABELS[h.status]}</span></td>
@@ -4798,6 +4863,7 @@ async function openClientJobDetail(id, section) {
   document.querySelectorAll('.client-job-detail-tab').forEach((b) => b.classList.toggle('active', b.dataset.section === target));
   document.querySelectorAll('#clientJobDetailModal .job-detail-section').forEach((s) => s.classList.toggle('active', s.id === `clientJobDetailSection-${target}`));
   document.getElementById('clientJobDetailModal').hidden = false;
+  document.getElementById('clientJobDetailDownloadBtn').href = `/api/jobs/${id}/documents-zip`;
   try {
     const job = await api(`/api/jobs/${id}`);
     renderClientJobInfo(job);

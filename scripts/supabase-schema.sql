@@ -154,6 +154,21 @@ create table if not exists job_variations (
   created_at timestamptz not null default now()
 );
 
+-- Fixed progress checklist (Survey/RAMS/Materials/Permit/Install/Complete) so surveyors
+-- running many jobs at once don't have to remember what's been done from memory alone.
+-- item_key maps to the label in db.js's CHECKLIST_ITEMS, not stored here, so wording can
+-- change later without touching existing rows.
+create table if not exists job_checklist_items (
+  id uuid primary key,
+  job_id uuid not null references jobs(id) on delete cascade,
+  item_key text not null,
+  sort_order int not null default 0,
+  done boolean not null default false,
+  done_at timestamptz,
+  done_by_name text,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists job_documents (
   id uuid primary key,
   job_id uuid not null references jobs(id) on delete cascade,
@@ -562,6 +577,7 @@ create index if not exists signage_job_id_idx on signage (job_id);
 
 create index if not exists jobs_employee_id_idx on jobs (employee_id);
 create index if not exists job_variations_job_id_idx on job_variations (job_id);
+create index if not exists job_checklist_items_job_id_idx on job_checklist_items (job_id);
 create index if not exists job_documents_job_id_idx on job_documents (job_id);
 create index if not exists job_assignments_job_id_idx on job_assignments (job_id);
 create index if not exists job_assignments_user_id_idx on job_assignments (user_id);
@@ -657,6 +673,7 @@ alter table user_qualifications enable row level security;
 alter table sessions enable row level security;
 alter table jobs enable row level security;
 alter table job_variations enable row level security;
+alter table job_checklist_items enable row level security;
 alter table job_documents enable row level security;
 alter table job_assignments enable row level security;
 alter table assignment_time_logs enable row level security;
@@ -687,3 +704,17 @@ alter table assets enable row level security;
 insert into storage.buckets (id, name, public)
 values ('job-documents', 'job-documents', false)
 on conflict (id) do nothing;
+
+-- Backfill the fixed checklist onto jobs that existed before this table did. New jobs
+-- get these rows from db.js's createJob instead - this is a one-off catch-up, safe to
+-- re-run (skips jobs/items that already have a row).
+insert into job_checklist_items (id, job_id, item_key, sort_order, done, created_at)
+select gen_random_uuid(), j.id, k.item_key, k.sort_order, false, now()
+from jobs j
+cross join (values
+  ('survey_complete', 0), ('rams_submitted', 1), ('materials_ordered', 2),
+  ('permit_obtained', 3), ('install_booked', 4), ('job_complete', 5)
+) as k(item_key, sort_order)
+where not exists (
+  select 1 from job_checklist_items c where c.job_id = j.id and c.item_key = k.item_key
+);
