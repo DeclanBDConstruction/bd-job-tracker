@@ -23,8 +23,10 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // CSP is left off deliberately: the app relies on inline style attributes (e.g. calendar
-// swatch colours) that helmet's default policy would otherwise block.
-app.use(helmet({ contentSecurityPolicy: false }));
+// swatch colours) that helmet's default policy would otherwise block. Cross-Origin-Resource-Policy
+// is relaxed to cross-origin too: helmet's default (same-origin) makes external link-preview
+// crawlers (SharePoint, Teams, Outlook) refuse to fetch the page/og:image for link unfurling.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 // Gzips every response (the API's JSON, and app.js/style.css since nothing here is
 // pre-minified or bundled) - meaningful over the mobile data connections this app is used
